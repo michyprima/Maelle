@@ -2,11 +2,13 @@
 # Changes a copy of the core so it builds on a Mac, with generated code going to the test instead of being run
 # Usage: patch.py <copy of src/core> [mutation number] [game], where a mutation plants a bug the tests should catch
 # With game, generated code runs whole games through game.cpp instead of being checked a case at a time
+# With plant, only the bug is planted, in a copy of the core that's otherwise left as it is, for game.sh's gcc- modes
 import os, re, sys
 
 root = sys.argv[1]
 mutation = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 game = len(sys.argv) > 3 and sys.argv[3] == 'game'
+plant = len(sys.argv) > 3 and sys.argv[3] == 'plant'
 
 def edit(path, *changes):
     path = root + '/' + path
@@ -15,6 +17,11 @@ def edit(path, *changes):
         assert old in text, old
         text = text.replace(old, new)
     open(path, 'w').write(text)
+
+# The changes for the Mac are left out when planting, and only the bug is made, with change
+change = edit
+if plant:
+    edit = lambda path, *changes: None
 
 edit('arm/interpreter.h', ('private:', 'public:'))
 
@@ -53,8 +60,9 @@ edit('gpu/gpu.cpp',
     ('malloc_usable_size', 'malloc_size'), ('__os_snprintf', 'snprintf'),
     ('(uint32_t)drawer->getFramebuffer()', '(uint32_t)(uintptr_t)drawer->getFramebuffer()'),
     ('(uint32_t)fastTargets[engine]', '(uint32_t)(uintptr_t)fastTargets[engine]'), ('(uint32_t)drawer,', '(uint32_t)(uintptr_t)drawer,'))
-text = open(root + '/gpu/gpu.cpp').read()
-open(root + '/gpu/gpu.cpp', 'w').write('#include <malloc/malloc.h>\n' + text)
+if not plant:
+    text = open(root + '/gpu/gpu.cpp').read()
+    open(root + '/gpu/gpu.cpp', 'w').write('#include <malloc/malloc.h>\n' + text)
 edit('gpu/gpu_3d_renderer.cpp', ('asm volatile("dcbz 0, %0" :: "r"(block) : "memory");', ';'))
 
 # Older cores shift by 32 in this loop before checking m, which Clang assumes never happens, so it would give different
@@ -238,15 +246,18 @@ GAME_MUTATIONS = [
     ('memory/memory.cpp', '        if (uint8_t *mapping = *(uint8_t *volatile*)&mappings[m])\n            value |= readLsb<T>(&mapping[address]);', '        value |= readLsb<T>(&mappings[m][address]);'), # game 112: a VRAM read follows a missing pointer, for vramstress
     ('io/spu.cpp', 'int32_t negate = (adpcmData >> 3) - 1;', 'int32_t negate = -int32_t(adpcmData >> 3);'), # game 113: ADPCM has its sign backwards, for audio; generated code and the interpreter share it, so compare with a run without it
 ]
+if plant:
+    text = open(path).read()
 if mutation > len(MUTATIONS) + len(INTERPRETER_MUTATIONS):
     file, old, new = GAME_MUTATIONS[mutation - len(MUTATIONS) - len(INTERPRETER_MUTATIONS) - 1]
-    edit(file, (old, new))
+    change(file, (old, new))
 elif mutation > len(MUTATIONS):
     file, old, new = INTERPRETER_MUTATIONS[mutation - len(MUTATIONS) - 1]
-    edit(file, (old, new))
+    change(file, (old, new))
 elif mutation:
     old, new = MUTATIONS[mutation - 1]
     assert old in text, old
     text = text.replace(old, new)
-text += open(os.path.dirname(os.path.abspath(__file__)) + '/rig.inc').read()
+if not plant:
+    text += open(os.path.dirname(os.path.abspath(__file__)) + '/rig.inc').read()
 open(path, 'w').write(text)

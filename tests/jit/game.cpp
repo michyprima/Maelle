@@ -1,5 +1,7 @@
 // Runs whole games on a Mac with the JIT's generated PowerPC in Unicorn, to compare with the interpreter frame by frame
 // See README.md; game.sh builds this against a copy of the core changed by patch.py in game mode
+// With JIT_GUEST it's built by devkitPPC instead, with the core as it is, and run whole in Unicorn by guest/host.cpp, so
+// generated code runs directly as on the console; game.sh's gcc- modes
 
 #include <array>
 #include <atomic>
@@ -18,14 +20,38 @@
 #include "core.h"
 #undef private
 #include "settings.h"
+
+#ifdef ROM_TEST
+#include "rom_test.h"
+#endif
+
+static Core *core;
+
+static void fatal(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+    fputc('\n', stderr);
+    fflush(stdout);
+    _exit(3);
+}
+
+#ifdef JIT_GUEST
+// What patch.py adds to the core for the Mac, which this build has as it is
+void (*rigSetup)(Jit &jit) = nullptr;
+uint64_t rigAudioHash = 0;
+FILE *rigAudioFile = nullptr;
+int rigPoison = 0;
+uint64_t rigFlagStats[2];
+static uint64_t enters, calls, ppcOps[2];
+static bool exactCount;
+#else
 #include <unicorn/unicorn.h>
 
 extern void (*rigSetup)(Jit &jit);
 extern uint64_t rigAudioHash;
 extern FILE *rigAudioFile;
-#ifdef ROM_TEST
-#include "rom_test.h"
-#endif
 extern int rigPoison;
 extern uint64_t rigFlagStats[2];
 
@@ -71,22 +97,11 @@ struct Handler {
     bool thumb;
 };
 
-static Core *core;
 static Engine engines[2];
 static std::vector<Handler> handlers;
 static uint8_t *codeBase, *ramMapped;
 static uint32_t ramMappedSize, coreSize;
 static uint64_t enters, calls, ppcOps[2];
-
-static void fatal(const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    vfprintf(stderr, format, args);
-    va_end(args);
-    fputc('\n', stderr);
-    fflush(stdout);
-    _exit(3);
-}
 
 static uint32_t swap32(uint32_t v) { return __builtin_bswap32(v); }
 static uint32_t reg(uc_engine *uc, int r) { uint32_t v = 0; uc_reg_read(uc, r, &v); return v; }
@@ -501,6 +516,7 @@ static void startEngine(Engine &en, bool arm7) {
     uc_hook_add(uc, &blocks, exactCount ? UC_HOOK_CODE : UC_HOOK_BLOCK, exactCount ? (void*)countInstruction : (void*)countBlock,
         (void*)uintptr_t(arm7), CODE, CODE + CODE_SIZE - 1);
 }
+#endif
 
 // Set by window.cpp when game.sh links it in for --window
 bool (*windowOpen)(const char *title, int position) = nullptr;
@@ -540,6 +556,14 @@ static void vramStress() {
 static uint64_t hash(const void *data, size_t size, uint64_t h = 0xCBF29CE484222325ULL) {
     const uint8_t *p = (const uint8_t*)data;
     for (size_t i = 0; i < size; i++) h = (h ^ p[i]) * 0x100000001B3ULL;
+    return h;
+}
+
+static uint64_t hashWords(const uint32_t *data, size_t count) {
+    // Words a byte at a time from the lowest, as a little-endian host has them, so big-endian builds give the same hash
+    uint64_t h = 0xCBF29CE484222325ULL;
+    for (size_t i = 0; i < count; i++)
+        for (int b = 0; b < 32; b += 8) h = (h ^ uint8_t(data[i] >> b)) * 0x100000001B3ULL;
     return h;
 }
 
@@ -677,6 +701,9 @@ int main(int argc, char **argv) {
     Settings::screenFilter = 0;
     Settings::wifi = wifi;
     Rtc::fixedTime = 1767225600; // 2026-01-01
+#ifdef JIT_GUEST
+    Settings::romInRam = 0; // Read from the file, since there's no thread to load it into memory on
+#endif
 #ifdef ROM_TEST
     // tests/rom's ROM writes its results through registers that only exist in this build, and says when it's done
     if (!romtest.empty()) {
@@ -694,6 +721,11 @@ int main(int argc, char **argv) {
         fatal("couldn't start the core: %d", int(error));
     }
 
+#ifdef JIT_GUEST
+    // Generated code runs directly, so only the modes that don't need the Mac's changes to the core are here
+    if (mode == "clear" || mode == "set") fatal("mode %s needs the Mac's build", mode.c_str());
+    if (window || wifi || !wav.empty() || audio) fatal("the window, Wi-Fi and audio need the Mac's build");
+#else
     // Native code runs in the emulator; the portable executor runs when there's no code area
     void *area;
     uint32_t areaSize;
@@ -704,6 +736,7 @@ int main(int argc, char **argv) {
     rigSetup = setup;
     startEngine(engines[0], false);
     startEngine(engines[1], true);
+#endif
     if (mode == "portable") core->jit.codeFailed = core->jit7.codeFailed = true;
     if (stress) {
         vramStress();
@@ -810,7 +843,7 @@ int main(int argc, char **argv) {
         do core->runCore(); while (!core->frameEnded.exchange(false));
         if (realtime) std::this_thread::sleep_until(start + std::chrono::microseconds(int64_t(i + 1) * 1000000 / 60));
         if (core->gpu.getFrame(frame, false)) {
-            last = hash(frame, 256 * 192 * 2 * 4);
+            last = hashWords(frame, 256 * 192 * 2);
             if (window) windowShow(frame);
         }
         if (shots && !ppm.empty() && i % shots == 0) savePpm(ppm + "." + std::to_string(i) + ".ppm");
@@ -852,6 +885,13 @@ int main(int argc, char **argv) {
     fprintf(stderr, "%s: %d frames in %.1f s, %llu entries into generated code, %llu calls from it, %llu and %llu PowerPC "
         "instructions run for the ARM9 and ARM7\n", mode.c_str(), frames, seconds, (unsigned long long)enters,
         (unsigned long long)calls, (unsigned long long)ppcOps[0], (unsigned long long)ppcOps[1]);
+#ifdef JIT_GUEST
+    // Generated code isn't counted here, so show that it ran by how much there is
+    for (Jit *jit: { &core->jit, &core->jit7 })
+        fprintf(stderr, "%s: %s JIT %s, %u bytes of generated code\n", mode.c_str(), (jit == &core->jit) ? "ARM9" : "ARM7",
+            jit->isNative() ? "native" : jit->codeFailed ? "without a code area" : "not started", jit->isNative() ?
+            uint32_t(jit->codePtr - jit->codeStart) : 0);
+#endif
     if (mode != "interp" && mode != "portable")
         fprintf(stderr, "%s: %llu flag-setting instructions were generated without their flags, and %llu with only the carry\n",
             mode.c_str(), (unsigned long long)rigFlagStats[0], (unsigned long long)rigFlagStats[1]);

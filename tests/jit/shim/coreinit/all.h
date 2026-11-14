@@ -18,11 +18,18 @@ inline OSThread*OSGetCurrentThread(){static OSThread t;return &t;}
 inline int OSGetThreadPriority(OSThread*){return 16;} inline int OSGetThreadAffinity(OSThread*){return 2;}
 inline bool OSCreateThread(OSThread*,OSThreadEntryPointFn,int,char*,void*,uint32_t,int,int){return false;}
 inline void OSSetThreadDeallocator(OSThread*,void(*)(OSThread*,void*)){} inline void OSSetThreadRunQuantum(OSThread*,int){} inline void OSResumeThread(OSThread*){}
-inline void OSSetThreadPriority(OSThread*,int){} inline void OSJoinThread(OSThread*,int*){}
+inline void OSSetThreadPriority(OSThread*,int){} inline void OSJoinThread(OSThread*,int*){} inline void OSSetThreadName(OSThread*,const char*){}
 inline uint32_t OSSwapAtomic(uint32_t*p,uint32_t v){return __atomic_exchange_n(p,v,__ATOMIC_SEQ_CST);}
 inline bool OSCompareAndSwapAtomicEx(uint32_t*p,uint32_t e,uint32_t n,uint32_t*o){bool r=__atomic_compare_exchange_n(p,&e,n,false,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST);*o=e;return r;}
 inline void DCFlushRange(void*,uint32_t){} inline void DCInvalidateRange(void*,uint32_t){} inline void ICInvalidateRange(void*,uint32_t){} inline void DCStoreRange(void*,uint32_t){}
 inline void OSFatal(const char*m){puts(m);abort();}
 inline uint32_t OSGetCodegenCore(){return 1;} inline uint32_t OSGetCodegenMode(){return 0;} inline uint32_t OSGetSecCodeGenMode(){return 0;} enum {CODEGEN_RW_=0,CODEGEN_R_X=1}; inline int OSSwitchSecCodeGenMode(int){return 1;}
 // 32MB like the console, so generated code can always reach the shared routines with a relative branch
+#ifdef JIT_GUEST
+// At a fixed place for guest/host.cpp, which maps it executable; Unicorn notices code being written over by itself
+#include "layout.h" // guest/layout.h, which the guest build has on its include path
+#define __os_snprintf snprintf // wut's, for the OS's own logging
+inline void OSGetCodegenVirtAddrRange(void**a,uint32_t*s){*a=(void*)GUEST_CODEGEN;*s=GUEST_CODEGEN_SIZE;}
+#else
 inline void OSGetCodegenVirtAddrRange(void**a,uint32_t*s){static void*b=malloc(0x2000000);*a=b;*s=0x2000000;}
+#endif

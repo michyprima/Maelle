@@ -42,6 +42,10 @@ if ! ls "$uni"/build/libunicorn.* > /dev/null 2>&1; then
     rmdir "$uni.lock"; trap - EXIT
 fi
 
+# The gcc- modes run the core as devkitPPC builds it for the console, whole in Unicorn, see guest/build.sh
+gcc=${JIT_TEST_GCC_BUILD:-$base-gcc}; [ "$mutation" = 0 ] || gcc=$gcc-m$mutation
+if [[ " $modes " == *" gcc-"* ]]; then "$here/guest/build.sh" "$gcc" "$uni" "$mutation"; fi
+
 # Build from a changed copy of the core, only compiling what's different
 rm -rf "$build/new"; mkdir -p "$build/new"; cp -R "$here/../../src/core/" "$build/new/"
 python3 -I "$here/patch.py" "$build/new" "$mutation" game
@@ -88,12 +92,15 @@ pids=()
 for m in $modes; do
     rm -rf "$build/run-$m"; mkdir -p "$build/run-$m"
     [ ! -e "$cfg/nand.bin" ] || cp -c "$cfg/nand.bin" "$build/run-$m/nand.bin" 2>/dev/null || cp "$cfg/nand.bin" "$build/run-$m/nand.bin"
+    # The gcc- modes run the program devkitPPC built, in Unicorn
+    run=("$build/game"); mode=$m
+    if [[ $m == gcc-* ]]; then run=("$gcc/host" "$gcc/guest.elf"); mode=${m#gcc-}; fi
     opts=(); [ "$live" = 0 ] || opts+=(live); [ "$window" = 0 ] || opts+=(window); [ "$input" = 0 ] || opts+=(input); [ "$wifi" = 0 ] || opts+=(wifi)
     if [ "$live" = 1 ]; then
         # Show each line as it's written too, marked with the mode
-        (set -o pipefail; cd "$build/run-$m"; "$build/game" "$cfg" "$rom" $m "$frames" "$@" "${opts[@]}" 2> err.txt | tee out.txt | sed -l "s/^/$m: /") &
+        (set -o pipefail; cd "$build/run-$m"; "${run[@]}" "$cfg" "$rom" $mode "$frames" "$@" "${opts[@]}" 2> err.txt | tee out.txt | sed -l "s/^/$m: /") &
     else
-        (cd "$build/run-$m"; exec "$build/game" "$cfg" "$rom" $m "$frames" "$@" "${opts[@]}" > out.txt 2> err.txt) &
+        (cd "$build/run-$m"; exec "${run[@]}" "$cfg" "$rom" $mode "$frames" "$@" "${opts[@]}" > out.txt 2> err.txt) &
     fi
     pids+=($!)
 done

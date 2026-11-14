@@ -63,7 +63,8 @@ tests/jit/game.sh <ROM, or - for none> <folder with the system files> <frames> [
 The folder needs `bios9.bin`, `bios7.bin` and `firmware.bin`, plus `bios9i.bin`, `bios7i.bin`, `firmwarei.bin` and `nand.bin`
 for DSi mode. Each way of running is given by `--modes`: `interp` without the JIT, `portable` with the JIT's portable executor,
 and `native` with generated code, and `clear` and `set` with generated code that has the flags the JIT leaves out forced to 0
-or to 1, as the `liveness` suite does. Each prints a line per frame with a hash of the screens, the cycle counts and both CPUs'
+or to 1, as the `liveness` suite does. `gcc-interp`, `gcc-native` and `gcc-portable` are those ways with the core as the
+console's compiler builds it, see below. Each prints a line per frame with a hash of the screens, the cycle counts and both CPUs'
 program counters, then hashes of RAM and WRAM, and every way is compared with the first. Options are:
 
 - `fast` for fast timing, `dsi` for DSi mode, and `firmware` to start a ROM from the firmware's menu instead of directly
@@ -120,6 +121,24 @@ another Unicorn source folder, built in its `build` folder, to use that instead.
 It builds in `$TMPDIR/noodsu-jit-test-game`, and leaves each run's output in a `run-<mode>` folder there; set
 `JIT_TEST_GAME_BUILD` to use another folder, and `JIT_TEST_CFLAGS` to build with more flags, like
 `-fsanitize=address,undefined -g`.
+
+### As the console builds it
+
+The other ways build the core with the Mac's compiler, and only generated code runs as PowerPC. The `gcc-` modes build
+`src/core` as it is, with devkitPPC's GCC and the Makefile's flags, link-time optimisation included, together with
+`game.cpp` and a small runtime in `guest/`, into one PowerPC program that runs whole in Unicorn: the interpreter, the
+JIT compiling, generated code calling the core's C++ directly, all of it as the console's build does it. That covers what
+the Mac's build can't: code GCC makes differently from Clang, undefined behaviour each takes its own way, and the core on a
+big-endian host. A `gcc-` run should match `interp` exactly, and `--mutate` plants its bug in this build too.
+
+`guest/host.cpp` loads the program and serves its files, clock and time zone from the Mac. Its threads, like the ROM's
+prefetching, take turns, only switching when one waits, so a run goes the same way every time. It reads the ROM from its
+file, there being no thread to load it into memory on, which doesn't change what the game sees. The window, Wi-Fi and
+`audio` need the Mac's build, as do `clear` and `set`, which need its changes to the core. It needs devkitPPC, and builds in
+`$TMPDIR/noodsu-jit-test-gcc`, or `JIT_TEST_GCC_BUILD`.
+
+What's still left to the console is the CPU itself: Unicorn's PowerPC 750 keeps its caches coherent and has no timing, so
+generated code that isn't flushed to the instruction cache, and anything to do with speed, still only show there.
 
 ### Comparing with a release
 
