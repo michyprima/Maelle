@@ -14,7 +14,9 @@ def load(path):
     data = open(path, 'rb').read()
     at = data.find(struct.pack('<2I', D['SPED_MAGIC0'], D['SPED_MAGIC1']))
     if at < 0 or at % 4: sys.exit(f"{path} doesn't have the test's results")
-    return struct.unpack_from('<%dI' % D['S_TOTAL'], data, at)
+    # Results saved before the multiplies were measured are shorter, and read as if those weren't run
+    words = list(struct.unpack_from('<%dI' % (min(len(data) - at, D['S_TOTAL'] * 4) // 4), data, at))
+    return words + [D['NOT_RUN']] * (D['S_TOTAL'] - len(words))
 
 def times(w, at):
     # The least of a measurement's times, and all of them when they aren't the same
@@ -73,6 +75,23 @@ def describe(w):
     bios, text = times(w, D['S_RESULTS7'] + D['M7_BIOS'] * R)
     empty = times(w, D['S_RESULTS7'])[0]
     lines.append(f'    BIOS wait of {LOOPS}: {text}, {(bios - empty) / LOOPS:.3f} a turn')
+
+    # A multiply takes 1 cycle and m more from the multiplier, plus 1 for a long one and 1 for accumulating; m is worked
+    # out in cycles of the loop in its WRAM, which takes 4 a turn, so an emulator counting each cycle as two still gets m
+    loop = times(w, D['S_RESULTS7'] + D['KIND_LOOP'] * R)[0]
+    names = (('MUL', 1), ('UMULL', 2), ('UMLAL', 3), ('SMULL', 2))
+    values = [D[f'MULTIPLIER{i}'] for i in range(D['MULTIPLIERS'])]
+    if loop is not None and times(w, D['S_RESULTS7'] + D['M7_MULTIPLY'] * R)[0] is not None:
+        cycle = (loop - empty) / LOOPS / 4
+        lines.append('    multiplies in its WRAM, m for each Rs: ' + ' '.join('%08X' % v for v in values))
+        for i, (name, extra) in enumerate(names):
+            ms = []
+            for j in range(len(values)):
+                t, text = times(w, D['S_RESULTS7'] + (D['M7_MULTIPLY'] + i * len(values) + j) * R)
+                ms.append(f'{(t - loop) / LOOPS / cycle - extra:8.2f}')
+            lines.append(f'        {name:5}' + ' '.join(ms))
+    else:
+        lines.append('    multiplies: not run')
     return lines
 
 a = describe(load(sys.argv[1]))

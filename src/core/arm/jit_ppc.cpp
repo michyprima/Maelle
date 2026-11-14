@@ -659,6 +659,15 @@ void Jit::emitStubs(PpcEmitter &e) {
     e.rlwinm(6, 6, 29, 3, 31);
     e.blr();
 
+    // The same from the unsigned value of r4, for UMULL and UMLAL, which only finish early when the top bytes are zero
+    codeMultiplyCyclesUnsigned = e.here();
+    e.ori(6, 4, 1);
+    e.cntlzw(6, 6);
+    e.subfic(6, 6, 32);
+    e.addi(6, 6, 7);
+    e.rlwinm(6, 6, 29, 3, 31);
+    e.blr();
+
     // MSR to the CPSR with the value in r4, for the bottom byte and then also the top one
     // Only the same mode and THUMB state with no interrupt to take are done here, since the interpreter has the rest
     // User mode can only change the top byte, and bit 4 of the mode is always set
@@ -2034,16 +2043,12 @@ void Jit::emitMultiply(PpcEmitter &e, uint32_t op, uint32_t pc) {
         e.stw(9, offCpsr, R_ARM);
     }
 
-    // On the ARM7, the unsigned ones always take the longest, since the interpreter's timing check is always true for them
-    if (!arm7) {
-        e.li(3, flags ? 5 : 3);
-    }
-    else if (op & BIT(22)) {
-        e.call(codeMultiplyCycles);
+    if (arm7) {
+        e.call((op & BIT(22)) ? codeMultiplyCycles : codeMultiplyCyclesUnsigned);
         e.addi(3, 6, accumulate ? 3 : 2);
     }
     else {
-        e.li(3, accumulate ? 7 : 6);
+        e.li(3, flags ? 5 : 3);
     }
 }
 

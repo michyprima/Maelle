@@ -7,12 +7,13 @@
 
 .section .text.speed, "ax"
 
-@ r0: the function, r1: its argument
+@ r0: the function, r1: its argument, r2: a second one, for the multiplies
 @ Returns timer 0's count, with timer 1's count of its overflows in the top half. Interrupts must be off
 .global speed_time7
 speed_time7:
     push {r4-r5, lr}
     mov r5, r0
+    mov r12, r2
     mov r3, #0
     ldr r4, =0x04000100
     strh r3, [r4, #2]
@@ -23,6 +24,7 @@ speed_time7:
     strh r2, [r4, #6]
     mov r2, #0x80
     mov r0, r1
+    mov r1, r12
     strh r2, [r4, #2]
     mov lr, pc
     bx r5
@@ -77,3 +79,21 @@ speed_word_\name:
 PLACE wram, .text.speed_wram
 PLACE twl, .twl.speed
 PLACE main, .main.speed
+
+@ A multiply in a loop, in its WRAM, r0: the turns, r1: the multiplier, Rs
+.macro MULTIPLY name, instruction:vararg
+.section .text.speed_wram, "ax"
+.global speed_\name
+speed_\name:
+    mov r12, #3
+1:
+    \instruction
+    subs r0, r0, #1
+    bne 1b
+    bx lr
+.endm
+
+MULTIPLY mul, mul r2, r12, r1
+MULTIPLY umull, umull r2, r3, r12, r1
+MULTIPLY umlal, umlal r2, r3, r12, r1
+MULTIPLY smull, smull r2, r3, r12, r1

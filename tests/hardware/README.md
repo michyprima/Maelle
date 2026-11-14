@@ -196,8 +196,9 @@ A real DSi settled most of it, and NooDS U now does the same:
 
 `build/noodsu-speed.nds` is a seventh ROM, for a DS or a DSi in either mode; DSi mode is the one that matters. It settles
 how fast each CPU really runs, which decides races between them: DSi Sound's menu only loads if the ARM7 answers a
-command before the ARM9, switching to a thread that has never run, gets its next one out. NooDS U counts no time for code
-and data that aren't in the ARM9's caches, and counts each of the ARM7's cycles as two outside its BIOS.
+command before the ARM9, switching to a thread that has never run, gets its next one out. When it was written, NooDS U
+counted no time for code and data that aren't in the ARM9's caches, and counted each of the ARM7's cycles as two outside
+its BIOS; what it does now is at the end of the results below.
 
 It runs by itself in under a second, shows the least ticks of each measurement and saves `noodsu-speedtest.bin` like the
 other ROMs. To see what it found, and how that compares with NooDS U:
@@ -222,6 +223,12 @@ A measurement includes the call, which the empty one gives by itself.
 - The ARM7 runs that loop, and the loop with a read or a write of a word next to it, in its own WRAM, in the DSi's new
   WRAM, where DSi software has most of its ARM7 code, and in main RAM. Its timer ticks are its cycles, so the ticks a
   turn are the cycles each takes. The ARM9 sleeps meanwhile, so it leaves main RAM alone.
+- The ARM7 also runs that loop in its WRAM with a `MUL`, `UMULL`, `UMLAL` or `SMULL` in it, each with six multipliers in
+  Rs. A multiply takes 1 cycle and m more, plus 1 for a long one and 1 for accumulating, where m is 1 to 4 from how many
+  of Rs's top bytes it can skip. `00000050`, `00001234`, `00123456` and `12345678` give 1 to 4 when zero top bytes count,
+  and `FFFFFFF0` and `FFFFF000` give 1 and 2 when top bytes of all ones count too, as they do for `MUL` and `SMULL`, but
+  4 if only zeros count, as NooDS U has it for `UMULL` and `UMLAL`. `speed.py` shows m for each; the ARM9 doesn't show
+  them on screen.
 
 The block also holds SCFG_CLK and SCFG_EXT as each CPU found them, and the ARM9's control register and regions, to
 show the caches were on and covered the code and data.
@@ -235,7 +242,14 @@ On a DSi in DSi mode (`speed-realdsi.bin`, from the first version, which ran 128
 - That run's "in the cache" times for the lines are as slow as the misses: with twice as many lines as sets, each line
   pushed out the one sharing its set, so the cache replaces a set's lines by turns even while others are free.
 
-NooDS U counts nothing for a miss, runs the ARM9 at 67MHz, and counts 8 for the ARM7's loop wherever it is.
+A later run on the same DSi with the multiplies (`speed-realdsi-multiply.bin`) gives the same ARM7 loops, and m of 1 to 4
+for `MUL` and `SMULL` with top bytes of zeros or all ones, but for `UMULL` and `UMLAL` only with zeros: 4 for `FFFFFFF0`
+and `FFFFF000`. NooDS U gives the same m for all 24.
+
+NooDS U, run with `game.sh` in DSi mode, counts a line of code that isn't in the cache like the DSi, 656ns more a line,
+but nothing for data, and nothing more with the code cache off. Its ARM9 loop takes 2 ticks a turn, where the DSi's
+takes 1. The ARM7's loop takes 4 cycles a turn in its WRAM and new WRAM, as on the DSi, with 3 more for a read and 2 for
+a write, and 8 in main RAM, with 6 more for a read and 4 for a write.
 
 ## Building it
 

@@ -644,9 +644,9 @@ int Interpreter::umull(uint32_t opcode) { // UMULL RdLo,RdHi,Rm,Rs
     uint64_t res = uint64_t(op2) * op3;
     *op0 = res, *op1 = res >> 32;
 
-    // Calculate timing
+    // Calculate timing; unsigned multiplies only finish early when the top bytes are zero, not when they're all ones
     if (!arm7) return 3;
-    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
+    int m; for (m = 1; m < 4 && op3 >= (1u << (m << 3)); m++);
     return m + 2;
 }
 
@@ -660,9 +660,9 @@ int Interpreter::umlal(uint32_t opcode) { // UMLAL RdLo,RdHi,Rm,Rs
     res += (uint64_t(*op1) << 32) | *op0;
     *op0 = res, *op1 = res >> 32;
 
-    // Calculate timing
+    // Calculate timing; unsigned multiplies only finish early when the top bytes are zero, not when they're all ones
     if (!arm7) return 3;
-    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
+    int m; for (m = 1; m < 4 && op3 >= (1u << (m << 3)); m++);
     return m + 3;
 }
 
@@ -736,9 +736,9 @@ int Interpreter::umulls(uint32_t opcode) { // UMULLS RdLo,RdHi,Rm,Rs
     *op0 = res, *op1 = res >> 32;
     cpsr = (cpsr & ~0xC0000000) | (*op1 & BIT(31)) | ((res == 0) << 30);
 
-    // Calculate timing
+    // Calculate timing; unsigned multiplies only finish early when the top bytes are zero, not when they're all ones
     if (!arm7) return 5;
-    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
+    int m; for (m = 1; m < 4 && op3 >= (1u << (m << 3)); m++);
     return m + 2;
 }
 
@@ -753,9 +753,9 @@ int Interpreter::umlals(uint32_t opcode) { // UMLALS RdLo,RdHi,Rm,Rs
     *op0 = res, *op1 = res >> 32;
     cpsr = (cpsr & ~0xC0000000) | (*op1 & BIT(31)) | ((res == 0) << 30);
 
-    // Calculate timing
+    // Calculate timing; unsigned multiplies only finish early when the top bytes are zero, not when they're all ones
     if (!arm7) return 5;
-    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
+    int m; for (m = 1; m < 4 && op3 >= (1u << (m << 3)); m++);
     return m + 3;
 }
 

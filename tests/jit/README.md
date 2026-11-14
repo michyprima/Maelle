@@ -78,8 +78,8 @@ program counters, then hashes of RAM and WRAM, and every way is compared with th
 - `threads` to run with the 2D threads drawing behind the emulator, as fast 2D does on the console; their timing varies, so
   runs with it aren't expected to match each other
 - `vramstress` to run only a test of VRAM reads from another thread during VRAM bank changes, which ignores the frame count
-  and exits as soon as it's done, or crashes if a read can follow a mapping that's only partly there. Planted bug 111 removes
-  what stops that, so `--mutate 111` with this option should crash; `mutate.sh` doesn't run it, since it runs the cases above. Planted bug 112 breaks ADPCM sound for both the interpreter and generated code, so check it by comparing an `audio` run against one without it
+  and exits as soon as it's done, or crashes if a read can follow a mapping that's only partly there. Planted bug 112 removes
+  what stops that, so `--mutate 112` with this option should crash; `mutate.sh` doesn't run it, since it runs the cases above. Planted bug 113 breaks ADPCM sound for both the interpreter and generated code, so check it by comparing an `audio` run against one without it
 - `romtest=file` to run `tests/rom`'s ROM, saving its results there and stopping when it's done; it needs the registers the
   ROM talks to, so build with `JIT_TEST_CFLAGS=-DROM_TEST`. The frames differ from run to run, since the ROM times itself
   with the real clock, so compare the `C` and `S` lines of the files instead

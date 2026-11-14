@@ -15,7 +15,7 @@
 #define S_LINES 27 // LINES and DLINES, which were 128 and 64 in the first results saved, from before this was kept
 #define S_RESULTS9 32 // M9_COUNT measurements of REPEATS words
 #define S_RESULTS7 84 // M7_COUNT measurements of REPEATS words
-#define S_TOTAL 136
+#define S_TOTAL 232 // 136 in results saved before the multiplies were measured
 
 #define SPED_MAGIC0 0x44455053 // SPED
 #define SPED_MAGIC1 0x54534554 // TEST
@@ -60,7 +60,23 @@
 #define KIND_STORE 3
 #define KINDS 4
 #define M7_BIOS 12
-#define M7_COUNT 13
+// Then a loop of one multiply as well, in its WRAM, for each multiply and multiplier, counted as M7_MULTIPLY +
+// multiply * MULTIPLIERS + multiplier. The multiplier, Rs, is what decides the time: the values tell apart finishing
+// early when its top bytes are zero and when they're all ones, which is what MUL and SMULL do, but not UMULL and UMLAL
+#define M7_MULTIPLY 13
+#define MULTIPLY_MUL 0
+#define MULTIPLY_UMULL 1
+#define MULTIPLY_UMLAL 2
+#define MULTIPLY_SMULL 3
+#define MULTIPLIES 4
+#define MULTIPLIER0 0x00000050
+#define MULTIPLIER1 0x00001234
+#define MULTIPLIER2 0x00123456
+#define MULTIPLIER3 0x12345678
+#define MULTIPLIER4 0xFFFFFFF0
+#define MULTIPLIER5 0xFFFFF000
+#define MULTIPLIERS 6
+#define M7_COUNT 37
 
 // What the ARM9 asks of the ARM7, one message, as in the shared WRAM test
 #define COMMAND_RUN 1 // Record SCFG and where the loops are, then take every measurement

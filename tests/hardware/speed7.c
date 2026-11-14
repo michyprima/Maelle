@@ -3,14 +3,21 @@
 #include <nds.h>
 #include "speed.h"
 
-unsigned speed_time7(void (*function)(unsigned), unsigned argument);
-void speed_bios7(unsigned count);
+unsigned speed_time7(void (*function)(unsigned, unsigned), unsigned argument, unsigned multiplier);
+void speed_bios7(unsigned count, unsigned);
 #define PLACE(name) \
-    void speed_empty_##name(unsigned), speed_loop_##name(unsigned), speed_load_##name(unsigned), speed_store_##name(unsigned);
+    void speed_empty_##name(unsigned, unsigned), speed_loop_##name(unsigned, unsigned), speed_load_##name(unsigned, unsigned), \
+        speed_store_##name(unsigned, unsigned);
 PLACE(wram) PLACE(twl) PLACE(main)
 #undef PLACE
+void speed_mul(unsigned, unsigned), speed_umull(unsigned, unsigned), speed_umlal(unsigned, unsigned), speed_smull(unsigned, unsigned);
 
-static void (*const functions[PLACES][KINDS])(unsigned) = {
+static void (*const multiplies[MULTIPLIES])(unsigned, unsigned) = { speed_mul, speed_umull, speed_umlal, speed_smull };
+static const unsigned multipliers[MULTIPLIERS] = {
+    MULTIPLIER0, MULTIPLIER1, MULTIPLIER2, MULTIPLIER3, MULTIPLIER4, MULTIPLIER5
+};
+
+static void (*const functions[PLACES][KINDS])(unsigned, unsigned) = {
     { speed_empty_wram, speed_loop_wram, speed_load_wram, speed_store_wram },
     { speed_empty_twl, speed_loop_twl, speed_load_twl, speed_store_twl },
     { speed_empty_main, speed_loop_main, speed_load_main, speed_store_main },
@@ -19,12 +26,12 @@ static void (*const functions[PLACES][KINDS])(unsigned) = {
 static Thread testThread;
 alignas(8) static u8 testStack[2048];
 
-static void measure(volatile unsigned *out, void (*function)(unsigned)) {
+static void measure(volatile unsigned *out, void (*function)(unsigned, unsigned), unsigned multiplier) {
     for (int i = 0; i < REPEATS; i++) {
         ArmIrqState psr = armIrqLockByPsr();
         unsigned ime = REG_IME;
         REG_IME = 0;
-        out[i] = speed_time7(function, LOOPS);
+        out[i] = speed_time7(function, LOOPS, multiplier);
         REG_IME = ime;
         armIrqUnlockByPsr(psr);
     }
@@ -39,11 +46,15 @@ static void run(volatile unsigned *block) {
         block[S_ADDR7 + place] = there ? (unsigned)functions[place][KIND_LOOP] : NOT_RUN;
         for (int kind = 0; kind < KINDS; kind++) {
             volatile unsigned *out = &block[S_RESULTS7 + (place * KINDS + kind) * REPEATS];
-            if (there) measure(out, functions[place][kind]);
+            if (there) measure(out, functions[place][kind], 0);
             else for (int i = 0; i < REPEATS; i++) out[i] = NOT_RUN;
         }
     }
-    measure(&block[S_RESULTS7 + M7_BIOS * REPEATS], speed_bios7);
+    measure(&block[S_RESULTS7 + M7_BIOS * REPEATS], speed_bios7, 0);
+    for (int multiply = 0; multiply < MULTIPLIES; multiply++)
+        for (int multiplier = 0; multiplier < MULTIPLIERS; multiplier++)
+            measure(&block[S_RESULTS7 + (M7_MULTIPLY + multiply * MULTIPLIERS + multiplier) * REPEATS], multiplies[multiply],
+                multipliers[multiplier]);
 }
 
 static int runTest(void *arg) {
