@@ -260,6 +260,9 @@ private:
     void execute(JitBlock *block, const uint32_t *limit);
     int interleave(const uint32_t *limit);
     static int interleaveCall(Jit *jit, const uint32_t *limit);
+    bool pollsGxStat(JitBlock *block, size_t index);
+    uint32_t skipPoll(uint32_t load, uint32_t test, uint32_t branch, uint32_t cycles, uint32_t next);
+    static uint32_t skipPollCall(Jit *jit, uint32_t load, uint32_t test, uint32_t branch, uint32_t cycles, uint32_t next);
     static void writeCpsrCall(Interpreter *arm, uint32_t opcode, uint32_t value);
     static void restoreCpsrCall(Interpreter *arm, uint32_t before);
 
@@ -303,6 +306,7 @@ private:
     void emitMsr(PpcEmitter &e, uint32_t op, uint32_t pc);
     void emitBranchReg(PpcEmitter &e, uint32_t op, uint32_t pc);
     void emitJump(PpcEmitter &e, int rs, bool interwork);
+    void emitPollSkip(PpcEmitter &e, JitBlock *block, size_t index);
     void readReg(PpcEmitter &e, int rt, int reg, uint32_t pc);
     void writeReg(PpcEmitter &e, int rs, int reg);
     void clearCache();

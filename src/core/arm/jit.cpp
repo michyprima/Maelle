@@ -679,6 +679,49 @@ void Jit::restoreCpsrCall(Interpreter *arm, uint32_t before) {
     arm->restoreCpsr(before);
 }
 
+bool Jit::pollsGxStat(JitBlock *block, size_t index) {
+    // Check if a block's instructions from an index are a loop that only reads a register and tests it until it changes,
+    // like games waiting on GXSTAT for the geometry engine to finish: LDR Rd,[Rn,#imm], then TST/TEQ/CMP/CMN Rd,#imm,
+    // then a conditional branch back to the load; the block can go on with what runs after the loop
+    if (arm7 || block->thumb || halfCycles || testing || block->instrs.size() < index + 3) return false;
+    uint32_t load = block->instrs[index].opcode, test = block->instrs[index + 1].opcode, branch = block->instrs[index + 2].opcode;
+    uint32_t rd = (load >> 12) & 0xF, rn = (load >> 16) & 0xF;
+    if ((load & 0xFF700000) != 0xE5100000 || rd == rn || rd == 15 || rn == 15) return false;
+    if ((test & 0xFF90F000) != 0xE3100000 || ((test >> 16) & 0xF) != rd) return false;
+    if ((branch & 0x0F000000) != 0x0A000000 || (branch >> 28) >= 0xE) return false;
+    uint32_t address = block->address + index * 4;
+    return address + 16 + ((int32_t)(branch << 8) >> 6) == address;
+}
+
+uint32_t Jit::skipPoll(uint32_t load, uint32_t test, uint32_t branch, uint32_t cycles, uint32_t next) {
+    // Called at the start of a loop that pollsGxStat found, with the global cycles and when something else has to run
+    // GXSTAT only changes when a task runs, or when the CPU writes, which the loop doesn't, so while the loop waits on
+    // it, every time around reads the same value and leaves the same register and flags; skip as many times around as
+    // finish before something else has to run, and return their cycles. The time around that reaches that point still
+    // runs, so it stops in the same place
+    Interpreter &arm = core->interpreter[0];
+    uint32_t offset = load & 0xFFF;
+    if (*arm.registers[(load >> 16) & 0xF] + ((load & BIT(23)) ? offset : -offset) != 0x4000600 || halfCycles) return 0;
+
+    // Run the load and the test the interpreter's way, which is what each time around leaves
+    uint32_t *rd = arm.registers[(load >> 12) & 0xF];
+    uint32_t value = *rd, cpsr = arm.cpsr;
+    uint32_t loop = (arm.*Interpreter::armInstrs[((load >> 16) & 0xFF0) | ((load >> 4) & 0xF)])(load);
+    loop += (arm.*Interpreter::armInstrs[((test >> 16) & 0xFF0) | ((test >> 4) & 0xF)])(test) + 3;
+    if (Interpreter::condition[((branch >> 24) & 0xF0) | (arm.cpsr >> 28)] && next > cycles && next - 1 - cycles >= loop)
+        return (next - 1 - cycles) / loop * loop;
+
+    // Otherwise leave it all for the loop to do
+    *rd = value;
+    arm.cpsr = cpsr;
+    return 0;
+}
+
+uint32_t Jit::skipPollCall(Jit *jit, uint32_t load, uint32_t test, uint32_t branch, uint32_t cycles, uint32_t next) {
+    // Entry point for generated code
+    return jit->skipPoll(load, test, branch, cycles, next);
+}
+
 int Jit::interleaveCall(Jit *jit, const uint32_t *limit) {
     // Entry point for generated code
     return jit->interleave(limit);

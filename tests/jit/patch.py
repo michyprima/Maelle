@@ -67,6 +67,7 @@ path = root + '/arm/jit_ppc.cpp'
 text = open(path).read()
 text = re.sub(r'static_assert\(sizeof\(JitCacheEntry\) == 16[^\n]*\n', '', text)
 text = text.replace('e.call((void*)&Jit::interleaveCall);', 'e.call((void*)(uintptr_t)0x3F2000);')
+text = text.replace('e.call((void*)&Jit::skipPollCall);', 'e.call((void*)(uintptr_t)0x3F2008);')
 text = text.replace('    emitStubs(e);\n    codeStart =', '    rigOverride(*this);\n    emitStubs(e);\n    codeStart =')
 text = text.replace('#include "../core.h"', '#define private public\n#include "../core.h"\n#undef private\nvoid rigOverride(Jit &jit);', 1)
 

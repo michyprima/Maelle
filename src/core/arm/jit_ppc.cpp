@@ -2555,6 +2555,20 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
         e.stw(R_PC, offPc, R_ARM);
 }
 
+void Jit::emitPollSkip(PpcEmitter &e, JitBlock *block, size_t index) {
+    // A loop that waits on GXSTAT skips ahead each time it starts, after the check that its own jump back skips
+    if (!pollsGxStat(block, index)) return;
+    e.stw(R_CYCLES, 0, R_GLOBAL);
+    e.loadConst(3, (uint32_t)(uintptr_t)this);
+    e.loadConst(4, block->instrs[index].opcode);
+    e.loadConst(5, block->instrs[index + 1].opcode);
+    e.loadConst(6, block->instrs[index + 2].opcode);
+    e.mr(7, R_CYCLES);
+    e.mr(8, R_NEXT);
+    e.call((void*)&Jit::skipPollCall);
+    e.add(R_CYCLES, R_CYCLES, 3);
+}
+
 void *Jit::generate(JitBlock *block) {
     if (!codeArea) return nullptr;
 
@@ -2589,6 +2603,8 @@ void *Jit::generate(JitBlock *block) {
     int lines = fetchLines(block, 0, false, address);
     if (lines) emitFetch(e, address, lines, pc);
     block->afterFetch = (lines == 1) ? (uint8_t*)e.here() - codePtr : 0;
+
+    emitPollSkip(e, block, 0);
 
     // Set the program counter register at the start, then step it as instructions need it
     // Record where each instruction starts after stepping, so other blocks can jump into the middle
@@ -2640,8 +2656,8 @@ void *Jit::generate(JitBlock *block) {
 }
 
 // The most host code an entry point into the middle of a block takes, which is with a check of the code cache for two
-// lines and their fetches
-static const size_t ENTRY_SIZE = 84;
+// lines and their fetches, and a loop's skip ahead
+static const size_t ENTRY_SIZE = 144;
 
 void *Jit::generateEntry(JitBlock *block, JitBlock *host, size_t index) {
     // Generate a small entry point into the middle of another block's code, instead of compiling it again
@@ -2664,6 +2680,7 @@ void *Jit::generateEntry(JitBlock *block, JitBlock *host, size_t index) {
     fetchPaths.clear();
     if (lines) emitFetch(e, address, lines, pc);
     block->afterFetch = (lines == 1) ? (uint8_t*)e.here() - codePtr : 0;
+    emitPollSkip(e, host, index);
     e.loadConst(R_PC, pc - host->entriesBehind[index]);
     if (host->entriesCycles[index]) e.li(R_BATCH, -int(host->entriesCycles[index])); // What the run's check adds for before here
     e.b((uint8_t*)host->code + host->entries[index]);
