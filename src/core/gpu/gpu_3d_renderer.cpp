@@ -631,9 +631,10 @@ void Gpu3DRenderer::finishScanline(int line) {
     }
 }
 
-uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon) {
+uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon, bool palette) {
     // Hash the data a polygon's texture is decoded from, so a hardware renderer can tell if a decoded copy is current
-    // This covers the texel data, the palette, and for compressed textures, their block data and block palettes
+    // This is either the texel data, or the palette, which for compressed textures includes their block data and the
+    // block palettes it picks; the two are hashed apart, since games that animate palettes change only those
     static const uint8_t texelBits[] = { 0, 8, 2, 4, 8, 2, 8, 16 };
     static const uint16_t paletteSizes[] = { 0, 64, 8, 32, 512, 0, 16, 0 };
     uint64_t hash = 14695981039346656037ULL;
@@ -667,7 +668,10 @@ uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon) {
     };
 
     uint32_t texels = polygon->sizeS * polygon->sizeT;
-    addTexture(polygon->textureAddr, texels * texelBits[polygon->textureFmt] / 8);
+    if (!palette) {
+        addTexture(polygon->textureAddr, texels * texelBits[polygon->textureFmt] / 8);
+        return hash;
+    }
     addPalette(polygon->paletteAddr, paletteSizes[polygon->textureFmt]);
     if (polygon->textureFmt == 5) {
         // Compressed textures have 2 bytes per 4x4 block in slot 1, each choosing a palette of up to 4 colors
@@ -728,6 +732,66 @@ void Gpu3DRenderer::decodeTexture(_Polygon *polygon, uint32_t *out, int pitch) {
                 uint8_t byte = *src++;
                 for (uint32_t k = 0; k < perByte; k++)
                     row[s + k] = table[(byte >> (k * bits)) & mask];
+            }
+        }
+        return;
+    }
+
+    if (fmt == 5 && (polygon->textureAddr >> 17) == ((polygon->textureAddr + polygon->sizeS * polygon->sizeT / 4 - 1) >> 17)) {
+        // Compressed textures are decoded a 4x4 block at a time, with the colors readTexture gives for its 4 indices
+        uint8_t *data = getTexture(polygon->textureAddr);
+        uint32_t blockAddr = 0x20000 + (polygon->textureAddr % 0x20000) / 2 + ((polygon->textureAddr / 0x20000 == 2) ? 0x10000 : 0);
+        uint8_t *blocks = getTexture(blockAddr);
+        int tilesS = polygon->sizeS / 4;
+        for (int tile = 0; tile < tilesS * (polygon->sizeT / 4); tile++) {
+            uint32_t colors[4] = {};
+            uint8_t *palette = nullptr;
+            uint16_t palBase = 0;
+            if (data && blocks) {
+                palBase = U8TO16(blocks, tile * 2);
+                palette = getPalette(polygon->paletteAddr + (palBase & 0x3FFF) * 4);
+            }
+            if (palette) {
+                uint32_t mode = (palBase & 0xC000) >> 14;
+                for (int i = 0; i < 4; i++)
+                    colors[i] = rgba5ToRgba6((0x1F << 15) | U8TO16(palette, i * 2));
+                if (mode == 0) {
+                    colors[3] = 0;
+                }
+                else if (mode == 1) {
+                    colors[2] = interpolateColor(colors[0], colors[1], 0, 1, 2);
+                    colors[3] = 0;
+                }
+                else if (mode == 3) {
+                    uint32_t c1 = colors[0], c2 = colors[1];
+                    colors[2] = interpolateColor(c1, c2, 0, 3, 8);
+                    colors[3] = interpolateColor(c1, c2, 0, 5, 8);
+                }
+            }
+            for (int i = 0; i < 4; i++)
+                colors[i] = expand(colors[i]);
+            uint32_t *block = &out[(tile / tilesS) * 4 * pitch + (tile % tilesS) * 4];
+            for (int r = 0; r < 4; r++) {
+                uint8_t byte = data ? data[tile * 4 + r] : 0;
+                for (int k = 0; k < 4; k++)
+                    block[r * pitch + k] = colors[(byte >> (k * 2)) & 0x03];
+            }
+        }
+        return;
+    }
+
+    if (fmt == 7) {
+        // Direct color textures are read from one pointer, as readTexture does
+        uint8_t *data = getTexture(polygon->textureAddr);
+        for (int t = 0; t < polygon->sizeT; t++) {
+            uint32_t *row = &out[t * pitch];
+            for (int s = 0; s < polygon->sizeS; s++) {
+                if (!data) {
+                    row[s] = expand(0);
+                    continue;
+                }
+                uint16_t color = U8TO16(data, (t * polygon->sizeS + s) * 2);
+                row[s] = expand(rgba5ToRgba6(((color & BIT(15)) ? (0x1F << 15) : 0) | color));
             }
         }
         return;

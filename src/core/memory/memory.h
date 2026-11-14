@@ -63,6 +63,7 @@ public:
     uint8_t *tex3D[4] = {};
     uint8_t *pal3D[6] = {};
     volatile uint32_t textureMapChanges = 0; // Counts when 3D texture data might have changed, which needs a remap
+    volatile uint32_t paletteMapChanges = 0; // The same for 3D texture palettes
 
     Memory(Core *core);
     ~Memory();

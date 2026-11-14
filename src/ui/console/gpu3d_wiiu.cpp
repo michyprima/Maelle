@@ -147,9 +147,9 @@ private:
     // Decoded textures are kept between frames, and decoded again when the data they came from changes
     struct CachedTexture {
         GX2Texture *texture;
-        uint64_t hash;
+        uint64_t texelHash, paletteHash;
         uint32_t frame;
-        uint32_t mapChanges; // Texture mapping changes when its data was last checked
+        uint32_t texelChanges, paletteChanges; // Texture and palette mapping changes when its data was last checked
     };
     std::unordered_map<uint64_t, CachedTexture> textures;
     std::vector<GX2Texture*> updated;
@@ -496,15 +496,22 @@ GX2Texture *Gpu3DWiiU::lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon,
     CachedTexture &cached = textures[key];
     if (cached.texture && cached.frame == frameCount) return cached.texture;
 
-    // Check the texture once per frame, which only takes hashing its data if the texture mappings changed, and keep the
-    // decoded copy if the data is the same; the count is read first, so a change during this gets checked next frame
+    // Check the texture once per frame, which only takes hashing its data if the texture or palette mappings changed, and
+    // keep the decoded copy if the data is the same; the counts are read first, so a change during this gets checked next
+    // frame. Texels are only hashed again after a texture mapping change, which also covers compressed textures' block
+    // data, read with their palettes
     cached.frame = frameCount;
-    uint32_t mapChanges = renderer->getCore()->memory.textureMapChanges;
-    if (cached.texture && cached.mapChanges == mapChanges) return cached.texture;
-    cached.mapChanges = mapChanges;
-    uint64_t hash = renderer->hashTexture(polygon);
-    if (cached.texture && cached.hash == hash) return cached.texture;
-    cached.hash = hash;
+    Memory &memory = renderer->getCore()->memory;
+    uint32_t texelChanges = memory.textureMapChanges, paletteChanges = memory.paletteMapChanges;
+    bool texelsChanged = !cached.texture || cached.texelChanges != texelChanges;
+    if (!texelsChanged && cached.paletteChanges == paletteChanges) return cached.texture;
+    cached.texelChanges = texelChanges;
+    cached.paletteChanges = paletteChanges;
+    uint64_t texelHash = texelsChanged ? renderer->hashTexture(polygon, false) : cached.texelHash;
+    uint64_t paletteHash = renderer->hashTexture(polygon, true);
+    if (cached.texture && cached.texelHash == texelHash && cached.paletteHash == paletteHash) return cached.texture;
+    cached.texelHash = texelHash;
+    cached.paletteHash = paletteHash;
 
     // Create the texture the first time
     GX2Texture *texture = cached.texture;

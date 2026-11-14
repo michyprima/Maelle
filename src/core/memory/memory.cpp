@@ -857,8 +857,11 @@ void Memory::updateVram(bool all) {
 
     // Banks can't be written while they're mapped for 3D, so texture data stays the same until these mappings change
     // Loading a state replaces the data without necessarily changing them
-    if (all || memcmp(beforeTex, tex3D, sizeof(tex3D)) || memcmp(beforePal, pal3D, sizeof(pal3D)))
+    // Palettes are counted apart, since games that animate them remap only those, every frame
+    if (all || memcmp(beforeTex, tex3D, sizeof(tex3D)))
         textureMapChanges = textureMapChanges + 1;
+    if (all || memcmp(beforePal, pal3D, sizeof(pal3D)))
+        paletteMapChanges = paletteMapChanges + 1;
 }
 
 template <typename T> T Memory::readFallback(bool arm7, uint32_t address) {
