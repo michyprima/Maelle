@@ -41,7 +41,8 @@ enum { NK_NONE, NK_ALU, NK_BRANCH, NK_TRANSFER, NK_BRANCH_REG, NK_HALF, NK_BLOCK
     NK_COPROCESSOR, NK_MSR, NK_BLX, NK_TRANSFER_PC, NK_ALU_PC, NK_DSP, NK_THUMB_BRANCH = 100 };
 
 // Addresses in the emulator
-static const uint32_t ARM_STATE = 0x10000, CACHE_FLAG = 0x50000, CACHE = 0x50010, EVENTS = 0x70000, LIMIT = 0x71000,
+// The code changed flag is the size of a cache entry before the cache, which is 32 bytes on a Mac for its 64-bit pointers
+static const uint32_t ARM_STATE = 0x10000, CACHE_FLAG = 0x50000, CACHE = CACHE_FLAG + sizeof(JitCacheEntry), EVENTS = 0x70000, LIMIT = 0x71000,
     GLOBAL = 0x72000, STACK = 0x7F000, END = 0x80000, READ_MAP = 0x400000, WRITE_MAP = 0x800000,
     FAKE = 0x3F0000, FAKE_MEMORY = 0x3F0800, FAKE_HANDLER = 0x3F1000, FAKE_INTERLEAVE = 0x3F2000, FAKE_MSR = 0x3F1800, FAKE_RESTORE = 0x3F1840, MODE_BANKS = 0x3F3000, MATH = 0x3F3800, DTCM_REG = 0x3F4000, CODE = 0x10000000;
 // The math registers as a big-endian host lays them out: three 64-bit values, the two control registers and the dirty flags
@@ -53,7 +54,7 @@ static const uint32_t WINDOW = 0x02100000, WINDOW_SIZE = 0x40000, DATA_START = W
     CODE_START = WINDOW + 0x20000;
 static const uint32_t START_CYCLES = 0x1000, FAKE_HANDLER_CYCLES = 2;
 
-enum { MEMORY_MAPPED, MEMORY_SLOW, MEMORY_ODD_PAGES };
+enum { MEMORY_MAPPED, MEMORY_SLOW, MEMORY_ODD_PAGES, MEMORY_NO_WRITES }; // The last is like pages with compiled code in them
 enum { STOP_NEVER, STOP_ALWAYS, STOP_AT, STOP_SCHEDULED, STOP_DEADLINE };
 
 static Core *core;
@@ -86,6 +87,8 @@ struct FakeCall { uint32_t op, pc; bool jump; uint32_t target; };
 static struct {
     int cpu, stopMode, stopAfter, stops, memoryMode;
     bool setFlagOnSlowStore, failed, scheduled;
+    bool changePending; // Whether a store changed code and generated code hasn't stopped for it yet
+    uint32_t changedAt; // The program counter register's value at that store
     std::vector<Snapshot> trace;
     size_t traceAt;
     std::vector<FakeCall> fakes;
@@ -245,7 +248,12 @@ static void hookFake(uc_engine *, uint64_t address, uint32_t, void *) {
             case 5: { uint16_t h = value; uc_mem_write(uc, target & ~1, &h, 2); break; }
         }
         bool store = type == 2 || type == 3 || type == 5;
-        if (store && now.setFlagOnSlowStore) writeBe(CACHE_FLAG, 1);
+        if (store && now.setFlagOnSlowStore) {
+            // Code changing has to stop the block at this instruction's check, since what follows might be stale
+            writeBe(CACHE_FLAG, 1);
+            now.changePending = true;
+            now.changedAt = reg(UC_PPC_REG_0 + 25);
+        }
         scheduleEvent();
         clobberVolatile(true);
         setReg(UC_PPC_REG_3, store ? 0xDEAD0003 : result);
@@ -331,6 +339,9 @@ static void hookFake(uc_engine *, uint64_t address, uint32_t, void *) {
             }
         }
         if (!found) fail("stop at PC %08X, cycles %u, doesn't follow any instruction", got.usr[15], cycles - START_CYCLES);
+        if (now.changePending && got.usr[15] != now.changedAt)
+            fail("code changed at PC %08X, but the stop for it came at %08X", now.changedAt, got.usr[15]);
+        now.changePending = false;
         bool changed = readBe(CACHE_FLAG);
         bool stop = changed || (now.stopMode == STOP_AT && now.stops > now.stopAfter);
         if (!stop) {
@@ -342,6 +353,16 @@ static void hookFake(uc_engine *, uint64_t address, uint32_t, void *) {
     }
 }
 
+static void hookDirect(uc_engine *, uc_mem_type type, uint64_t address, int, int64_t, void *) {
+    // Generated code reaching guest memory itself, which it may only do in pages the memory map for that has; the slow
+    // path's accesses are made by the test and don't come here
+    uint32_t page = (uint32_t(address) - WINDOW) >> 12;
+    bool mapped = now.memoryMode == MEMORY_MAPPED || (now.memoryMode == MEMORY_ODD_PAGES && (page & 1)) ||
+        (now.memoryMode == MEMORY_NO_WRITES && type == UC_MEM_READ);
+    if (!mapped && !now.failed)
+        fail("direct %s %08X, in a page that isn't mapped for it", type == UC_MEM_READ ? "read of" : "write to", uint32_t(address));
+}
+
 static void setupMemoryMode(int mode) {
     // Point the emulator's memory maps at the window, or leave pages out so accesses go through the slow path
     static int current = -1;
@@ -350,7 +371,7 @@ static void setupMemoryMode(int mode) {
     for (uint32_t page = 0; page < WINDOW_SIZE >> 12; page++) {
         bool mapped = mode == MEMORY_MAPPED || (mode == MEMORY_ODD_PAGES && (page & 1));
         uint32_t index = ((WINDOW >> 12) + page) * 4;
-        writeBe(READ_MAP + index, mapped ? WINDOW + (page << 12) : 0);
+        writeBe(READ_MAP + index, (mapped || mode == MEMORY_NO_WRITES) ? WINDOW + (page << 12) : 0);
         writeBe(WRITE_MAP + index, mapped ? WINDOW + (page << 12) : 0);
     }
 }
@@ -556,6 +577,7 @@ static void runCase(Case &c) {
     now.failed = false;
     now.stops = 0;
     now.scheduled = false;
+    now.changePending = false;
     now.trace.clear();
     now.traceAt = 0;
     now.fakes.clear();
@@ -652,6 +674,7 @@ static void runCase(Case &c) {
         bool stopped = c.stopMode == STOP_AT && now.traceAt > 0 && now.stops > c.stopAfter;
         bool changed = readBe(CACHE_FLAG);
         if (now.scheduled) fail("an event made due by a C++ call wasn't noticed");
+        if (now.changePending) fail("code changed at PC %08X without a stop", now.changedAt);
         if (!stopped && !changed) {
             std::string difference = diffState(got, want);
             if (!difference.empty()) fail("%s", difference.c_str());
@@ -1181,11 +1204,15 @@ static void suiteBlockLists() {
             forms.push_back({ false, 0xE8000000 | (top << 20) | (rn << 16) | list });
         }
     }
+    // Only the program counter, which is loaded apart from the registers a list's routine moves, in every addressing mode
+    for (uint32_t mode = 0; mode < 8; mode++)
+        for (int i = 0; i < 6; i++)
+            forms.push_back({ false, 0xE8108000 | ((mode & 4) << 22) | ((mode & 2) << 22) | ((mode & 1) << 21) | (lists() % 13 << 16) });
     for (auto &entry: forms) {
         if (!mine(index++)) continue;
         rng.seed(index + 30000);
         for (int cpu = 0; cpu < 2; cpu++)
-            for (int memory = 0; memory < 3; memory++)
+            for (int memory = 0; memory < 4; memory++)
                 testOneOp("block lists", cpu, entry.first, entry.second, rnd(3), memory, nullptr, true);
     }
 }
@@ -1346,7 +1373,16 @@ static void suiteBlocks() {
         if (pageEnd) address = (((address >> 12) + 1) << 12) - size * step;
         std::vector<uint32_t> ops;
         for (int i = 0; i < size; i++) ops.push_back(thumb ? randomThumbOp() : randomArmOp(cpu));
-        if (!pageEnd) ops.push_back(terminator(thumb, address + size * step, 32));
+
+        // Some THUMB blocks end with a call, both halves, which goes to a known place when it's run from the first half
+        // and by the link register when the block is entered at the second; every third is the ARM9's BLX
+        bool call = thumb && !pageEnd && index % 5 == 2;
+        if (call) {
+            ops.push_back(0xF000);
+            ops.push_back((cpu == 0 && index % 3 == 0) ? 0xE820 : 0xF820);
+            count("blocks ending with a THUMB call");
+        }
+        else if (!pageEnd) ops.push_back(terminator(thumb, address + size * step, 32));
 
         clearCode(address & ~0xFFFu, 0x1000);
         putCode(address, ops.data(), ops.size(), thumb);
@@ -1639,6 +1675,94 @@ static void suiteLinks() {
         both = { blockA, blockB };
         run(both, "links: target compiled first");
 
+        finishBlocks(cpu);
+    }
+
+    // THUMB calls link to their target when the second half follows the first in a block, to THUMB with BL and to ARM
+    // with BLX. The second half entered on its own goes by the link register instead, wherever that leads
+    for (uint64_t index = 0; index < 12000; index++) {
+        if (!mine(index)) continue;
+        rng.seed(index + 67000);
+        rigPoison = index % 3;
+        int cpu = rnd(4) == 0;
+        bool toArm = cpu == 0 && rnd(3) == 0; // The ARM7 doesn't have BLX
+        uint32_t page = CODE_START + 0x1000 * rnd(12);
+        uint32_t addressA = page + 0x100 + 2 * rnd(2), addressB = page + 0x180 + (toArm ? 0 : 2 * rnd(2));
+        clearCode(page, 0x1000);
+        auto safe = [&](bool thumb) {
+            // Instructions that don't leave the block early
+            for (;;) {
+                uint32_t op = thumb ? randomThumbOp() : randomArmOp(cpu);
+                int kind = rigKind(op, thumb, cpu);
+                bool jumps = rigKindJumps(kind) || kind == NK_THUMB_BRANCH;
+                if (!jumps && !jitOf(cpu).endsBlock(op, thumb) && !rigMayJump(op, thumb)) return op;
+            }
+        };
+        std::vector<uint32_t> a, b;
+        for (int i = rnd(5); i > 0; i--) a.push_back(safe(true));
+        uint32_t first = addressA + a.size() * 2, linked = first + 4;
+        uint32_t offset = addressB - (toArm ? (linked & ~3u) : linked);
+        a.push_back(0xF000 | ((offset >> 12) & 0x7FF));
+        a.push_back((toArm ? 0xE800 : 0xF800) | ((offset >> 1) & 0x7FF));
+        for (int i = 1 + rnd(4); i > 0; i--) b.push_back(safe(!toArm));
+        b.push_back(terminator(!toArm, addressB + b.size() * (toArm ? 4 : 2), 32));
+        putCode(addressA, a.data(), a.size(), true);
+        putCode(addressB, b.data(), b.size(), !toArm);
+
+        State s = randomState(true, rnd(3));
+        usableBanks(s);
+        s.usr[7] = (DATA_START + 0x1000 + rnd(0xE000)) & ~3u;
+        auto run = [&](const std::vector<JitBlock*> &blocks, const State &in, bool cache, const char *name) {
+            // Without anything in the block cache, only a real link can reach the target; stops come between the halves too
+            Case c;
+            c.useCache = cache;
+            c.name = name;
+            c.cpu = cpu;
+            c.in = in;
+            c.blocks = blocks;
+            c.memoryMode = rnd(4);
+            c.stopMode = rnd(5);
+            c.deadline = 1 + rnd(12);
+            c.limitDeadline = rnd(2);
+            c.stopAfter = rnd(4);
+            runCase(c);
+            count("suite:links");
+            count("links from THUMB calls");
+            restoreRam();
+        };
+
+        JitBlock *blockA = compileAt(cpu, addressA, true);
+        if (!blockA) continue;
+        run({ blockA }, s, false, "calls: target missing");
+        JitBlock *blockB = compileAt(cpu, addressB, !toArm);
+        if (!blockB) continue;
+        run({ blockA, blockB }, s, false, "calls: target compiled after");
+
+        // A block of the other kind at the target isn't where the call goes, so it's left alone
+        Jit &jit = jitOf(cpu);
+        jit.retire(blockB);
+        if (!jit.unlinks.empty()) jit.applyUnlinks();
+        JitBlock *wrong = toArm ? compileAt(cpu, addressB, true) : (addressB & 2) ? nullptr : compileAt(cpu, addressB, false);
+        if (wrong) run({ blockA, wrong }, s, false, "calls: target of the other kind");
+        blockB = compileAt(cpu, addressB, !toArm);
+        if (!blockB) continue;
+
+        // The second half on its own, with the link register its first half would have left and with another, which
+        // leads somewhere else; it reaches the target through the dispatcher, so that needs the block cache
+        JitBlock *second = compileAt(cpu, first + 2, true);
+        if (!second) continue;
+        State alone = s;
+        visible(alone, 14) = linked;
+        run({ second, blockB }, alone, true, "calls: second half alone");
+        visible(alone, 14) = linked + 0x40 + 4 * rnd(8);
+        run({ second, blockB, blockA }, alone, true, "calls: second half alone, from elsewhere");
+
+        // Compile in the other order, so the target exists when the call is generated
+        jit.retire(blockA);
+        if (!jit.unlinks.empty()) jit.applyUnlinks();
+        blockA = compileAt(cpu, addressA, true);
+        if (!blockA) continue;
+        run({ blockA, blockB }, s, false, "calls: target compiled first");
         finishBlocks(cpu);
     }
 
@@ -2054,13 +2178,15 @@ static void testReference(uint32_t op, bool thumb, int cpu, uint32_t second = 0)
         uc_ctl_remove_cache(ucArm, landing, landing + 8);
     }
 
-    // Unicorn
+    // Unicorn, for one instruction, and also only as far as where the interpreter went next: once Unicorn has started
+    // running past the one instruction, that still stops it in the right place whenever the two agree
     loadUnicorn(in);
-    uc_err err = uc_emu_start(ucArm, address | (thumb ? 1 : 0), 0xFFFFFFF0, 0, 1);
+    uint32_t until = landing != address ? landing : 0xFFFFFFF0;
+    uc_err err = uc_emu_start(ucArm, address | (thumb ? 1 : 0), until, 0, 1);
 
     // Unicorn runs the two halves of BL as one instruction, but BLX as two
     if (pair && err == UC_ERR_OK && armRead(UC_ARM_REG_R15) == address + 2)
-        err = uc_emu_start(ucArm, (address + 2) | 1, 0xFFFFFFF0, 0, 1);
+        err = uc_emu_start(ucArm, (address + 2) | 1, until, 0, 1);
     now.inCpsr = in.cpsr;
     std::string name = (cpu ? "ARM7 " : "ARM9 ") + refClass(op, thumb) + refFlags(a, thumb, in, kind, ea, pass);
     char text[160];
@@ -2543,6 +2669,8 @@ int main(int argc, char **argv) {
     uc_mem_map(uc, 0, 0x1000000, UC_PROT_ALL);
     uc_mem_map(uc, WINDOW, WINDOW_SIZE, UC_PROT_ALL);
     uc_mem_map(uc, CODE, 0x4000000, UC_PROT_ALL);
+    uc_hook direct;
+    uc_hook_add(uc, &direct, UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, (void*)hookDirect, nullptr, WINDOW, WINDOW + WINDOW_SIZE - 1);
     uint32_t blr = swap32(0x4E800020);
     for (uint32_t a = FAKE; a < FAKE_INTERLEAVE + 0x10; a += 4) uc_mem_write(uc, a, &blr, 4);
     writeBe(EVENTS, EVENTS + 0x10);

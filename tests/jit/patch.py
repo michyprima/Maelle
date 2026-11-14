@@ -123,21 +123,21 @@ MUTATIONS = [
     ('case 0x9: return 0xE2700000 | (rs << 16) | (rd << 12);', 'case 0x9: return 0xE2600000 | (rs << 16) | (rd << 12);'), # 6: NEG sets no flags
     ('        e.call(codeRefresh);\n        e.lwz(0, 20, 1);\n        e.mtlr(0);\n        e.addi(1, 1, 16);\n        e.blr();\n    }\n}', '        e.lwz(0, 20, 1);\n        e.mtlr(0);\n        e.addi(1, 1, 16);\n        e.blr();\n    }\n}'), # 7: memory slow path doesn't refresh
     ('        if (load) e.mr(8, 3);\n', ''), # 8: memory slow path loses a loaded value
-    ('e.loadConst(R_PC, host->address + (index + 2) * (host->thumb ? 2 : 4) - host->entriesBehind[index]);', 'e.loadConst(R_PC, host->address + (index + 2) * (host->thumb ? 2 : 4));'), # 9: mid-block entry has the wrong PC
-    ('block->links.push_back({ e.here(), target | thumbCond, nullptr });', 'block->links.push_back({ e.here(), target, nullptr });'), # 10: THUMB branch links to ARM
+    ('e.loadConst(R_PC, pc - host->entriesBehind[index]);', 'e.loadConst(R_PC, pc);'), # 9: mid-block entry has the wrong PC
+    ('block->links.push_back({ e.here(), target | thumbCond, nullptr, sameLine(target) });', 'block->links.push_back({ e.here(), target, nullptr, sameLine(target) });'), # 10: THUMB branch links to ARM
     ('    e.stw(3, offCycles, R_ARM);\n    e.stw(R_CYCLES, 0, R_GLOBAL);\n', '    e.stw(3, offCycles, R_ARM);\n'), # 11: a stop doesn't save the time
-    ('    stepPc(e);\n    e.call(codePost[postHalf()][!isPure(raw', '    e.call(codePost[postHalf()][!isPure(raw'), # 12: the PC is stale at a check
-    ('e.add(3, 3, R_BATCH);\n        e.li(R_BATCH, 0);', 'e.li(R_BATCH, 0);'), # 13: a run's cycles are lost
+    ('    stepPc(e);\n    e.call(codePost[postHalf()][!memoryPc]);', '    e.call(codePost[postHalf()][!memoryPc]);'), # 12: the PC is stale at a check
+    ('*last = (14 << 26) | (3 << 21) | (R_BATCH << 16) | ((*last & 0xFFFF) + runCycles);', '*last = (14 << 26) | (3 << 21) | (R_BATCH << 16) | (*last & 0xFFFF);'), # 13: a run's cycles are lost
     ('    e.lwz(R_CYCLES, 0, R_GLOBAL);\n    e.lwz(4, 0, R_LIMIT);', '    e.lwz(4, 0, R_LIMIT);'), # 14: refresh doesn't reload the time
-    ('e.rlwinm(R_TMP2, R_TMP1, 0, 0, 29);', 'e.mr(R_TMP2, R_TMP1);'), # 15: LDM/STM bases aren't aligned in the slow path
+    ('e.rlwinm(R_TMP2, 5, 0, 0, 29);', 'e.mr(R_TMP2, 5);'), # 15: LDM/STM addresses aren't aligned
     ('case 0x7: // RSC\n            if (arith) e.subfe(5, 3, 4);', 'case 0x7: // RSC\n            if (arith) e.subfe(5, 4, 3);'), # 16: RSCS has its operands swapped
     ('e.call(codeFlags[(opc == 0x4 || opc == 0x5 || opc == 0xB) ? 2 : (opc == 0x3 || opc == 0x7) ? 4 : 3]);', 'e.call(codeFlags[(opc == 0x4 || opc == 0xB) ? 2 : (opc == 0x3 || opc == 0x7) ? 4 : 3]);'), # 17: ADCS has SBCS flags
     ('if (i + 1 == block->instrs.size()) e.stw(R_PC, offPc, R_ARM);\n        return;', 'return;'), # 18: a block ending in a conditional branch loses the PC
-    ('block->links.push_back({ e.here(), (pc + ((int32_t)(raw << 21) >> 20)) | 1, nullptr });', 'block->links.push_back({ e.here(), (pc + ((int32_t)(raw << 21) >> 20)), nullptr });'), # 19: THUMB B links to ARM
+    ('block->links.push_back({ e.here(), target | 1, nullptr, sameLine(target) });', 'block->links.push_back({ e.here(), target, nullptr, sameLine(target) });'), # 19: THUMB B links to ARM
     ('uint32_t *last = e.here() - 1;\n        if ((*last & 0xFFFF0000) == 0x38600000 && (*last & 0xFFFF) > 0) {\n            *last = (14 << 26) | (R_BATCH << 21) | (R_BATCH << 16) | ((*last & 0xFFFF) - 1);', 'uint32_t *last = e.here() - 1;\n        if ((*last & 0xFFFF0000) == 0x38600000 && (*last & 0xFFFF) > 0) {\n            *last = (14 << 26) | (R_BATCH << 21) | (R_BATCH << 16) | (*last & 0xFFFF);'), # 20: folded conditions count a cycle too many
     ('e.call((!block->thumb && cond == 0xF) ? reserved : handler);\n        e.call(codeRefresh);\n', 'e.call((!block->thumb && cond == 0xF) ? reserved : handler);\n'), # 21: handlers don't refresh
     ('        e.stw(R_CYCLES, 0, R_GLOBAL);\n        e.stw(R_CYCLES, offCycles, R_ARM);\n        e.mr(3, R_ARM);\n', '        e.mr(3, R_ARM);\n'), # 22: handlers don't see the time
-    ('    if (block->thumb && (raw & 0xF800) == 0xE000) {\n        // Unconditional branches jump straight to their target like ARM ones\n        block->links.push_back({ e.here(), (pc + ((int32_t)(raw << 21) >> 20)) | 1, nullptr });\n        e.b(codeDispatch);\n    }\n    else if', '    if'), # 23: THUMB B doesn't link
+    ('    else if (block->thumb && (raw & 0xF800) == 0xE000) {\n        // Unconditional branches jump straight to their target like ARM ones\n        uint32_t target = pc + ((int32_t)(raw << 21) >> 20);\n        block->links.push_back({ e.here(), target | 1, nullptr, sameLine(target) });\n        e.b(codeDispatch);\n    }\n    else if', '    else if'), # 23: THUMB B doesn't link
     ('            e.rlwinm(5, 5, 0, 24, 31);\n            e.patchBc(store2);', '            e.patchBc(store2);'), # 24: MRS of a missing SPSR keeps the flags on the ARM9
     (' && reg != 0x070004 && reg != 0x070802;', ';'), # 25: MCR that halts has no effect
     ('e.rlwinm(6, 6, 0, 8, 31);\n        e.rlwimi(6, 4, 0, 0, arm7 ? 3 : 4);\n    }\n    e.stw(6, 0, 5);', 'e.rlwimi(6, 4, 0, 0, arm7 ? 3 : 4);\n    }\n    e.stw(6, 0, 5);'), # 26: MSR SPSR keeps bits that don't exist
@@ -155,12 +155,12 @@ MUTATIONS = [
     ('e.or_(8, 8, 9);\n        e.cmpwi(8, 0);\n        uint32_t *slow2 = e.here();\n        e.bne(nullptr);\n        e.patchBc(masked);\n\n        // Swap', 'e.cmpwi(8, 0);\n        uint32_t *slow2 = e.here();\n        e.bne(nullptr);\n        e.patchBc(masked);\n\n        // Swap'), # 38: A return doesn't see all interrupts
     ('    if (restore) s = false;\n', ''), # 39: A return sets flags, which shows without an SPSR
     ('e.cmpwi(8, 0x11);\n        uint32_t *slow3', 'e.cmpwi(8, 0x12);\n        uint32_t *slow3'), # 40: A return from FIQ stays out of the interpreter
-    ('            else if (user) e.stw(8, offUsr + i * 4, R_ARM);\n', ''), # 41: LDM with S loads the banked registers
+    ('                    e.lwbrx(8, 0, 6);\n                    if (--left) e.addi(6, 6, 4);\n                    if (user) e.stw(8, offUsr + i * 4, R_ARM);\n                    else writeReg(e, 8, i);', '                    e.lwbrx(8, 0, 6);\n                    if (--left) e.addi(6, 6, 4);\n                    writeReg(e, 8, i);'), # 41: LDM with S loads the banked registers
     ('            e.xori(6, 6, 4);\n', ''), # 42: Math registers have their words swapped
     ('banks(0x17, &arm.registersAbt[0], &arm.registersAbt[1], &arm.spsrAbt);', 'banks(0x17, &arm.registersUnd[0], &arm.registersUnd[1], &arm.spsrUnd);'), # 43: Abort mode gets Undefined's registers
     ('e.stw(9, offRegs + 14 * 4, R_ARM);\n', ''), # 44: A return doesn't swap R14
     ('e.call(addrRestoreCpsr);\n        e.call(codeRefresh);\n', 'e.call(addrRestoreCpsr);\n'), # 45: A return's slow path doesn't refresh
-    ('                setDirty(sqrt ? addrSqrtDirty : addrDivDirty);\n            }\n            e.blr();\n            e.patchBc(next);\n        }\n    }\n    for', '            }\n            e.blr();\n            e.patchBc(next);\n        }\n    }\n    for'), # 46: Writing a math word leaves the old result
+    ('                setDirty(sqrt ? addrSqrtDirty : addrDivDirty);\n            }\n            e.blr();\n            e.patchBc(next);\n        }\n    }\n    e.patchB(done);', '            }\n            e.blr();\n            e.patchBc(next);\n        }\n    }\n    e.patchB(done);'), # 46: Writing a math word leaves the old result
     ('if (!block->thumb && native && nativeKind(op, arm7) == NK_ALU_PC && (op & BIT(20))) {\n            differ', 'if (false) {\n            differ'), # 47: A return to THUMB at the next address stays in ARM
     ('e.rlwimi(7, 9, 0, 24, 24);\n', ''), # 48: Writing IE changes bit 7
     ('e.rlwinm_(9, 9, 7, 31, 31);', 'e.rlwinm_(9, 9, 6, 31, 31);'), # 49: Clearing IF checks the wrong FIFO condition
@@ -183,19 +183,56 @@ MUTATIONS = [
     ('bool setFlags = flags && (flagsLive & (FLAG_N | FLAG_Z));', 'bool setFlags = flags && !(flagsLive & (FLAG_N | FLAG_Z));'), # 66: A multiply sets flags only when nothing reads them
     ('e.li(3, flags ? 4 : 2);', 'e.li(3, setFlags ? 4 : 2);'), # 67: A multiply whose flags aren't read is quicker on the ARM9
     ('e.li(3, flags ? 5 : 3);', 'e.li(3, setFlags ? 5 : 3);'), # 68: A long multiply whose flags aren't read is quicker on the ARM9
+    ("    if (host->entriesCycles[index]) e.li(R_BATCH, -int(host->entriesCycles[index])); // What the run's check adds for before here\n", ''), # 69: An entry into the middle of a run counts the cycles before it too
+    ('            if (runCycles) e.addi(3, 3, runCycles);\n', ''), # 70: A run's cycles are lost when its check follows a condition
+    ('e.addi(3, R_BATCH, 3 + runCycles);', 'e.addi(3, R_BATCH, 3);'), # 71: A conditional branch that's taken loses the cycles of the run before it
+    ('e.addi(3, R_BATCH, 1 + runCycles);', 'e.addi(3, R_BATCH, 1);'), # 72: A conditional branch that isn't taken loses the cycles of the run before it
+    ('            runCycles += *last & 0xFFFF;\n            e.ptr--;', '            e.ptr--;'), # 73: An instruction in a run isn't counted
+    ('        e.patchBc(skip);\n        runCycles += 1;\n        return;', '        e.patchBc(skip);\n        return;'), # 74: A conditional instruction in a run isn't counted when its condition fails
+    ('            e.addi(3, 3, -1);\n            e.add(R_BATCH, R_BATCH, 3);', '            e.add(R_BATCH, R_BATCH, 3);'), # 75: A conditional instruction in a run whose cycles vary counts one too many
+    ('        e.rlwimi(6, 9, 25, 1, 1);\n        if (carry)', '        if (carry)'), # 76: Logical operations leave Z as it was
+    ('        if (carry) e.rlwimi(6, 7, 29, 2, 2);\n', ''), # 77: Logical operations leave out the shifter's carry
+    ('        e.rlwimi(6, 5, 0, 0, 0);\n        e.rlwimi(6, 8, 25, 1, 1);', '        e.rlwimi(6, 8, 25, 1, 1);'), # 78: Arithmetic leaves N as it was
+    ('        e.rlwimi(6, 9, 29, 2, 2);\n        e.rlwimi(6, 10, 29, 3, 3);', '        e.rlwimi(6, 10, 29, 3, 3);'), # 79: Arithmetic leaves C as it was
+    ('        e.rlwimi(6, 9, 29, 2, 2);\n        e.rlwimi(6, 10, 29, 3, 3);', '        e.rlwimi(6, 9, 29, 2, 2);'), # 80: Arithmetic leaves V as it was
+    ('{ 0x4000, 0x2000, 0x8000, 0x1000 }; // Z, C, N, V', '{ 0x4000, 0x2000, 0x8000, 0x2000 }; // Z, C, N, V'), # 81: VS and VC go by the carry
+    ('e.cmpwi(3, 1); // Equal if higher', 'e.cmpwi(3, 3); // Equal if higher'), # 82: HI needs Z set
+    ('e.rlwinm(4, 3, 3, 0, 0); // V where N is', 'e.rlwinm(4, 3, 2, 0, 0); // V where N is'), # 83: GE, LT, GT and LE go by C in place of V
+    ('                e.rlwinm(3, 3, 1, 0, 0); // Z where N is', '                e.li(3, 0);'), # 84: GT and LE leave out Z
+    ('    else odd ? e.bge(nullptr) : e.blt(nullptr);', '    else odd ? e.blt(nullptr) : e.bge(nullptr);'), # 85: GE, LT, GT and LE are the wrong way round
+    ('    else if (cond < 10) odd ? e.beq(nullptr) : e.bne(nullptr);', '    else if (cond < 10) odd ? e.bne(nullptr) : e.beq(nullptr);'), # 86: HI and LS are the wrong way round
+    ('    e.li(R_NEXT, 0);\n', ''), # 87: Code that changed doesn't stop the block
+    ('    e.rlwimi(4, 3, 27, 31, 31); // Cache key: the program counter with the THUMB bit\n', ''), # 88: The dispatcher's key leaves out THUMB
+    ('    e.cmpw(7, 4);\n    e.mtctr(8);', '    e.cmpw(4, 4);\n    e.mtctr(8);'), # 89: The dispatcher takes whatever is in a key's place
+    ('            e.andi_(9, 5, 3);\n            e.beqlr();', '            e.andi_(9, 5, 1);\n            e.beqlr();'), # 90: Words loaded from addresses misaligned by 2 aren't rotated
+    ('e.cmplwi(7, 0x1000 - count * 4);', 'e.cmplwi(7, 0x1000 - 4);'), # 91: A list of registers crossing a page end is moved directly
+    ('*target = stub + (listCalls[c].offset ? 1 : 0);', '*target = stub;'), # 92: A list of registers is always moved at its base
+    ('    if (codePtr == codeStart) listStubs.clear(); // The area started over, so the routines are gone\n', ''), # 93: Routines for lists are kept when the code area starts over
+    ('            e.rlwinm(6, R_TMP2, 22, 10, 29);\n            e.lwzx(6, 6, load ? R_RMAP : R_WMAP);', '            e.rlwinm(6, R_TMP2, 22, 10, 29);\n            e.lwzx(6, 6, R_RMAP);'), # 94: STM writes directly to pages that aren't mapped for writing
+    ('                e.addi(5, R_TMP2, offset);\n                offset += 4;', '                e.addi(5, R_TMP2, offset);'), # 95: A list's slow path moves every register at the first address
+    ('                    e.call(codeMemory[0]);\n                    if (user) e.stw(8, offUsr + i * 4, R_ARM);\n                    else writeReg(e, 8, i);', '                    e.call(codeMemory[0]);\n                    writeReg(e, 8, i);'), # 96: LDM with S loads the banked registers in the slow path
+    ('                    if (user) e.lwz(8, offUsr + i * 4, R_ARM);\n                    else readReg(e, 8, i, 0);\n                    e.stwbrx(8, 0, 6);', '                    readReg(e, 8, i, 0);\n                    e.stwbrx(8, 0, 6);'), # 97: STM with S stores the banked registers
+    ('e.addi(5, R_TMP2, (count - 1) * 4);', 'e.addi(5, R_TMP2, count * 4);'), # 98: LDM loads the PC from a word too far
+    ('        e.addi(R_TMP2, R_TMP1, first);\n', '        e.mr(R_TMP2, R_TMP1);\n'), # 99: LDM of only the PC ignores its addressing mode
+    ('(pc - 2 + ((int32_t)(block->instrs[i - 1].opcode << 21) >> 9)', '(pc + ((int32_t)(block->instrs[i - 1].opcode << 21) >> 9)'), # 100: A THUMB call after its first half goes 2 too far
+    ('    if (thumbCallPair(host, index, arm7)) return nullptr;\n', ''), # 101: The second half of a THUMB call entered on its own goes where its first half would send it
+    ('        if (!(op & BIT(12))) { // BLX to ARM\n            e.lwz(6, offCpsr, R_ARM);\n            e.rlwinm(6, 6, 0, 27, 25);', '        if (!(op & BIT(12))) { // BLX to ARM\n            e.lwz(6, offCpsr, R_ARM);\n            e.rlwinm(6, 6, 0, 0, 31);'), # 102: BLX after its first half stays in THUMB
+    ('    if (callPair) {\n        // Calls to known addresses do too, and the ones to ARM change mode like BLX label\n        bool toThumb = raw & BIT(12);\n        block->links.push_back({ e.here(), toThumb ? ((callTarget & ~0x1) | 1) : (callTarget & ~0x3), nullptr, toThumb && sameLine(callTarget & ~0x1) });\n        e.b(codeDispatch);\n    }\n    else if (block->thumb', '    if (block->thumb'), # 103: A THUMB call after its first half doesn't link
+    ('toThumb ? ((callTarget & ~0x1) | 1) : (callTarget & ~0x3), nullptr', '(callTarget & ~0x1) | 1, nullptr'), # 104: BLX after its first half links to THUMB code
+    ('        e.loadConst(6, pc - 1);\n        writeReg(e, 6, 14);\n        if (!(op & BIT(12))) { // BLX to ARM', '        e.loadConst(6, pc + 1);\n        writeReg(e, 6, 14);\n        if (!(op & BIT(12))) { // BLX to ARM'), # 105: A THUMB call after its first half returns 2 too far
 ]
 # Bugs in the interpreter, which only the reference suite can see if the JIT has no native code for them
 INTERPRETER_MUTATIONS = [
-    ('arm/interpreter_alu.cpp', 'cpsr = (cpsr & ~0xF0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op2 >= *op0 &&', 'cpsr = (cpsr & ~0xC0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op2 >= *op0 &&'), # 69: RSCS can't clear C or V
-    ('arm/interpreter_alu.cpp', ' | ((*op0 <= 0) << 29) |\n        ((op2 & *op0 & BIT(31)) >> 3);', ' | ((*op0 <= 0) << 29);'), # 70: NEG always clears V
-    ('arm/interpreter_transfer.cpp', 'int Interpreter::ldmiaU(uint32_t opcode) { // LDMIA Rn, <Rlist>^\n    // User block load, post-increment without writeback; normal registers if branching\n    uint8_t m = bitCount[opcode & 0xFF] + bitCount[(opcode >> 8) & 0xFF];\n    uint32_t op0 = *registers[(opcode >> 16) & 0xF];\n    uint32_t **regs = &registers[(~opcode & BIT(15)) >> 11];', 'int Interpreter::ldmiaU(uint32_t opcode) { // LDMIA Rn, <Rlist>^\n    // User block load, post-increment without writeback; normal registers if branching\n    uint8_t m = bitCount[opcode & 0xFF] + bitCount[(opcode >> 8) & 0xFF];\n    uint32_t op0 = *registers[(opcode >> 16) & 0xF];\n    uint32_t **regs = &registers[0];'), # 71: LDM with S doesn't use user registers
-    ('arm/interpreter_transfer.cpp', 'if ((opcode & BIT(16)) && (cpsr & 0x1F) != 0x10)\n        setCpsr', 'if (opcode & BIT(16))\n        setCpsr'), # 72: User mode MSR changes control bits
-    ('arm/interpreter_transfer.cpp', '    if (spsr) setCpsr(*spsr);\n    flushPipeline();', '    if (spsr) setCpsr(*spsr);\n    cpsr |= (*registers[15] & !arm7) << 5;\n    flushPipeline();'), # 73: LDM with S takes THUMB from the PC
+    ('arm/interpreter_alu.cpp', 'cpsr = (cpsr & ~0xF0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op2 >= *op0 &&', 'cpsr = (cpsr & ~0xC0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op2 >= *op0 &&'), # 106: RSCS can't clear C or V
+    ('arm/interpreter_alu.cpp', ' | ((*op0 <= 0) << 29) |\n        ((op2 & *op0 & BIT(31)) >> 3);', ' | ((*op0 <= 0) << 29);'), # 107: NEG always clears V
+    ('arm/interpreter_transfer.cpp', 'int Interpreter::ldmiaU(uint32_t opcode) { // LDMIA Rn, <Rlist>^\n    // User block load, post-increment without writeback; normal registers if branching\n    uint8_t m = bitCount[opcode & 0xFF] + bitCount[(opcode >> 8) & 0xFF];\n    uint32_t op0 = *registers[(opcode >> 16) & 0xF];\n    uint32_t **regs = &registers[(~opcode & BIT(15)) >> 11];', 'int Interpreter::ldmiaU(uint32_t opcode) { // LDMIA Rn, <Rlist>^\n    // User block load, post-increment without writeback; normal registers if branching\n    uint8_t m = bitCount[opcode & 0xFF] + bitCount[(opcode >> 8) & 0xFF];\n    uint32_t op0 = *registers[(opcode >> 16) & 0xF];\n    uint32_t **regs = &registers[0];'), # 108: LDM with S doesn't use user registers
+    ('arm/interpreter_transfer.cpp', 'if ((opcode & BIT(16)) && (cpsr & 0x1F) != 0x10)\n        setCpsr', 'if (opcode & BIT(16))\n        setCpsr'), # 109: User mode MSR changes control bits
+    ('arm/interpreter_transfer.cpp', '    if (spsr) setCpsr(*spsr);\n    flushPipeline();', '    if (spsr) setCpsr(*spsr);\n    cpsr |= (*registers[15] & !arm7) << 5;\n    flushPipeline();'), # 110: LDM with S takes THUMB from the PC
 ]
 # Bugs only a game.sh option can see, numbered after those and left out of mutate.sh, which runs the cases above
 GAME_MUTATIONS = [
-    ('memory/memory.cpp', '        if (uint8_t *mapping = *(uint8_t *volatile*)&mappings[m])\n            value |= readLsb<T>(&mapping[address]);', '        value |= readLsb<T>(&mappings[m][address]);'), # game 74: a VRAM read follows a missing pointer, for vramstress
-    ('io/spu.cpp', 'int32_t negate = (adpcmData >> 3) - 1;', 'int32_t negate = -int32_t(adpcmData >> 3);'), # game 75: ADPCM has its sign backwards, for audio; generated code and the interpreter share it, so compare with a run without it
+    ('memory/memory.cpp', '        if (uint8_t *mapping = *(uint8_t *volatile*)&mappings[m])\n            value |= readLsb<T>(&mapping[address]);', '        value |= readLsb<T>(&mappings[m][address]);'), # game 111: a VRAM read follows a missing pointer, for vramstress
+    ('io/spu.cpp', 'int32_t negate = (adpcmData >> 3) - 1;', 'int32_t negate = -int32_t(adpcmData >> 3);'), # game 112: ADPCM has its sign backwards, for audio; generated code and the interpreter share it, so compare with a run without it
 ]
 if mutation > len(MUTATIONS) + len(INTERPRETER_MUTATIONS):
     file, old, new = GAME_MUTATIONS[mutation - len(MUTATIONS) - len(INTERPRETER_MUTATIONS) - 1]

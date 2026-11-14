@@ -285,6 +285,30 @@ case('T carry kept by logic', 'adds r0, r1, r2', 'ands r3, r1', 'muls r4, r1', '
     'lsls r3, r4', 'sbcs r5, r1', thumb=True)
 case('T flags before a store', 'adds r0, r1, r2', f'ldr r3, ={MAIN} + 0x80', 'str r0, [r3]', 'subs r4, r1, r2', 'ldr r5, [r3]', 'cmp r5, r1', thumb=True)
 
+# Lists of registers, which the JIT moves through one routine for every instruction with the same list: twice in a block,
+# from a base and from an address worked out first, up to the last place in a page where they fit, and across the end of
+# the ITCM, where the next address is back at its start
+for region in (MAIN, SLOW, DTCM, ITCM, WRAM):
+    cpu = None if region == MAIN else 7 if region == WRAM else 9
+    case(f'lists shared by instructions {region}', f'ldr r1, ={region} + 0x80', 'stmdb r1!, {r2, r3, r4, r5}', 'stmia r1, {r2, r3, r4, r5}',
+        'ldmia r1!, {r6, r7, r8, r9}', 'ldmdb r1, {r6, r7, r8, r9}', region=region, cpu=cpu)
+    case(f'ldm ending at a page end {region}', f'ldr r1, ={region} + 0xFF0', 'ldmia r1!, {r2, r3, r4, r5}', region=region, cpu=cpu)
+    case(f'stm ending at a page end {region}', f'ldr r1, ={region} + 0xFF0', 'stmia r1!, {r2, r3, r4, r5}', region=region, cpu=cpu)
+    case(f'T call with a frame {region}', 'mov r11, sp', f'ldr r1, ={region} + 0x80', 'mov sp, r1', 'bl 8f', 'b 9f', '8:', 'push {r4, r5, r6, r7, r14}',
+        'adds r4, r5', 'ldr r0, [sp, #8]', 'pop {r4, r5, r6, r7, pc}', '9:', 'mov r10, sp', 'mov sp, r11', thumb=True, region=region, cpu=cpu)
+case('ldm across the end of ITCM', 'ldr r1, =0x00007FF8', 'ldr r0, =0x00008000', 'str r2, [r1]', 'str r3, [r1, #4]', 'str r4, [r0]', 'str r5, [r0, #4]',
+    'ldmia r1, {r6, r7, r8, r9}', cpu=9)
+case('stm across the end of ITCM', 'ldr r1, =0x00007FF8', 'ldr r0, =0x00008000', 'stmia r1, {r2, r3, r4, r5}', 'ldr r6, [r1]', 'ldr r7, [r1, #4]',
+    'ldr r8, [r0]', 'ldr r9, [r0, #4]', cpu=9)
+
+# THUMB calls, which the JIT sends straight to their target when the second half follows the first: in a loop, and with the
+# second half reached on its own after that, which goes by the link register instead, here to 8 past what's in it
+case('T bl in a loop', 'movs r4, #5', '1:', 'bl 8f', 'subs r4, #1', 'bne 1b', 'b 9f', '8:', 'adds r0, #1', 'bx lr', '9:', thumb=True)
+case('T bl second half alone', '5:', '.hword 0xF000, 0xF804', 'movs r0, #0x11', 'b 9f', 'movs r1, #0x22', 'b 9f', 'mov r3, r14', 'adr r2, 7f', 'mov r14, r2',
+    'b 5b + 2', '.p2align 2', '7:', 'movs r4, #0x44', 'b 9f', 'movs r4, #0x55', 'b 9f', 'mov r5, r14', 'movs r4, #0x66', '9:', thumb=True)
+case('T blx second half alone', '.p2align 2', '5:', '.hword 0xF000, 0xE804', 'movs r0, #0x11', 'b 9f', 'movs r1, #0x22', 'b 9f', '.arm', 'mov r3, r14', 'adr r2, 7f', 'mov r14, r2',
+    'adr r1, 5b + 3', 'bx r1', '7:', 'mov r4, #0x44', 'b case_exit', 'mov r5, r14', 'mov r4, #0x66', 'b case_exit', '.thumb', '9:', thumb=True, cpu=9)
+
 # What's timed: a unit repeated 8 times in a loop of a fixed count, with setup before and anything between repeats after
 D = f'ldr r1, ={MAIN} + 0x80'
 for text in ('mov r0, r1', 'mov r0, #1', 'add r0, r1, #1', 'add r0, r1, r2', 'add r0, r1, r2, LSL #3', 'add r0, r1, r2, LSL r3', 'eor r0, r1, r2, ROR #5',

@@ -3,7 +3,8 @@
 Checks the JIT's generated PowerPC on a Mac by running it in the [Unicorn](https://www.unicorn-engine.org/) emulator and
 comparing the results with the interpreter. The real `compile()`, `generate()`, linking and retiring are used. C++ called
 from generated code, like memory accesses and interpreter handlers, is caught by the test, which checks how it's called and
-overwrites the registers C++ is allowed to change.
+overwrites the registers C++ is allowed to change. Generated code reaching guest memory itself in a page the memory maps
+don't have fails the case too.
 
 ```
 tests/jit/run.sh <small ROM> <folder with bios7.bin, bios9.bin, firmware.bin> [suites]
@@ -24,12 +25,12 @@ time and checks that each is noticed; add one there when adding a kind of test.
 | `forms` | ARM instructions with exact encodings, which random bits rarely make: `BX`, `BLX`, `CLZ`, `MRS`, `SWP`, multiplies, and every transfer addressing mode |
 | `flags` | Flag-setting ARM and THUMB instructions over every pair of edge values and starting carry, multiplies included, then each again followed by an instruction that makes the JIT leave out all of its flags, all but the carry, N and Z, or all but V |
 | `conditions` | Every condition with every flag value, on each way through a condition |
-| `lists` | `PUSH`, `POP`, `LDM` and `STM` with lists crossing into pages that take the slow path |
+| `lists` | `PUSH`, `POP`, `LDM` and `STM` with lists crossing into pages that take the slow path, which is where the routine each list of registers shares stops moving words directly and goes a word at a time, and with memory that's only mapped for reading, like pages with compiled code |
 | `returns` | ALU instructions with flags that write the program counter, returning to every kind of saved mode on both CPUs, which of them generated code leaves to the interpreter, and code after a return using the new mode's banked registers, with the JIT's real table of them |
 | `math` | Every access to the math registers at `0x4000280` to `0x40002BF` against the real ones, for what generated code reaches directly and what it leaves to C++, then random runs of accesses against the same run done only in C++, and the same for `IME`, `IE` and `IF` |
 | `liveness` | Which flags generated code works out, since with fast timing it leaves out the ones nothing reads before they're set again: every run of three from a set of instructions that set, keep and read each flag in every way the JIT tells apart, in ARM and THUMB on both CPUs, then longer random runs, entered in the middle sometimes, loads whose offset is rotated through the carry, and what the JIT works out for a few blocks, directly. Each run is done three times: with the flags the JIT leaves out as they were, then forced to 0, then to 1 from where it stops keeping them, so that a flag left out by mistake has the wrong value in at least one, whatever it was before |
-| `blocks` | Random ARM and THUMB blocks with batching on: entered at the start or the middle, ending at a page end, stopping at every check, partway, at a deadline from an event or the other CPU, or from an event a C++ call made due, and with code changing during a store. Every stop must show exactly the state after an instruction, flags included |
-| `links` | Blocks jumping to each other directly and through the dispatcher, changing CPU mode, as they're compiled, dropped and compiled again. These and the random blocks take turns at the three ways with left-out flags too |
+| `blocks` | Random ARM and THUMB blocks with batching on: entered at the start or the middle, ending at a page end or with a THUMB call, stopping at every check, partway, at a deadline from an event or the other CPU, or from an event a C++ call made due, and with code changing during a store. Every stop must show exactly the state after an instruction, flags included |
+| `links` | Blocks jumping to each other directly and through the dispatcher, changing CPU mode, as they're compiled, dropped and compiled again. THUMB calls, which link when the second half follows its first, with stops between the halves, a block of the other kind at the target, and the second half entered on its own with the link register leading there or somewhere else. These and the random blocks take turns at the three ways with left-out flags too |
 | `reference` | The interpreter's handlers against Unicorn's ARM946, an independent model of the same CPU: all THUMB encodings and sampled ARM ones, with banked registers, SPSRs and memory compared. The ARM7 is only compared on what it has in common with the ARM946 |
 
 ## What this doesn't cover
@@ -77,8 +78,8 @@ program counters, then hashes of RAM and WRAM, and every way is compared with th
 - `threads` to run with the 2D threads drawing behind the emulator, as fast 2D does on the console; their timing varies, so
   runs with it aren't expected to match each other
 - `vramstress` to run only a test of VRAM reads from another thread during VRAM bank changes, which ignores the frame count
-  and exits as soon as it's done, or crashes if a read can follow a mapping that's only partly there. Planted bug 74 removes
-  what stops that, so `--mutate 74` with this option should crash; `mutate.sh` doesn't run it, since it runs the cases above. Planted bug 75 breaks ADPCM sound for both the interpreter and generated code, so check it by comparing an `audio` run against one without it
+  and exits as soon as it's done, or crashes if a read can follow a mapping that's only partly there. Planted bug 111 removes
+  what stops that, so `--mutate 111` with this option should crash; `mutate.sh` doesn't run it, since it runs the cases above. Planted bug 112 breaks ADPCM sound for both the interpreter and generated code, so check it by comparing an `audio` run against one without it
 - `romtest=file` to run `tests/rom`'s ROM, saving its results there and stopping when it's done; it needs the registers the
   ROM talks to, so build with `JIT_TEST_CFLAGS=-DROM_TEST`. The frames differ from run to run, since the ROM times itself
   with the real clock, so compare the `C` and `S` lines of the files instead

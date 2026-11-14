@@ -35,6 +35,13 @@ SPSR and any memory it can touch go into a hash, so two runs can be compared cas
 - **Memory:** main RAM and the TCMs, which the JIT reaches directly, and palette RAM on the ARM9, which it doesn't. The ARM7 uses main
   RAM and its own WRAM.
 - **Running:** code changing, blocks entered partway, long runs, timer interrupts during ARM and THUMB loops, and waking from a halt.
+- **Lists of registers:** the JIT moves each list through one routine that every instruction with the same list shares, which
+  finds the page once when the words all fit in it. Two stores and two loads of one list in a block, lists that end exactly
+  at a page end, and a load and a store across the end of the ITCM, where the next address is back at its start, are there
+  for that, in every kind of memory.
+- **THUMB calls:** the JIT sends a `BL` or `BLX` straight to its target when the second half follows the first. A call in a
+  loop, a function with a stack frame, and the second half of each reached on its own, which has to go by the link register
+  instead, are there for that.
 - **Flags nothing reads:** with fast timing the JIT leaves out flags that are set again before anything reads them, and only
   keeps the carry between the words of a longer addition or subtraction. Runs that set flags twice, carry and borrow chains,
   a division step, flags kept through logic and shifts, read by conditions, and around a store, in ARM and THUMB, are there
