@@ -164,7 +164,7 @@ private:
     Atomic32<int> ramOverflow{0}; // Set by the geometry worker when it runs on another thread
     uint16_t edgeColor[8] = {};
     uint32_t clearColor = 0;
-    uint16_t clearDepth = 0;
+    uint16_t clearDepth = 0x7FFF; // Starts at the farthest depth, which games that never set it rely on
     uint16_t clearImageOffset = 0; // Where the clear images start, X in the low byte and Y in the high byte
     uint32_t fogColor = 0;
     uint16_t fogOffset = 0;
