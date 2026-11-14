@@ -78,10 +78,12 @@ struct GpuVertex {
     float color[4];
     float attrib[4]; // Polygon ID times 4 plus flags (1 = solid pixel, 2 = fog), the distance to the third edge, and two
                      // values for the depth
+    float bounds[4]; // The lowest S and T texels the polygon can read, then the highest, for high-res 3D
+    float unused[4];
 };
 
-// Vertices fill 2 whole cache blocks in the 64-byte aligned vertex buffer, so they can be claimed before being written
-static_assert(sizeof(GpuVertex) == 64, "GpuVertex must fill 2 cache blocks");
+// Vertices fill 3 whole cache blocks in the 64-byte aligned vertex buffer, so they can be claimed before being written
+static_assert(sizeof(GpuVertex) == 96, "GpuVertex must fill 3 cache blocks");
 
 // A run of triangles drawn with the same state
 struct GpuDraw {
@@ -189,6 +191,7 @@ bool Gpu3DWiiU::init() {
         WHBGfxInitShaderAttribute(&groups[i], "tex_coords", 0, offsetof(GpuVertex, tex), GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
         WHBGfxInitShaderAttribute(&groups[i], "vtx_color", 0, offsetof(GpuVertex, color), GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
         WHBGfxInitShaderAttribute(&groups[i], "vtx_attr", 0, offsetof(GpuVertex, attrib), GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
+        WHBGfxInitShaderAttribute(&groups[i], "tex_bounds", 0, offsetof(GpuVertex, bounds), GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
         if (!WHBGfxInitFetchShader(&groups[i])) return false;
 
         // The assembler can only enable the red channel of a second output, so enable all of them here
@@ -1142,6 +1145,13 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 }
             }
 
+            // At high resolution, flat polygons only read the texels their native pixels would, so the pixels in
+            // between don't show texels the DS never draws, like the next image in a texture atlas
+            int32_t texBounds[4];
+            float bounds[4] = { -1e9f, -1e9f, 1e9f, 1e9f };
+            if (textured && renderer->textureBounds(polygon, shift, texBounds))
+                for (int b = 0; b < 4; b++) bounds[b] = float(texBounds[b]);
+
             // Convert a polygon vertex for the shaders, with texture coordinates in texels
             // Wireframe edges are opaque; toon and highlight colors come from the shader, by the red level
             float alpha = wireframe ? 1.0f : (polygon->alpha / 63.0f);
@@ -1169,6 +1179,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 out.attrib[1] = 0.0f;
                 out.attrib[2] = wBuffer ? 1.0f : w;
                 out.attrib[3] = wBuffer ? w : float(v.z) * w;
+                memcpy(out.bounds, bounds, sizeof(bounds));
             };
 
             // Add the polygon as a fan of triangles
@@ -1228,6 +1239,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                     GpuVertex &out = vertices[count++];
                     claimBlock(&out);
                     claimBlock(&out.color);
+                    claimBlock(&out.bounds);
                     out = converted[tri[c]];
                     out.tex[2] = dist[c][0];
                     out.tex[3] = dist[c][1];

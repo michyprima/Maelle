@@ -51,6 +51,7 @@ struct Span {
     uint32_t x1a, x2a, x3a, x4a;
     bool horizontal;
     uint32_t ze[2], we[2], re[2], ge[2], be[2], se[2], te[2];
+    const int32_t *texBounds; // The texels the span's texture coordinates are clamped to, for high-res 3D
 };
 
 class Gpu3DRenderer {
@@ -83,6 +84,7 @@ public:
     uint8_t getFogTable(int index) { return fogTable[index]; }
     uint8_t getAlphaTestRef() { return alphaTestRef; }
     uint64_t hashTexture(_Polygon *polygon, bool palette);
+    bool textureBounds(_Polygon *polygon, int shift, int32_t bounds[4]);
     void decodeTexture(_Polygon *polygon, uint32_t *out, int pitch);
     uint32_t *hardwareLine(int line) { return allocBuffers() ? &framebuffer[0][line * 256 * 2] : nullptr; }
     void setHardwareBuffer(uint32_t *buffer) { hardwareBuffer = buffer; }
@@ -149,6 +151,7 @@ private:
 
     int polygonTop[2048] = {};
     int polygonBot[2048] = {};
+    int32_t polygonTexBounds[2048][4] = {};
     std::vector<uint16_t> linePolygons;
     int lineStarts[192 * 2 + 1] = {};
 

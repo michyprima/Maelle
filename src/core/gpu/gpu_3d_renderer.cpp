@@ -18,6 +18,7 @@
     along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -288,6 +289,13 @@ void Gpu3DRenderer::drawScanline(int line) {
 
             // Allow horizontal line polygons to be drawn
             if (polygonTop[i] == polygonBot[i]) polygonBot[i]++;
+
+            // Keep high-res texture coordinates to the texels the DS would sample
+            int32_t *bounds = polygonTexBounds[i];
+            if (!textureBounds(polygon, resShift, bounds)) {
+                bounds[0] = bounds[1] = INT32_MIN;
+                bounds[2] = bounds[3] = INT32_MAX;
+            }
         }
 
 #ifdef HEARTBEAT
@@ -685,6 +693,65 @@ uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon, bool palette) {
         }
     }
     return hash;
+}
+
+bool Gpu3DRenderer::textureBounds(_Polygon *polygon, int shift, int32_t bounds[4]) {
+    // At high resolution, pixels between the DS's own sample points can read texels the DS never shows, such as the
+    // edge of the next image in a texture atlas, which draws a line along the polygon's edge. The DS samples pixels at
+    // their top-left corners, so its last pixels on the right and bottom are a native pixel short of those edges; the
+    // texels it can read are those at the polygon's vertices, brought in by one native pixel's change on those sides
+    // This is only worked out for polygons with the same W at every vertex, whose texture coordinates change linearly
+    // across the screen; with perspective, the change across a pixel varies, and is left alone
+    if (!shift || !polygon->textureFmt || polygon->size < 3)
+        return false;
+    Vertex *v = &core->gpu3D.verticesOut[polygon->vertices];
+    for (int i = 1; i < polygon->size; i++)
+        if (v[i].w != v[0].w) return false;
+
+    // Get how the coordinates change per pixel from the first triangle that isn't flat
+    float dsdx = 0, dsdy = 0, dtdx = 0, dtdy = 0;
+    bool found = false;
+    for (int i = 1; i + 1 < polygon->size && !found; i++) {
+        float bx = v[i].x - v[0].x, by = v[i].y - v[0].y, cx = v[i + 1].x - v[0].x, cy = v[i + 1].y - v[0].y;
+        float bs = v[i].s - v[0].s, bt = v[i].t - v[0].t, cs = v[i + 1].s - v[0].s, ct = v[i + 1].t - v[0].t;
+        if (float det = bx * cy - cx * by) {
+            dsdx = (bs * cy - cs * by) / det;
+            dsdy = (cs * bx - bs * cx) / det;
+            dtdx = (bt * cy - ct * by) / det;
+            dtdy = (ct * bx - bt * cx) / det;
+            found = true;
+        }
+    }
+    if (!found)
+        return false;
+
+    // Bring in whichever end lies on the right and bottom, in 1/16 texels, then convert to texels; an axis the polygon
+    // is too thin for is left unclamped
+    int32_t minS = v[0].s, maxS = v[0].s, minT = v[0].t, maxT = v[0].t;
+    for (int i = 1; i < polygon->size; i++) {
+        minS = std::min<int32_t>(minS, v[i].s);
+        maxS = std::max<int32_t>(maxS, v[i].s);
+        minT = std::min<int32_t>(minT, v[i].t);
+        maxT = std::max<int32_t>(maxT, v[i].t);
+    }
+    float step = 1 << shift;
+    float loS = minS - step * (std::min(dsdx, 0.0f) + std::min(dsdy, 0.0f));
+    float hiS = maxS - step * (std::max(dsdx, 0.0f) + std::max(dsdy, 0.0f));
+    float loT = minT - step * (std::min(dtdx, 0.0f) + std::min(dtdy, 0.0f));
+    float hiT = maxT - step * (std::max(dtdx, 0.0f) + std::max(dtdy, 0.0f));
+    bounds[0] = int32_t(floorf(loS / 16));
+    bounds[2] = int32_t(floorf(hiS / 16));
+    bounds[1] = int32_t(floorf(loT / 16));
+    bounds[3] = int32_t(floorf(hiT / 16));
+    if (bounds[0] > bounds[2]) {
+        bounds[0] = INT32_MIN;
+        bounds[2] = INT32_MAX;
+    }
+    if (bounds[1] > bounds[3]) {
+        bounds[1] = INT32_MIN;
+        bounds[3] = INT32_MAX;
+    }
+    return true;
 }
 
 void Gpu3DRenderer::decodeTexture(_Polygon *polygon, uint32_t *out, int pitch) {
@@ -1462,7 +1529,8 @@ void Gpu3DRenderer::drawPolygon(int line, int polygonIndex) {
 
     // Draw the span with a version of the loop specialized for the polygon's main settings
     Span span = { polygon, line, x1, x2, x3, x4, x1e, x4e, x1a, x2a, x3a, x4a, horizontal,
-        { ze[0], ze[1] }, { we[0], we[1] }, { re[0], re[1] }, { ge[0], ge[1] }, { be[0], be[1] }, { se[0], se[1] }, { te[0], te[1] } };
+        { ze[0], ze[1] }, { we[0], we[1] }, { re[0], re[1] }, { ge[0], ge[1] }, { be[0], be[1] }, { se[0], se[1] }, { te[0], te[1] },
+        polygonTexBounds[polygonIndex] };
     switch ((polygon->wBuffer << 2) | (bool(disp3DCnt & BIT(4)) << 1) | (polygon->textureFmt != 0)) {
         case 0: drawSpan<false, false, false>(span); break;
         case 1: drawSpan<false, false, true>(span); break;
@@ -1619,6 +1687,10 @@ template <bool wBuffer, bool antiAlias, bool textured> void Gpu3DRenderer::drawS
                 s = (int)(interpolateFactor(factor, 8, se[0] + 0xFFFF, se[1] + 0xFFFF) - 0xFFFF) >> 4;
                 t = (int)(interpolateFactor(factor, 8, te[0] + 0xFFFF, te[1] + 0xFFFF) - 0xFFFF) >> 4;
             }
+
+            // Keep high-res pixels to the texels the polygon's native pixels would read
+            s = std::min(std::max(s, span.texBounds[0]), span.texBounds[2]);
+            t = std::min(std::max(t, span.texBounds[1]), span.texBounds[3]);
 
             // Read a new texel from the texture if the coordinates changed
             PX_NEXT();
