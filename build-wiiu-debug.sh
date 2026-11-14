@@ -19,6 +19,7 @@
 #                of where its core was during slow frames in trace.bin
 #   frameslots   frametime without the samples, which slow the emulator down, for truer times
 #   framelog     The time of every emulator and UI frame in framelog.bin, cheap enough to measure dropped frames
+#                and what a change costs; tests/framelog/report.py sums it up and compares two of them
 #   audiocap     framelog, plus the audio the emulator made and the audio played in audio-produced.pcm and
 #                audio-output.pcm; press ZL + ZR + Y to mark when you hear something
 #   romload      How long loading the ROM into RAM took, in romload.txt
@@ -29,7 +30,7 @@ cd "$(dirname "$0")"
 export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro} DEVKITPPC=${DEVKITPPC:-/opt/devkitpro/devkitPPC}
 BASE='-g -Ofast -fno-allow-store-data-races -flto -ffunction-sections -DESPRESSO -mcpu=750 -meabi -mhard-float $(INCLUDE) -D__WIIU__ -D__WUT__ -DENDIAN_BIG -DNO_FDOPEN -DLOG_LEVEL=0'
 
-[ $# -gt 0 ] || { sed -n '2,25p' "$0"; exit 1; }
+[ $# -gt 0 ] || { sed -n '2,27p' "$0"; exit 1; }
 for variant in "$@"; do
     case $variant in
         heartbeat) flags='-DHEARTBEAT'; name=noodsu-hb; title='NooDS U Heartbeat' ;;
