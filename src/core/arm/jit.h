@@ -94,6 +94,13 @@ struct JitFetch {
     uint32_t behind;
 };
 
+// A call in a block being generated to the routine for a list of registers that a block load or store moves
+struct JitListCall {
+    uint32_t *site;
+    uint32_t key; // The list without the program counter, then bits for the user's registers and for a load
+    bool offset; // Whether the address is already worked out, and not just the base
+};
+
 // A run of consecutive instructions from one 4KB page of host memory
 struct JitBlock {
     uint32_t address; // Guest address of the first instruction
@@ -104,6 +111,7 @@ struct JitBlock {
     void *code = nullptr; // Generated host code, or null to use the portable executor
     std::vector<uint32_t> entries; // Offsets in the code where each instruction starts
     std::vector<uint8_t> entriesBehind; // How far the program counter register is behind at each of those
+    std::vector<uint16_t> entriesCycles; // Cycles of the run each of those is in that are counted before it
     std::vector<JitLink> links; // Jumps from this block's code to other blocks
     std::vector<std::pair<JitBlock*, uint32_t*>> incoming; // Linked jumps to this block, and their blocks
     int linkedPos = -1; // Position in the list of blocks with linked jumps, or -1 if it's not there
@@ -182,6 +190,9 @@ private:
     // Running code stops at the next instruction when the flag is set, in case its own code changed
     static const int CACHE_SIZE = 0x1000;
     JitCacheEntry cacheData[CACHE_SIZE + 1] = {};
+    static const uint32_t NO_KEY = 2; // A key no code has
+    static uint32_t cacheKey(uint32_t address, bool thumb) { return address + (thumb ? 3 : 4); } // The program counter there, with bit 0 for THUMB
+    JitCacheEntry &cacheEntry(uint32_t key) { return cache[(key >> 1) & (CACHE_SIZE - 1)]; }
     JitCacheEntry *cache = &cacheData[1];
     uint32_t &codeChanged = cacheData[0].key;
     bool wramCached = false; // Whether the cache might have any blocks from WRAM addresses
@@ -203,16 +214,19 @@ private:
     // Generated code, starting with shared entry, exit, dispatch and per-instruction routines
     uint8_t *codeArea = nullptr, *codeStart = nullptr, *codePtr = nullptr, *codeEnd = nullptr;
     void *codeEnter = nullptr, *codeExit = nullptr, *codeDispatch = nullptr;
-    void *codeRefresh = nullptr;
+    void *codeRefresh = nullptr, *codeDispatchMiss = nullptr;
+    uint32_t runCycles = 0; // Cycles of the run being generated so far that its check adds as a constant
     uint32_t pcBehind = 0; // How far the program counter register will be behind at this point in a block being generated
     std::vector<uint8_t> liveFlags; // Which of N, Z, C and V are read after each instruction of the block being generated
     uint8_t flagsLive = 0xF; // The same for the instruction being generated, as bits 28 to 31 of the CPSR
     bool thumbCode = false; // Whether the block being generated is THUMB
     bool fullSpeed = false; // Whether it's the ARM7's from outside main RAM in DSi mode, where its cycles aren't doubled
-    void *codePost[3][2][2] = {}, *codeSlowPost[2] = {}; // Indexed by how cycles are halved, impure, then storing the PC
+    void *codePost[3][2] = {}, *codeSlowPost[2] = {}; // Indexed by how cycles are halved, then storing the PC
     void *codeFetch[2] = {}; // Fetching a line into the ARM9's code cache, with a second for when it might be there already
     std::vector<JitFetch> fetchPaths; // Fetches to generate after the code being generated
-    void *codeCond[14] = {}, *codeFlags[5] = {}, *codeMemory[6] = {}, *codeShift[4] = {}, *codeShiftCarry[4] = {}, *codeMultiplyCycles = nullptr, *codeOverflowQ = nullptr, *codeMsr[2] = {}, *codeReturn = nullptr;
+    std::vector<JitListCall> listCalls; // Calls to point at their routines after the code being generated
+    std::unordered_map<uint32_t, void*> listStubs; // Routines for block loads and stores made since the area started over
+    void *codeCond[7] = {}, *codeFlags[5] = {}, *codeMemory[6] = {}, *codeShift[4] = {}, *codeShiftCarry[4] = {}, *codeMultiplyCycles = nullptr, *codeOverflowQ = nullptr, *codeMsr[2] = {}, *codeReturn = nullptr;
     int offPc = 0, offCpsr = 0, offSpsr = 0, offCycles = 0, offEventCycles = 0, offUsr = 0, offRegs = 0, offIe = 0, offIrf = 0;
     int offDsiCycle = 0, offIme = 0;
     uint32_t codeCore = 0;
@@ -221,7 +235,7 @@ private:
     int postHalf() { return arm7 ? fullSpeed : !halfCycles ? 0 : (codeFast && !testing) ? 2 : 1; } // Which post-instruction stubs to use
 
     // Addresses that native instructions use, which tests can point elsewhere
-    uint32_t addrCondition = 0, addrMemory = 0, addrReadMap = 0, addrWriteMap = 0;
+    uint32_t addrMemory = 0, addrReadMap = 0, addrWriteMap = 0;
     uint32_t addrDtcmReg = 0, addrWriteCpsr = 0, addrRestoreCpsr = 0, addrModeBanks = 0;
     uint32_t addrDivCnt = 0, addrDivNumer = 0, addrDivDirty = 0, addrSqrtCnt = 0, addrSqrtParam = 0, addrSqrtDirty = 0, addrGxStat = 0;
     uint32_t addrLoad32 = 0, addrLoad8 = 0, addrStore32 = 0, addrStore8 = 0, addrLoad16 = 0, addrStore16 = 0;
@@ -261,6 +275,7 @@ private:
     void emitStubs(PpcEmitter &e);
     void emitMath(PpcEmitter &e, bool load, int size);
     bool emitNative(PpcEmitter &e, uint32_t op, uint32_t pc);
+    uint32_t *condSkip(PpcEmitter &e, uint32_t cond);
     uint32_t armOpcode(JitBlock *block, size_t i);
     void findLiveFlags(JitBlock *block);
     bool batched(JitBlock *block, size_t i);
@@ -268,13 +283,14 @@ private:
     int fetchLines(JitBlock *block, size_t i, bool entry, uint32_t &address);
     void emitFetch(PpcEmitter &e, uint32_t address, int lines, uint32_t pc);
     void emitFetchPaths(PpcEmitter &e);
+    void emitListStubs(PpcEmitter &e, bool keep);
     bool endsRun(JitBlock *block, size_t i);
     void stepPc(PpcEmitter &e);
     void emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool &ok);
     void emitAlu(PpcEmitter &e, uint32_t op, uint32_t pc);
     void emitBranch(PpcEmitter &e, uint32_t op, uint32_t pc);
     void emitBlx(PpcEmitter &e, uint32_t op, uint32_t pc);
-    void emitThumbBranch(PpcEmitter &e, uint32_t op, uint32_t pc);
+    void emitThumbBranch(PpcEmitter &e, uint32_t op, uint32_t pc, bool known = false, uint32_t target = 0);
     void emitTransfer(PpcEmitter &e, uint32_t op, uint32_t pc);
     bool emitShift(PpcEmitter &e, uint32_t op, uint32_t pc, bool setCarry);
     void emitHalf(PpcEmitter &e, uint32_t op, uint32_t pc);

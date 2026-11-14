@@ -42,7 +42,7 @@ enum { NK_NONE, NK_ALU, NK_BRANCH, NK_TRANSFER, NK_BRANCH_REG, NK_HALF, NK_BLOCK
 
 // Addresses in the emulator
 static const uint32_t ARM_STATE = 0x10000, CACHE_FLAG = 0x50000, CACHE = 0x50010, EVENTS = 0x70000, LIMIT = 0x71000,
-    GLOBAL = 0x72000, STACK = 0x7F000, END = 0x80000, COND_TABLE = 0x200000, READ_MAP = 0x400000, WRITE_MAP = 0x800000,
+    GLOBAL = 0x72000, STACK = 0x7F000, END = 0x80000, READ_MAP = 0x400000, WRITE_MAP = 0x800000,
     FAKE = 0x3F0000, FAKE_MEMORY = 0x3F0800, FAKE_HANDLER = 0x3F1000, FAKE_INTERLEAVE = 0x3F2000, FAKE_MSR = 0x3F1800, FAKE_RESTORE = 0x3F1840, MODE_BANKS = 0x3F3000, MATH = 0x3F3800, DTCM_REG = 0x3F4000, CODE = 0x10000000;
 // The math registers as a big-endian host lays them out: three 64-bit values, the two control registers and the dirty flags
 static const uint32_t MATH_NUMER = 0, MATH_DENOM = 8, MATH_PARAM = 16, MATH_DIV_CNT = 24, MATH_SQRT_CNT = 26, MATH_DIV_DIRTY = 28, MATH_SQRT_DIRTY = 29, MATH_GX_STAT = 32;
@@ -614,13 +614,20 @@ static void runCase(Case &c) {
 
     // Fill the block cache with what can be reached, which the dispatcher uses
     static std::vector<uint32_t> usedEntries;
-    for (uint32_t at: usedEntries) { writeBe(at, 0); writeBe(at + 4, 0); }
+    // Entries without a block hold a key no code has, as the JIT leaves them, since the dispatcher only compares keys
+    static bool cacheEmptied = false;
+    if (!cacheEmptied) {
+        for (uint32_t i = 0; i < 0x1000; i++) writeBe(CACHE + i * 16, Jit::NO_KEY);
+        cacheEmptied = true;
+    }
+    for (uint32_t at: usedEntries) { writeBe(at, Jit::NO_KEY); writeBe(at + 4, 0); }
     usedEntries.clear();
     for (JitBlock *b: c.blocks) {
         if (!b->code) { fail("block has no code"); return; }
         if (!c.useCache) continue;
-        uint32_t at = CACHE + ((b->address >> 1) & 0xFFF) * 16;
-        writeBe(at, b->address | b->thumb);
+        uint32_t key = Jit::cacheKey(b->address, b->thumb);
+        uint32_t at = CACHE + ((key >> 1) & 0xFFF) * 16;
+        writeBe(at, key);
         writeBe(at + 4, emuCode(b->code));
         usedEntries.push_back(at);
     }
@@ -2247,6 +2254,7 @@ static void suiteMath() {
         setReg(UC_PPC_REG_8, value);
         setReg(UC_PPC_REG_0 + 23, WRITE_MAP);
         setReg(UC_PPC_REG_0 + 24, READ_MAP);
+        setReg(UC_PPC_REG_0 + 26, CACHE); // Refreshing after a call to C++ reads the code changed flag
         setReg(UC_PPC_REG_0 + 27, EVENTS);
         setReg(UC_PPC_REG_0 + 28, START_CYCLES);
         setReg(UC_PPC_REG_0 + 29, LIMIT);
@@ -2431,6 +2439,7 @@ static void suiteInterruptRegisters() {
                 setReg(UC_PPC_REG_8, value);
                 setReg(UC_PPC_REG_0 + 23, WRITE_MAP);
                 setReg(UC_PPC_REG_0 + 24, READ_MAP);
+                setReg(UC_PPC_REG_0 + 26, CACHE); // Refreshing after a call to C++ reads the code changed flag
                 setReg(UC_PPC_REG_0 + 27, EVENTS);
                 setReg(UC_PPC_REG_0 + 28, START_CYCLES);
                 setReg(UC_PPC_REG_0 + 29, LIMIT);
@@ -2471,7 +2480,6 @@ static void setup(Jit &jit) {
     jit.offCpsr = OFF_CPSR;
     jit.offCycles = OFF_CYCLES;
     jit.offSpsr = OFF_SPSR;
-    jit.addrCondition = COND_TABLE;
     jit.addrMemory = FAKE_MEMORY;
     jit.addrReadMap = READ_MAP;
     jit.addrWriteMap = WRITE_MAP;
@@ -2535,7 +2543,6 @@ int main(int argc, char **argv) {
     uc_mem_map(uc, 0, 0x1000000, UC_PROT_ALL);
     uc_mem_map(uc, WINDOW, WINDOW_SIZE, UC_PROT_ALL);
     uc_mem_map(uc, CODE, 0x4000000, UC_PROT_ALL);
-    uc_mem_write(uc, COND_TABLE, Interpreter::condition, 256);
     uint32_t blr = swap32(0x4E800020);
     for (uint32_t a = FAKE; a < FAKE_INTERLEAVE + 0x10; a += 4) uc_mem_write(uc, a, &blr, 4);
     writeBe(EVENTS, EVENTS + 0x10);

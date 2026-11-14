@@ -44,6 +44,9 @@ if 'void flush();' not in open(root + '/memory/sd_mmc.h').read():
     edit('memory/sd_mmc.h', ('    void writeBlock();\n', '    void writeBlock();\n    void flush() {}\n'))
 if 'restartRequested' not in open(root + '/core.h').read():
     edit('core.h', ('    Atomic32<bool> running;\n', '    Atomic32<bool> running;\n    std::atomic<bool> restartRequested{false};\n'))
+# Cores up to v1.0 also look conditions up in the interpreter's table, which game.cpp gives them; newer ones don't have it
+if 'addrCondition' not in open(root + '/arm/jit.h').read():
+    edit('arm/jit.h', ('    uint32_t addrDtcmReg = 0,', '    uint32_t addrCondition = 0;\n    uint32_t addrDtcmReg = 0,'))
 edit('arm/jit.cpp', ('#include <cstdlib>', '#include <algorithm>\n#include <vector>\n#include <cstdlib>'))
 edit('defines.h', ('__asm__ volatile("dcbz 0, %0" :: "r"(data) : "memory");', ''))
 edit('gpu/gpu.cpp',

@@ -81,7 +81,7 @@ void jitLog(const char *format, ...) {
 
 bool Jit::testing = false;
 
-Jit::Jit(Core *core, bool arm7): core(core), arm7(arm7) {}
+Jit::Jit(Core *core, bool arm7): core(core), arm7(arm7) { clearCache(); }
 
 Jit::~Jit() {
     // Free all blocks and give up the codegen area
@@ -190,6 +190,8 @@ uint8_t *Jit::pageHost(int page) {
 void Jit::clearCache() {
     // Empty the cache of blocks by guest address
     memset(cache, 0, CACHE_SIZE * sizeof(JitCacheEntry));
+    for (int i = 0; i < CACHE_SIZE; i++)
+        cache[i].key = NO_KEY;
     wramCached = false;
 }
 
@@ -378,8 +380,11 @@ void Jit::retire(JitBlock *block) {
         }
         if (blocks.empty()) codePages--;
     }
-    JitCacheEntry &entry = cache[(block->address >> 1) & (CACHE_SIZE - 1)];
-    if (entry.block == block) entry = JitCacheEntry();
+    JitCacheEntry &entry = cacheEntry(cacheKey(block->address, block->thumb));
+    if (entry.block == block) {
+        entry = JitCacheEntry();
+        entry.key = NO_KEY;
+    }
     unlinkIncoming(block);
     if (block->linkedPos >= 0) {
         // Fill its place in the list with the last block, since blocks are often retired
@@ -630,9 +635,9 @@ bool Jit::run(const uint32_t *limit) {
     }
 
     // Cache the block so running code can jump to it, and run it
-    JitCacheEntry &entry = cache[(address >> 1) & (CACHE_SIZE - 1)];
-    entry.key = address | thumb;
-    entry.code = block->code;
+    JitCacheEntry &entry = cacheEntry(cacheKey(address, thumb));
+    entry.key = cacheKey(address, thumb);
+    entry.code = block->code ? block->code : codeDispatchMiss; // Generated code jumps to it without looking
     entry.block = block;
     if ((address >> 24) == 0x03) wramCached = true;
     execute(block, limit);
@@ -768,8 +773,8 @@ void Jit::execute(JitBlock *block, const uint32_t *limit) {
         // Find the next block in the cache, or stop and let the run loop look it up
         bool thumb = arm.cpsr & BIT(5);
         uint32_t address = arm.registersUsr[15] - (thumb ? 2 : 4);
-        JitCacheEntry &entry = cache[(address >> 1) & (CACHE_SIZE - 1)];
-        if (entry.key != (address | thumb) || !entry.block)
+        JitCacheEntry &entry = cacheEntry(cacheKey(address, thumb));
+        if (entry.key != cacheKey(address, thumb) || !entry.block)
             break;
         block = entry.block;
     }

@@ -35,7 +35,7 @@ enum PpcReg {
     R_LINES1 = 17, // The bytes that say which lines the ARM9's code cache holds, from 96KB in
     R_LINES0 = 18, // The same from 32KB in; an offset from one or the other reaches every line of a DS's main RAM
     R_NEXT = 19, // Global cycles when something else needs to run, from the limit and the next scheduled event
-    R_BATCH = 20, // Cycles of a batch of instructions that share one check, zero outside of one
+    R_BATCH = 20, // Cycles of a run of instructions sharing one check that aren't known until it runs, zero outside of one
     R_TMP2 = 21, // Values kept across memory accesses
     R_TMP1 = 22,
     R_WMAP = 23, // ARM9 write memory map
@@ -77,10 +77,12 @@ public:
     void lmw(int rt, int32_t disp, int ra) { d(46, rt, ra, disp); }
     void stmw(int rs, int32_t disp, int ra) { d(47, rs, ra, disp); }
     void cmpwi(int ra, int32_t si) { d(11, 0, ra, si); }
+    void cmplwi(int ra, uint32_t ui) { d(10, 0, ra, ui); }
     void oris(int ra, int rs, uint32_t ui) { d(25, rs, ra, ui); }
     void subfic(int rt, int ra, int32_t si) { d(8, rt, ra, si); }
     void addic(int rt, int ra, int32_t si) { d(12, rt, ra, si); }
     void andi_(int ra, int rs, uint32_t ui) { d(28, rs, ra, ui); }
+    void andis_(int ra, int rs, uint32_t ui) { d(29, rs, ra, ui); }
 
     // X-form instructions
     void x(int rt, int ra, int rb, int xo) { emit((31 << 26) | (rt << 21) | (ra << 16) | (rb << 11) | (xo << 1)); }
@@ -99,6 +101,8 @@ public:
     void or_(int ra, int rs, int rb) { x(rs, ra, rb, 444); }
     void and_(int ra, int rs, int rb) { x(rs, ra, rb, 28); }
     void xor_(int ra, int rs, int rb) { x(rs, ra, rb, 316); }
+    void or_r(int ra, int rs, int rb) { x(rs, ra, rb, 444); ptr[-1] |= 1; } // Also compares the result with 0 in cr0
+    void xor_r(int ra, int rs, int rb) { x(rs, ra, rb, 316); ptr[-1] |= 1; } // Also compares the result with 0 in cr0
     void andc(int ra, int rs, int rb) { x(rs, ra, rb, 60); }
     void nor(int ra, int rs, int rb) { x(rs, ra, rb, 124); }
     void eqv(int ra, int rs, int rb) { x(rs, ra, rb, 284); }
@@ -153,6 +157,9 @@ public:
     void bne(void *to) { bc(4, 2, to); }
     void bgt(void *to) { bc(12, 1, to); }
     void bge(void *to) { bc(4, 0, to); }
+    void blt(void *to) { bc(12, 0, to); }
+    void beqlr() { emit(0x4D820020); }
+    void beqctr() { emit(0x4D820420); }
 
     // Patch a branch emitted earlier to point here
     void patchBc(uint32_t *at) { *at = (*at & ~0xFFFC) | ((uint32_t)((intptr_t)ptr - (intptr_t)at) & 0xFFFC); }
@@ -183,8 +190,8 @@ public:
     }
 };
 
-// The most words of host code generated for one instruction
-static const int MAX_INSTR_WORDS = 120;
+// The most words of host code generated for one instruction, with the routine for its list of registers if it has one
+static const int MAX_INSTR_WORDS = 180;
 
 // The most host code a block's checks of the code cache and their fetches take, with a new line every 8 instructions
 static const size_t FETCH_SIZE = 640;
@@ -275,7 +282,6 @@ void Jit::initCodegen() {
     offIme = (uint8_t*)&arm.ime - (uint8_t*)&arm;
     addrWriteCpsr = (uint32_t)(uintptr_t)&Jit::writeCpsrCall;
     addrRestoreCpsr = (uint32_t)(uintptr_t)&Jit::restoreCpsrCall;
-    addrCondition = (uint32_t)(uintptr_t)&Interpreter::condition[0];
     addrMemory = (uint32_t)(uintptr_t)&core->memory;
     addrReadMap = (uint32_t)(uintptr_t)(arm7 ? &core->memory.readMap7[0] : &core->memory.readMap9A[0]);
     addrWriteMap = (uint32_t)(uintptr_t)(arm7 ? &core->memory.writeMap7[0] : &core->memory.writeMap9A[0]);
@@ -335,6 +341,12 @@ void Jit::emitStubs(PpcEmitter &e) {
     e.mr(R_NEXT, 4);
     e.patchBc(refreshed1);
     e.patchBc(refreshed2);
+
+    // Code that changed makes the next check stop, whatever the time
+    e.lwz(4, -int(sizeof(JitCacheEntry)), R_CACHE);
+    e.cmpwi(4, 0);
+    e.beqlr();
+    e.li(R_NEXT, 0);
     e.blr();
 
     // Exit: restore saved registers and return to the caller
@@ -392,61 +404,49 @@ void Jit::emitStubs(PpcEmitter &e) {
     e.blr();
 
     // After an instruction, with its cycles in r3: add them, doubled for the half-speed ARM7 and halved for the DSi's
-    // ARM9 at 133MHz, then continue if nothing else needs to run first; impure versions also check if code changed,
-    // since the block might be stale. The DSi's ARM9 gets versions for both of its speeds, and at 133MHz a cheaper one
-    // for fast timing; its ARM7 gets a second version that doesn't double, for code outside main RAM
+    // ARM9 at 133MHz, then continue if nothing else needs to run first, which includes code having changed, since
+    // refreshing sets when to stop to now for that. The DSi's ARM9 gets versions for both of its speeds, and at 133MHz
+    // a cheaper one for fast timing; its ARM7 gets a second version that doesn't double, for code outside main RAM
     for (int half = 0; half < (!core->dsiMode ? 1 : arm7 ? 2 : 3); half++) {
         for (int store = 0; store < 2; store++) {
-            for (int impure = 0; impure < 2; impure++) {
-                codePost[half][impure][store] = e.here();
-                if (arm7 && !half) e.add(3, 3, 3);
-                uint32_t *none = nullptr;
-                if (arm7) {
-                }
-                else if (half == 2) {
-                    // Fast timing doesn't need the odd half cycle; an instruction that rounds down to no time is fine,
-                    // since a loop always has a taken branch, which takes at least one
-                    e.rlwinm(3, 3, 31, 1, 31);
-                }
-                else if (half) {
-                    // Keep an odd half cycle for the next instruction, like the interpreter
-                    e.lbz(4, offDsiCycle, R_ARM);
-                    e.add(3, 3, 4);
-                    e.rlwinm(4, 3, 0, 31, 31);
-                    e.stb(4, offDsiCycle, R_ARM);
-                    e.rlwinm_(3, 3, 31, 1, 31);
-                    none = e.here();
-                    e.beq(nullptr);
-                }
-                e.add(3, 3, R_CYCLES);
-                if (impure) {
-                    e.lwz(4, -int(sizeof(JitCacheEntry)), R_CACHE);
-                    e.cmpwi(4, 0);
-                    e.bne(codeSlowPost[store]);
-                }
-                e.cmplw(3, R_NEXT);
-                e.bge(codeSlowPost[store]);
-                e.mr(R_CYCLES, 3);
-                e.blr();
-                if (!none) continue;
-
-                // An instruction that took no time also stops at the limit, since the run loop would run the ARM7
-                // next if it was due when the instruction started, which is now; it stops for an event made due now
-                // as well
-                e.patchBc(none);
-                e.mr(3, R_CYCLES);
-                if (impure) {
-                    e.lwz(4, -int(sizeof(JitCacheEntry)), R_CACHE);
-                    e.cmpwi(4, 0);
-                    e.bne(codeSlowPost[store]);
-                }
-                e.cmplw(3, R_NEXT);
-                e.bge(codeSlowPost[store]);
-                e.lwz(4, 0, R_LIMIT);
-                e.cmplw(3, 4);
-                e.bge(codeSlowPost[store]);
-                e.blr();
+            codePost[half][store] = e.here();
+            if (arm7 && !half) e.add(3, 3, 3);
+            uint32_t *none = nullptr;
+            if (arm7) {
             }
+            else if (half == 2) {
+                // Fast timing doesn't need the odd half cycle; an instruction that rounds down to no time is fine,
+                // since a loop always has a taken branch, which takes at least one
+                e.rlwinm(3, 3, 31, 1, 31);
+            }
+            else if (half) {
+                // Keep an odd half cycle for the next instruction, like the interpreter
+                e.lbz(4, offDsiCycle, R_ARM);
+                e.add(3, 3, 4);
+                e.rlwinm(4, 3, 0, 31, 31);
+                e.stb(4, offDsiCycle, R_ARM);
+                e.rlwinm_(3, 3, 31, 1, 31);
+                none = e.here();
+                e.beq(nullptr);
+            }
+            e.add(3, 3, R_CYCLES);
+            e.cmplw(3, R_NEXT);
+            e.bge(codeSlowPost[store]);
+            e.mr(R_CYCLES, 3);
+            e.blr();
+            if (!none) continue;
+
+            // An instruction that took no time also stops at the limit, since the run loop would run the ARM7
+            // next if it was due when the instruction started, which is now; it stops for an event made due now
+            // as well
+            e.patchBc(none);
+            e.mr(3, R_CYCLES);
+            e.cmplw(3, R_NEXT);
+            e.bge(codeSlowPost[store]);
+            e.lwz(4, 0, R_LIMIT);
+            e.cmplw(3, 4);
+            e.bge(codeSlowPost[store]);
+            e.blr();
         }
     }
 
@@ -494,58 +494,55 @@ void Jit::emitStubs(PpcEmitter &e) {
     // On a miss, exit with the state as it is, which matches the top of the run loop
     codeDispatch = e.here();
     e.lwz(3, offCpsr, R_ARM);
-    e.rlwinm(3, 3, 27, 31, 31); // THUMB bit
     e.lwz(4, offPc, R_ARM);
-    e.addi(4, 4, -4);
-    e.rlwinm(5, 3, 1, 0, 30);
-    e.add(4, 4, 5); // Address of the next instruction
-    e.or_(5, 4, 3); // Cache key
+    e.rlwimi(4, 3, 27, 31, 31); // Cache key: the program counter with the THUMB bit
     e.rlwinm(6, 4, 3, 16, 27); // Cache index * 16
     e.add(6, 6, R_CACHE);
     e.lwz(7, 0, 6);
-    e.cmpw(7, 5);
-    uint32_t *miss1 = e.here();
-    e.bne(nullptr);
-    e.lwz(7, 4, 6);
-    e.cmpwi(7, 0);
-    uint32_t *miss2 = e.here();
-    e.beq(nullptr);
-    e.mtctr(7);
-    e.bctr();
-    e.patchBc(miss1);
-    e.patchBc(miss2);
+    e.lwz(8, 4, 6);
+    e.cmpw(7, 4);
+    e.mtctr(8);
+    e.beqctr();
+    codeDispatchMiss = e.here();
     e.stw(R_CYCLES, 0, R_GLOBAL);
     e.stw(R_CYCLES, offCycles, R_ARM);
     e.b(codeExit);
 
-    // Conditions: set cr0 to equal if an ARM condition passes, from the interpreter's lookup table
-    for (int cond = 0; cond < 14; cond++) {
-        codeCond[cond] = e.here();
+    // Conditions: compare the flags an ARM condition goes by, for condSkip to branch on; a condition and its opposite
+    // share one, and branch on the same result the other way
+    for (int pair = 0; pair < 7; pair++) {
+        codeCond[pair] = e.here();
         e.lwz(3, offCpsr, R_ARM);
-        e.rlwinm(3, 3, 4, 28, 31);
-        e.loadConst(4, addrCondition + cond * 16);
-        e.lbzx(3, 4, 3);
-        e.cmpwi(3, 1);
+        static const uint32_t single[] = { 0x4000, 0x2000, 0x8000, 0x1000 }; // Z, C, N, V
+        if (pair < 4) {
+            e.andis_(3, 3, single[pair]); // Not equal if the flag is set
+        }
+        else if (pair == 4) {
+            e.rlwinm(3, 3, 3, 30, 31); // Z and C
+            e.cmpwi(3, 1); // Equal if higher
+        }
+        else {
+            e.rlwinm(4, 3, 3, 0, 0); // V where N is
+            if (pair == 5) {
+                e.xor_r(3, 3, 4); // Less if N and V differ
+            }
+            else {
+                e.xor_(4, 4, 3);
+                e.rlwinm(3, 3, 1, 0, 0); // Z where N is
+                e.or_r(3, 3, 4); // Less if N and V differ or Z is set
+            }
+        }
         e.blr();
     }
 
     // Flags for logical operations, from the result in r5; the second version also sets C from r7
     for (int carry = 0; carry < 2; carry++) {
         codeFlags[carry] = e.here();
-        e.rlwinm(8, 5, 0, 0, 0);
         e.cntlzw(9, 5);
-        e.rlwinm(9, 9, 25, 1, 1);
-        e.or_(8, 8, 9);
         e.lwz(6, offCpsr, R_ARM);
-        if (carry) {
-            e.rlwinm(7, 7, 29, 2, 2);
-            e.or_(8, 8, 7);
-            e.rlwinm(6, 6, 0, 3, 31);
-        }
-        else {
-            e.rlwinm(6, 6, 0, 2, 31);
-        }
-        e.or_(6, 6, 8);
+        e.rlwimi(6, 5, 0, 0, 0);
+        e.rlwimi(6, 9, 25, 1, 1);
+        if (carry) e.rlwimi(6, 7, 29, 2, 2);
         e.stw(6, offCpsr, R_ARM);
         e.blr();
     }
@@ -556,12 +553,7 @@ void Jit::emitStubs(PpcEmitter &e) {
         codeFlags[2 + type] = e.here();
         e.li(9, 0);
         e.adde(9, 9, 9);
-        e.rlwinm(9, 9, 29, 2, 2);
-        e.rlwinm(8, 5, 0, 0, 0);
-        e.or_(8, 8, 9);
-        e.cntlzw(9, 5);
-        e.rlwinm(9, 9, 25, 1, 1);
-        e.or_(8, 8, 9);
+        e.cntlzw(8, 5);
         if (type == 0) {
             e.eqv(10, 4, 3);
             e.xor_(11, 5, 4);
@@ -573,11 +565,11 @@ void Jit::emitStubs(PpcEmitter &e) {
             e.xor_(11, 5, sub);
             e.andc(10, 10, 11);
         }
-        e.rlwinm(10, 10, 29, 3, 3);
-        e.or_(8, 8, 10);
         e.lwz(6, offCpsr, R_ARM);
-        e.rlwinm(6, 6, 0, 4, 31);
-        e.or_(6, 6, 8);
+        e.rlwimi(6, 5, 0, 0, 0);
+        e.rlwimi(6, 8, 25, 1, 1);
+        e.rlwimi(6, 9, 29, 2, 2);
+        e.rlwimi(6, 10, 29, 3, 3);
         e.stw(6, offCpsr, R_ARM);
         e.blr();
     }
@@ -845,6 +837,8 @@ void Jit::emitStubs(PpcEmitter &e) {
         else if (load) {
             // Rotate misaligned words like the interpreter
             e.lwbrx(8, 6, 7);
+            e.andi_(9, 5, 3);
+            e.beqlr();
             e.rlwinm(9, 5, 3, 27, 28);
             e.subfic(9, 9, 32);
             e.rlwnm(8, 8, 9, 0, 31);
@@ -1395,6 +1389,17 @@ uint32_t Jit::armOpcode(JitBlock *block, size_t i) {
     return block->thumb ? thumbToArm(op) : op;
 }
 
+uint32_t *Jit::condSkip(PpcEmitter &e, uint32_t cond) {
+    // Check an ARM condition and branch if it fails, returning the branch to patch to where that goes
+    e.call(codeCond[cond >> 1]);
+    uint32_t *skip = e.here();
+    bool odd = cond & 1;
+    if (cond < 8) odd ? e.bne(nullptr) : e.beq(nullptr);
+    else if (cond < 10) odd ? e.beq(nullptr) : e.bne(nullptr);
+    else odd ? e.bge(nullptr) : e.blt(nullptr);
+    return skip;
+}
+
 bool Jit::emitNative(PpcEmitter &e, uint32_t op, uint32_t pc) {
     // Generate an ARM instruction as native code if possible, leaving its cycles in r3
     // Branches leave the program counter set in memory; other instructions leave it unchanged
@@ -1404,9 +1409,7 @@ bool Jit::emitNative(PpcEmitter &e, uint32_t op, uint32_t pc) {
     // Skip the instruction if its condition fails, which takes 1 cycle; BLX label has no condition
     uint32_t *skip = nullptr;
     if ((op >> 28) < 0xE) {
-        e.call(codeCond[op >> 28]);
-        skip = e.here();
-        e.bne(nullptr);
+        skip = condSkip(e, op >> 28);
     }
 
     switch (kind) {
@@ -1760,29 +1763,32 @@ void Jit::emitBlock(PpcEmitter &e, uint32_t op, uint32_t pc) {
     int32_t first = up ? (pre ? 4 : 0) : (pre ? -count * 4 : -count * 4 + 4);
     int32_t end = up ? count * 4 : -count * 4;
     readReg(e, R_TMP1, rn, pc);
-    e.rlwinm(R_TMP2, R_TMP1, 0, 0, 29);
 
     // Loads write back first, since the base isn't loaded; stores write back last, storing the old base
     if (load && writeback) {
         e.addi(9, R_TMP1, end);
         writeReg(e, 9, rn);
     }
-    int32_t offset = first;
-    for (int i = 0; i < 16; i++) {
-        if (!(list & BIT(i))) continue;
-        e.addi(5, R_TMP2, offset);
-        offset += 4;
-        if (load) {
-            e.call(codeMemory[0]);
-            if (i == 15) emitJump(e, 8, !arm7);
-            else if (user) e.stw(8, offUsr + i * 4, R_ARM);
-            else writeReg(e, 8, i);
-        }
-        else {
-            if (user) e.lwz(8, offUsr + i * 4, R_ARM);
-            else readReg(e, 8, i, pc);
-            e.call(codeMemory[3]);
-        }
+
+    // The registers other than the program counter go through a routine shared by every instruction with the same list,
+    // made after the block's code, which leaves the first word's address in R_TMP2. It starts by taking the address
+    // from the base, which calls that worked the address out themselves skip
+    uint32_t regs = list & 0x7FFF;
+    if (regs) {
+        if (first) e.addi(5, R_TMP1, first);
+        listCalls.push_back({ e.here(), regs | (user ? BIT(16) : 0) | (load ? BIT(17) : 0), first != 0 });
+        e.emit(0x48000001); // A call, pointed at the routine once it's there
+    }
+    else {
+        e.addi(R_TMP2, R_TMP1, first);
+        e.rlwinm(R_TMP2, R_TMP2, 0, 0, 29);
+    }
+
+    // The program counter is loaded last, from after the others
+    if (list & BIT(15)) {
+        e.addi(5, R_TMP2, (count - 1) * 4);
+        e.call(codeMemory[0]);
+        emitJump(e, 8, !arm7);
     }
     if (!load && writeback) {
         e.addi(9, R_TMP1, end);
@@ -1792,6 +1798,90 @@ void Jit::emitBlock(PpcEmitter &e, uint32_t op, uint32_t pc) {
         e.li(3, count + 4);
     else
         e.li(3, count + (arm7 ? (load ? 2 : 1) : (count < 2)));
+}
+
+void Jit::emitListStubs(PpcEmitter &e, bool keep) {
+    // Generate the routines that the block loads and stores in the code so far call, unless code since the last reset
+    // has them already, and point the calls at them. Each is for one list of registers, loaded or stored, of the current
+    // mode or the user's: when every word is in one page that's mapped, it finds the page once and moves them directly;
+    // otherwise each word goes through the memory routines, like any other access
+    std::vector<std::pair<uint32_t, uint32_t*>> made;
+    for (size_t c = 0; c < listCalls.size(); c++) {
+        uint32_t key = listCalls[c].key;
+        uint32_t *stub = nullptr;
+        auto found = listStubs.find(key);
+        if (found != listStubs.end()) stub = (uint32_t*)found->second;
+        for (size_t i = 0; i < made.size() && !stub; i++)
+            if (made[i].first == key) stub = made[i].second;
+        if (!stub) {
+            bool load = key & BIT(17), user = key & BIT(16);
+            int count = 0;
+            for (int i = 0; i < 15; i++)
+                count += (key >> i) & 1;
+            stub = e.here();
+            made.push_back(std::make_pair(key, stub));
+            e.mr(5, R_TMP1); // Skipped by calls that have the address already
+            e.rlwinm(R_TMP2, 5, 0, 0, 29);
+            e.rlwinm(6, R_TMP2, 22, 10, 29);
+            e.lwzx(6, 6, load ? R_RMAP : R_WMAP);
+            e.rlwinm(7, R_TMP2, 0, 20, 31);
+            e.cmpwi(6, 0);
+            uint32_t *slow1 = e.here();
+            e.beq(nullptr);
+            e.cmplwi(7, 0x1000 - count * 4); // The last place in a page where they all fit
+            uint32_t *slow2 = e.here();
+            e.bgt(nullptr);
+            e.add(6, 6, 7);
+            for (int i = 0, left = count; i < 15; i++) {
+                if (!(key & BIT(i))) continue;
+                if (load) {
+                    e.lwbrx(8, 0, 6);
+                    if (--left) e.addi(6, 6, 4);
+                    if (user) e.stw(8, offUsr + i * 4, R_ARM);
+                    else writeReg(e, 8, i);
+                }
+                else {
+                    if (user) e.lwz(8, offUsr + i * 4, R_ARM);
+                    else readReg(e, 8, i, 0);
+                    e.stwbrx(8, 0, 6);
+                    if (--left) e.addi(6, 6, 4);
+                }
+            }
+            e.blr();
+
+            // Otherwise a word at a time, which needs a stack frame to keep the return address
+            e.patchBc(slow1);
+            e.patchBc(slow2);
+            e.stwu(1, -16, 1);
+            e.mflr(0);
+            e.stw(0, 20, 1);
+            for (int i = 0, offset = 0; i < 15; i++) {
+                if (!(key & BIT(i))) continue;
+                e.addi(5, R_TMP2, offset);
+                offset += 4;
+                if (load) {
+                    e.call(codeMemory[0]);
+                    if (user) e.stw(8, offUsr + i * 4, R_ARM);
+                    else writeReg(e, 8, i);
+                }
+                else {
+                    if (user) e.lwz(8, offUsr + i * 4, R_ARM);
+                    else readReg(e, 8, i, 0);
+                    e.call(codeMemory[3]);
+                }
+            }
+            e.lwz(0, 20, 1);
+            e.mtlr(0);
+            e.addi(1, 1, 16);
+            e.blr();
+        }
+        uint32_t *site = listCalls[c].site, *target = stub + (listCalls[c].offset ? 1 : 0);
+        *site = (18 << 26) | ((uint32_t)((intptr_t)target - (intptr_t)site) & 0x3FFFFFC) | 1;
+    }
+    listCalls.clear();
+    if (!keep) return;
+    for (size_t i = 0; i < made.size(); i++)
+        listStubs[made[i].first] = made[i].second;
 }
 
 void Jit::emitMisc(PpcEmitter &e, uint32_t op, uint32_t pc) {
@@ -2080,9 +2170,19 @@ void Jit::emitJump(PpcEmitter &e, int rs, bool interwork) {
     e.stw(8, offPc, R_ARM);
 }
 
-void Jit::emitThumbBranch(PpcEmitter &e, uint32_t op, uint32_t pc) {
+static bool thumbCallPair(JitBlock *block, size_t i, bool arm7) {
+    // Check if a THUMB instruction is the second half of a BL or BLX that directly follows its first half in a block,
+    // so the link register it adds to is known when it's reached from there
+    if (!block->thumb || i == 0 || i >= block->instrs.size()) return false;
+    uint32_t op = block->instrs[i].opcode;
+    if ((op & 0xF800) != 0xF800 && ((op & 0xF800) != 0xE800 || arm7)) return false;
+    return (block->instrs[i - 1].opcode & 0xF800) == 0xF000;
+}
+
+void Jit::emitThumbBranch(PpcEmitter &e, uint32_t op, uint32_t pc, bool known, uint32_t target) {
     // B, the two halves of BL and BLX, or BX and BLX with a register, leaving the cycles in r3
-    // The first half of BL only sets the link register, and the second half can be reached without it, so it adds to that
+    // The first half of BL only sets the link register, and the second half can be reached without it, so it adds to
+    // that, unless it's only reached from its first half, which makes the target known
     if ((op & 0xF800) == 0xE000) { // B
         e.loadConst(5, pc + ((int32_t)(op << 21) >> 20) + 2);
         e.stw(5, offPc, R_ARM);
@@ -2092,6 +2192,18 @@ void Jit::emitThumbBranch(PpcEmitter &e, uint32_t op, uint32_t pc) {
         e.loadConst(5, pc + ((int32_t)(op << 21) >> 9));
         writeReg(e, 5, 14);
         e.li(3, 1);
+    }
+    else if (known) { // Second half of BL/BLX after its first half
+        e.loadConst(6, pc - 1);
+        writeReg(e, 6, 14);
+        if (!(op & BIT(12))) { // BLX to ARM
+            e.lwz(6, offCpsr, R_ARM);
+            e.rlwinm(6, 6, 0, 27, 25);
+            e.stw(6, offCpsr, R_ARM);
+        }
+        e.loadConst(5, (op & BIT(12)) ? ((target & ~0x1) + 2) : ((target & ~0x3) + 4));
+        e.stw(5, offPc, R_ARM);
+        e.li(3, 3);
     }
     else if ((op & 0xF000) == 0xF000 || (op & 0xF800) == 0xE800) { // Second half of BL/BLX
         readReg(e, 5, 14, pc);
@@ -2120,23 +2232,6 @@ void Jit::emitThumbBranch(PpcEmitter &e, uint32_t op, uint32_t pc) {
         emitJump(e, 5, true);
         e.li(3, 3);
     }
-}
-
-static bool isPure(uint32_t op, bool thumb) {
-    // Check if an instruction can't write memory or remap it, so code can't change under it
-    if (thumb) {
-        if (op < 0x4800) return true; // Shifts, immediate and register ALU operations
-        if ((op & 0xF000) == 0xA000) return true; // ADD PC/SP
-        if ((op & 0xFF00) == 0xB000) return true; // ADD SP
-        if ((op & 0xF000) == 0xD000) return (op & 0xFF00) != 0xDF00; // Conditional branches, not SWI
-        return op >= 0xE000; // Branches
-    }
-    if ((op & 0x0E000000) == 0x02000000) return true; // Data processing with immediate
-    if ((op & 0x0E000090) != 0x00000090 && (op & 0x0C000000) == 0) return true; // Data processing and misc
-    if ((op & 0x0F100010) == 0x0E100010 || cacheControl(op)) return true; // MRC and cache control
-    if ((op & 0x0FC000F0) == 0x00000090) return true; // MUL/MLA
-    if ((op & 0x0F8000F0) == 0x00800090) return true; // Long multiplies
-    return (op & 0x0E000000) == 0x0A000000; // B/BL
 }
 
 static bool mayJump(uint32_t op, bool thumb) {
@@ -2279,29 +2374,23 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
     // A jump to somewhere in its own line of code doesn't need the code cache checked for it
     auto sameLine = [&](uint32_t target) { return fetches(block) && !(((pc - (block->thumb ? 4 : 8)) ^ target) >> 5); };
 
-    // Instructions with a condition in the middle of a run add the cycle a failed condition takes after the instruction,
-    // which adds the rest of its cycles, so both ways through can share the end
+    // Instructions with a condition in the middle of a run count the cycle a failed condition takes with the run's, and
+    // add the rest of their cycles when they run, so both ways through can share the end
     if (batched(block, i) && (op >> 28) != 0xE && (batched(block, i + 1) || endsRun(block, i + 1))) {
-        e.call(codeCond[op >> 28]);
-        uint32_t *skip = e.here();
-        e.bne(nullptr);
+        uint32_t *skip = condSkip(e, op >> 28);
         emitNative(e, (op & 0x0FFFFFFF) | 0xE0000000, pc);
         uint32_t *last = e.here() - 1;
         if ((*last & 0xFFFF0000) == 0x38600000 && (*last & 0xFFFF) > 0) {
             *last = (14 << 26) | (R_BATCH << 21) | (R_BATCH << 16) | ((*last & 0xFFFF) - 1);
             if ((*last & 0xFFFF) == 0) e.ptr--;
-            e.patchBc(skip);
-            e.addi(R_BATCH, R_BATCH, 1);
-            return;
         }
-
-        // Otherwise, its cycles aren't known until it runs, so the ways through have to join after adding them
-        e.add(R_BATCH, R_BATCH, 3);
-        uint32_t *done = e.here();
-        e.b(nullptr);
+        else {
+            // Otherwise, its cycles aren't known until it runs
+            e.addi(3, 3, -1);
+            e.add(R_BATCH, R_BATCH, 3);
+        }
         e.patchBc(skip);
-        e.addi(R_BATCH, R_BATCH, 1);
-        e.patchB(done);
+        runCycles += 1;
         return;
     }
 
@@ -2310,9 +2399,7 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
     if (thumbCond || (!block->thumb && nativeKind(op, arm7) == NK_BRANCH && (op >> 28) != 0xE)) {
         bool run = i > 0 && batched(block, i - 1);
         uint32_t target = thumbCond ? (pc + ((int32_t)(int8_t)raw << 1)) : ((pc + ((int32_t)(op << 8) >> 6)) & ~0x3);
-        e.call(codeCond[thumbCond ? ((raw >> 8) & 0xF) : (op >> 28)]);
-        uint32_t *skip = e.here();
-        e.bne(nullptr);
+        uint32_t *skip = condSkip(e, thumbCond ? ((raw >> 8) & 0xF) : (op >> 28));
 
         // Branch, with cycles that include any run before this
         if (!thumbCond && (op & BIT(24))) {
@@ -2321,17 +2408,18 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
         }
         e.loadConst(5, target + (thumbCond ? 2 : 4));
         e.stw(5, offPc, R_ARM);
-        e.addi(3, R_BATCH, 3);
+        e.addi(3, R_BATCH, 3 + runCycles);
         if (run) e.li(R_BATCH, 0);
-        e.call(codePost[postHalf()][0][0]);
+        e.call(codePost[postHalf()][0]);
         block->links.push_back({ e.here(), target | thumbCond, nullptr, sameLine(target) });
         e.b(codeDispatch);
 
         // Continue to the next instruction
         e.patchBc(skip);
-        e.addi(3, R_BATCH, 1);
+        e.addi(3, R_BATCH, 1 + runCycles);
         if (run) e.li(R_BATCH, 0);
-        e.call(codePost[postHalf()][0][1]);
+        runCycles = 0;
+        e.call(codePost[postHalf()][1]);
         if (i + 1 == block->instrs.size()) e.stw(R_PC, offPc, R_ARM);
         return;
     }
@@ -2339,7 +2427,11 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
     // THUMB reads the program counter as word aligned for its offsets, and has its own branches
     bool wordPc = block->thumb && ((raw >> 11) == 0x09 || (raw >> 11) == 0x14);
     bool branch = block->thumb && thumbBranch(raw, arm7);
-    if (branch) emitThumbBranch(e, raw, pc);
+    // The second half of a BL or BLX that follows its first half goes where the two say; entries into the middle of
+    // the block don't come in between them, so the link register is what the first half set
+    bool callPair = branch && thumbCallPair(block, i, arm7);
+    uint32_t callTarget = callPair ? (pc - 2 + ((int32_t)(block->instrs[i - 1].opcode << 21) >> 9) + ((raw & 0x7FF) << 1)) : 0;
+    if (branch) emitThumbBranch(e, raw, pc, callPair, callTarget);
     bool native = branch || emitNative(e, op, wordPc ? (pc & ~0x3) : pc);
     bool memoryPc = !native || (branch ? (raw & 0xF800) != 0xF000 : nativeJumps(nativeKind(op, arm7)));
 
@@ -2355,9 +2447,7 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
         uint32_t cond = raw >> 28;
         uint32_t *skip = nullptr;
         if (!block->thumb && cond < 0xE) {
-            e.call(codeCond[cond]);
-            skip = e.here();
-            e.bne(nullptr);
+            skip = condSkip(e, cond);
         }
         e.stw(R_CYCLES, 0, R_GLOBAL);
         e.stw(R_CYCLES, offCycles, R_ARM);
@@ -2377,28 +2467,48 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
     // With fast timing, runs of native ALU instructions and loads add up their cycles and only check whether to stop
     // after the last one, or after the native instruction that follows it, so events can happen a few instructions late
     // and loads and stores can see the time a little behind; jumps into the middle of a run still count the cycles of
-    // what they run
+    // what they run, by starting with the cycles before them taken off
     bool inRun = batched(block, i);
     if (inRun && (batched(block, i + 1) || endsRun(block, i + 1))) {
-        // Instructions without a condition end by setting their cycles, so add them directly in place of that
+        // Instructions without a condition end by setting their cycles, which are counted here in place of that, to
+        // be added by the run's check; only cycles that depend on what runs are added as they go
         uint32_t *last = e.here() - 1;
-        if ((op >> 28) == 0xE && (*last & 0xFFFF0000) == 0x38600000)
-            *last = (14 << 26) | (R_BATCH << 21) | (R_BATCH << 16) | (*last & 0xFFFF);
-        else
+        if ((op >> 28) == 0xE && (*last & 0xFFFF0000) == 0x38600000) {
+            runCycles += *last & 0xFFFF;
+            e.ptr--;
+        }
+        else {
             e.add(R_BATCH, R_BATCH, 3);
+        }
         return;
     }
     if (inRun || (i > 0 && batched(block, i - 1) && endsRun(block, i))) {
-        e.add(3, 3, R_BATCH);
+        // The check adds the run's cycles to the instruction's own, in one step when those are set last on every way
+        // through, which a condition's two ways aren't
+        uint32_t *last = e.here() - 1;
+        if (native && (op >> 28) >= 0xE && (*last & 0xFFFF0000) == 0x38600000) {
+            *last = (14 << 26) | (3 << 21) | (R_BATCH << 16) | ((*last & 0xFFFF) + runCycles);
+        }
+        else {
+            e.add(3, 3, R_BATCH);
+            if (runCycles) e.addi(3, 3, runCycles);
+        }
         e.li(R_BATCH, 0);
+        runCycles = 0;
     }
 
     // Count cycles and check whether to stop; the program counter is stored first if it's only in the register
     // Then check for jumps, which leave the program counter in memory different from the register
     // Branches to known addresses jump through a site that's linked to the target block once it exists
     stepPc(e);
-    e.call(codePost[postHalf()][!isPure(raw, block->thumb)][!memoryPc]);
-    if (block->thumb && (raw & 0xF800) == 0xE000) {
+    e.call(codePost[postHalf()][!memoryPc]);
+    if (callPair) {
+        // Calls to known addresses do too, and the ones to ARM change mode like BLX label
+        bool toThumb = raw & BIT(12);
+        block->links.push_back({ e.here(), toThumb ? ((callTarget & ~0x1) | 1) : (callTarget & ~0x3), nullptr, toThumb && sameLine(callTarget & ~0x1) });
+        e.b(codeDispatch);
+    }
+    else if (block->thumb && (raw & 0xF800) == 0xE000) {
         // Unconditional branches jump straight to their target like ARM ones
         uint32_t target = pc + ((int32_t)(raw << 21) >> 20);
         block->links.push_back({ e.here(), target | 1, nullptr, sameLine(target) });
@@ -2463,11 +2573,15 @@ void *Jit::generate(JitBlock *block) {
     uint32_t pc = block->address + step * 2;
     block->entries.clear();
     block->entriesBehind.clear();
+    block->entriesCycles.clear();
+    runCycles = 0;
     pcBehind = 0;
     thumbCode = block->thumb;
     fullSpeed = arm7 && codeFullSpeed && !Interpreter::mainRam(block->address);
     block->links.clear();
     fetchPaths.clear();
+    listCalls.clear();
+    if (codePtr == codeStart) listStubs.clear(); // The area started over, so the routines are gone
     bool ok = true;
     JS_START(emitStart);
     findLiveFlags(block);
@@ -2483,6 +2597,7 @@ void *Jit::generate(JitBlock *block) {
         if (i > 0) pcBehind += step;
         block->entries.push_back((uint8_t*)e.here() - codePtr);
         block->entriesBehind.push_back(pcBehind);
+        block->entriesCycles.push_back(runCycles);
         if (i > 0 && (lines = fetchLines(block, i, false, address))) emitFetch(e, address, lines, 0);
         emitInstr(e, block, i, pc, ok);
 
@@ -2498,6 +2613,7 @@ void *Jit::generate(JitBlock *block) {
     // Continue to whatever block comes next
     e.b(codeDispatch);
     emitFetchPaths(e);
+    emitListStubs(e, ok);
     flagsLive = FLAG_ALL;
     JS_ADD(JS_EMIT, emitStart);
 
@@ -2525,11 +2641,14 @@ void *Jit::generate(JitBlock *block) {
 
 // The most host code an entry point into the middle of a block takes, which is with a check of the code cache for two
 // lines and their fetches
-static const size_t ENTRY_SIZE = 80;
+static const size_t ENTRY_SIZE = 84;
 
 void *Jit::generateEntry(JitBlock *block, JitBlock *host, size_t index) {
     // Generate a small entry point into the middle of another block's code, instead of compiling it again
     if (!codeArea || !host->code || index >= host->entries.size() || codePtr + ENTRY_SIZE > codeEnd) return nullptr;
+
+    // The second half of a call that follows its first half there relies on having come from it, so it gets code of its own
+    if (thumbCallPair(host, index, arm7)) return nullptr;
 
     // The code cache is checked here for the lines that the code there doesn't check for, coming from outside; a run
     // over more lines than fit here is rare, and gets code of its own instead
@@ -2546,6 +2665,7 @@ void *Jit::generateEntry(JitBlock *block, JitBlock *host, size_t index) {
     if (lines) emitFetch(e, address, lines, pc);
     block->afterFetch = (lines == 1) ? (uint8_t*)e.here() - codePtr : 0;
     e.loadConst(R_PC, pc - host->entriesBehind[index]);
+    if (host->entriesCycles[index]) e.li(R_BATCH, -int(host->entriesCycles[index])); // What the run's check adds for before here
     e.b((uint8_t*)host->code + host->entries[index]);
     emitFetchPaths(e);
     uint8_t *code = codePtr;
@@ -2573,8 +2693,11 @@ bool jitTestEmit(Jit &jit, uint8_t *buf, uint32_t op, uint32_t pc, uint32_t *siz
     PpcEmitter e(buf);
     jit.emitStubs(e);
     *start = (uint8_t*)e.here() - buf;
+    jit.listCalls.clear();
+    jit.listStubs.clear();
     if (!jit.emitNative(e, op, pc)) return false;
     e.emit(0x48000002 | 0x50000); // Absolute branch to the test's end address, since calls change LR
+    jit.emitListStubs(e, false);
     *size = (uint8_t*)e.here() - buf;
     for (uint32_t *p = (uint32_t*)buf; p < e.here(); p++) *p = __builtin_bswap32(*p);
     return true;
