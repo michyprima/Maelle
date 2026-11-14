@@ -316,13 +316,13 @@ int HleBios::swiVBlankIntrWait(uint32_t **registers) {
     return swiInterruptWait(registers);
 }
 
-int HleBios::swiHalt(uint32_t **registers) {
+int HleBios::swiHalt(uint32_t **) {
     // Halt the CPU
     core->interpreter[arm7].halt(0);
     return 3;
 }
 
-int HleBios::swiSleep(uint32_t **registers) {
+int HleBios::swiSleep(uint32_t **) {
     // Put the ARM7 in sleep mode
     core->memory.write<uint8_t>(1, 0x4000301, 0xC0); // HALTCNT
     return 3;
@@ -492,7 +492,7 @@ const uint16_t HleBios::affineTable[0x100] = {
 
 int HleBios::swiBgAffineSet(uint32_t **registers) {
     // Process the specified number of background affine parameters
-    for (int i = 0; i < *registers[2]; i++) {
+    for (int i = 0; uint32_t(i) < *registers[2]; i++) {
         // Read the input parameters
         int32_t origX = core->memory.read<uint32_t>(arm7, *registers[0] + i * 18 + 0);
         int32_t origY = core->memory.read<uint32_t>(arm7, *registers[0] + i * 18 + 4);
@@ -520,7 +520,7 @@ int HleBios::swiBgAffineSet(uint32_t **registers) {
 
 int HleBios::swiObjAffineSet(uint32_t **registers) {
     // Process the specified number of object affine parameters
-    for (int i = 0; i < *registers[2]; i++) {
+    for (int i = 0; uint32_t(i) < *registers[2]; i++) {
         // Read the input parameters
         int16_t scaleX = core->memory.read<uint16_t>(arm7, *registers[0] + i * 6 + 0);
         int16_t scaleY = core->memory.read<uint16_t>(arm7, *registers[0] + i * 6 + 2);
@@ -676,12 +676,12 @@ int HleBios::swiRunlenUncomp(uint32_t **registers) {
         if (flags & BIT(7)) { // Compressed
             // Fill a length of destination data with the same source value
             uint8_t value = core->memory.read<uint8_t>(arm7, *registers[0] + src++);
-            for (uint32_t j = 0; j < (flags & 0x7F) + 3; j++)
+            for (uint32_t j = 0; j < (flags & 0x7Fu) + 3; j++)
                 core->memory.write<uint8_t>(arm7, *registers[1] + dst++, value);
         }
         else {
             // Copy a length of uncompressed data from the source to the destination
-            for (uint32_t j = 0; j < (flags & 0x7F) + 1; j++) {
+            for (uint32_t j = 0; j < (flags & 0x7Fu) + 1; j++) {
                 uint8_t value = core->memory.read<uint8_t>(arm7, *registers[0] + src++);
                 core->memory.write<uint8_t>(arm7, *registers[1] + dst++, value);
             }

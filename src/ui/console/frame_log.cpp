@@ -77,7 +77,7 @@ namespace FrameLog {
             uint32_t end = head;
             __sync_synchronize();
             if (end - tail > SIZE) {
-                writer.add({ TYPE_LOST, OSGetSystemTick(), stream, end - SIZE - tail });
+                writer.add({ TYPE_LOST, uint32_t(OSGetSystemTick()), stream, end - SIZE - tail });
                 tail = end - SIZE;
             }
             while (tail != end) {
@@ -102,7 +102,7 @@ namespace FrameLog {
             output.samples[(output.head + i) % SampleRing::SIZE] = samples[i];
         __sync_synchronize();
         output.head = output.head + count;
-        audio.add({ TYPE_OUTPUT, OSGetSystemTick(), output.head, 0 });
+        audio.add({ TYPE_OUTPUT, uint32_t(OSGetSystemTick()), output.head, 0 });
     }
 
     void audioFinal(int device, const int32_t *left, const int32_t *right, int count) {
@@ -117,11 +117,11 @@ namespace FrameLog {
         ring.head = ring.head + count;
 
         // When the mixer got to the TV's part of each of its frames, and on which core, to see if it's ever late
-        if (device == 0) mixer.add({ TYPE_FINAL, OSGetSystemTick(), ring.head, OSGetCoreId() });
+        if (device == 0) mixer.add({ TYPE_FINAL, uint32_t(OSGetSystemTick()), ring.head, OSGetCoreId() });
     }
 
     void mark() {
-        ui.add({ TYPE_MARK, OSGetSystemTick(), 0, 0 });
+        ui.add({ TYPE_MARK, uint32_t(OSGetSystemTick()), 0, 0 });
     }
 
     static void appendSamples(SampleRing &ring, const std::string &path, uint32_t stream, bool first) {
@@ -142,11 +142,11 @@ namespace FrameLog {
 #endif
 
     void emulatorStarted() {
-        emulator.add({ TYPE_START, OSGetSystemTick(), 0, 0 });
+        emulator.add({ TYPE_START, uint32_t(OSGetSystemTick()), 0, 0 });
     }
 
     void emulatorFrame(uint32_t finished, uint32_t polygons) {
-        emulator.add({ TYPE_EMULATOR, finished, OSGetSystemTick(), polygons });
+        emulator.add({ TYPE_EMULATOR, finished, uint32_t(OSGetSystemTick()), polygons });
 #ifdef AUDIO_CAPTURE
         emulator.add({ TYPE_PRODUCED, finished, produced.head, 0 });
         if (lastWait && finished - lastWait > OSMillisecondsToTicks(20)) lastSlow = finished;
@@ -155,11 +155,11 @@ namespace FrameLog {
     }
 
     void uiFrame(uint32_t frameId) {
-        ui.add({ TYPE_UI, OSGetSystemTick(), frameId, 0 });
+        ui.add({ TYPE_UI, uint32_t(OSGetSystemTick()), frameId, 0 });
     }
 
     void audioBuffer(uint32_t dry, uint32_t fill) {
-        audio.add({ TYPE_AUDIO, OSGetSystemTick(), dry, fill });
+        audio.add({ TYPE_AUDIO, uint32_t(OSGetSystemTick()), dry, fill });
     }
 
     void write(const char *path) {
@@ -184,7 +184,7 @@ namespace FrameLog {
         appendSamples(finals[0], base + "audio-final-tv.pcm", 2, !samplesStarted);
         appendSamples(finals[1], base + "audio-final-drc.pcm", 3, !samplesStarted);
         samplesStarted = true;
-        writer.add({ TYPE_WRITE, writeStart, OSGetSystemTick(), 0 });
+        writer.add({ TYPE_WRITE, writeStart, uint32_t(OSGetSystemTick()), 0 });
         writer.drain(file);
         mixer.drain(file);
 #endif

@@ -274,7 +274,7 @@ Core::Core(std::string ndsRom, std::string gbaRom, int id, int ndsRomFd, int gba
         aes.writeCnt(-1, 0xA000C000);
 
         // Send ARM9 code through the AES engine and write it to memory
-        for (int i = 0; i < size9 / 64; i++) {
+        for (int i = 0; uint32_t(i) < size9 / 64; i++) {
             for (int j = 0; j < 64; j += 4)
                 aes.writeWrfifo(-1, U8TO32(code9, i * 64 + j));
             aes.update();
@@ -304,7 +304,7 @@ Core::Core(std::string ndsRom, std::string gbaRom, int id, int ndsRomFd, int gba
         aes.writeCnt(-1, 0xA000C000);
 
         // Send ARM7 code through the AES engine and write it to memory
-        for (int i = 0; i < size7 / 64; i++) {
+        for (int i = 0; uint32_t(i) < size7 / 64; i++) {
             for (int j = 0; j < 64; j += 4)
                 aes.writeWrfifo(-1, U8TO32(code7, i * 64 + j));
             aes.update();

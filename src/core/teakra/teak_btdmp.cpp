@@ -139,7 +139,7 @@ u64 Btdmp::GetMaxSkip() const {
     return Infinity;
 }
 
-void Btdmp::Skip(u64 ticks) {
+void Btdmp::Skip(u64 /* ticks */) {
 #if 0
     if (!transmit_enable)
         return;

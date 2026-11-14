@@ -899,7 +899,7 @@ void Wifi::writeWPostBeacon(uint16_t mask, uint16_t value) {
     wPostBeacon = (wPostBeacon & ~mask) | (value & mask);
 }
 
-void Wifi::writeWBbCnt(uint16_t mask, uint16_t value) {
+void Wifi::writeWBbCnt(uint16_t, uint16_t value) {
     // Perform a BB register transfer
     int index = value & 0xFF;
     switch ((value & 0xF000) >> 12) {

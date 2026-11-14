@@ -187,7 +187,7 @@ void Dma::trigger(int mode, uint8_t channels) {
 
     // Schedule a transfer on channels that are enabled and set to the triggered mode
     for (int i = 0; i < 4; i++) {
-        if ((channels & BIT(i)) && (dmaCnt[i] & BIT(31)) && ((dmaCnt[i] & 0x38000000) >> 27) == mode)
+        if ((channels & BIT(i)) && (dmaCnt[i] & BIT(31)) && ((dmaCnt[i] & 0x38000000) >> 27) == uint32_t(mode))
             core->schedule(SchedTask(DMA9_TRANSFER0 + (cpu << 2) + i), 1);
     }
 }
@@ -206,7 +206,7 @@ uint8_t Dma::armed(int mode) {
     if (cpu == 1) mode <<= 1;
     uint8_t channels = 0;
     for (int i = 0; i < 4; i++) {
-        if ((dmaCnt[i] & BIT(31)) && ((dmaCnt[i] & 0x38000000) >> 27) == mode)
+        if ((dmaCnt[i] & BIT(31)) && ((dmaCnt[i] & 0x38000000) >> 27) == uint32_t(mode))
             channels |= BIT(i);
     }
     return channels;
@@ -217,7 +217,7 @@ void Dma::transferNow(int mode, uint8_t channels) {
     // emulator carries on, like the display FIFO
     if (cpu == 1) mode <<= 1;
     for (int i = 0; i < 4; i++) {
-        if ((channels & BIT(i)) && (dmaCnt[i] & BIT(31)) && ((dmaCnt[i] & 0x38000000) >> 27) == mode)
+        if ((channels & BIT(i)) && (dmaCnt[i] & BIT(31)) && ((dmaCnt[i] & 0x38000000) >> 27) == uint32_t(mode))
             transfer(i);
     }
 }
@@ -226,7 +226,7 @@ void Dma::stop(int mode) {
     // Disable channels that are set to a mode
     if (cpu == 1) mode <<= 1;
     for (int i = 0; i < 4; i++) {
-        if (((dmaCnt[i] & 0x38000000) >> 27) == mode)
+        if (((dmaCnt[i] & 0x38000000) >> 27) == uint32_t(mode))
             dmaCnt[i] &= ~BIT(31);
     }
 }

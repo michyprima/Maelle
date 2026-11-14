@@ -61,7 +61,7 @@ namespace FrameTrace {
         }
     }
 
-    static void callback(OSAlarm *alarm, OSContext *context) {
+    static void callback(OSAlarm *, OSContext *context) {
         Sample &sample = samples[sampleHead % SAMPLES];
         fillSample(sample, context);
         sample.block = Heartbeat::values[HB_JIT_BLOCK];
@@ -69,7 +69,7 @@ namespace FrameTrace {
         sampleHead = sampleHead + 1;
     }
 
-    static void rendererCallback(OSAlarm *alarm, OSContext *context) {
+    static void rendererCallback(OSAlarm *, OSContext *context) {
         // Only sample while a frame is being built
         if (Heartbeat::values[HB_GPU_STAGE] != 2) return;
         Sample &sample = rendererSamples[rendererHead % RENDERER_SAMPLES];

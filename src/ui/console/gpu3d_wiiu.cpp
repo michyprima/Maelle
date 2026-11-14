@@ -410,7 +410,7 @@ bool Gpu3DWiiU::init() {
         OS_THREAD_ATTRIB_AFFINITY_CPU2) != nullptr;
 }
 
-int Gpu3DWiiU::threadEntry(int argc, void *argv) {
+int Gpu3DWiiU::threadEntry(int, void *argv) {
 #if defined(PROFILE_EMU) && defined(HEARTBEAT)
     FrameTrace::startRenderer();
 #endif
@@ -484,7 +484,7 @@ void Gpu3DWiiU::run() {
         job = nullptr;
         lock.unlock();
         renderFrame(renderer);
-        gpu3dFrames++;
+        gpu3dFrames = gpu3dFrames + 1;
         HB_INC(HB_GPU_FRAMES);
         busy.store(false);
     }
@@ -789,7 +789,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
         GpuVertex &out = vertices[QUAD + i];
         float tu = u * width / 512, tv = v * height / 384;
         out = { { u * 2 - 1, 1 - v * 2, 0, 1 }, { tu, tv }, { tu + 1.0f / 512, tv, tu - 1.0f / 512, tv },
-            { tu, tv + 1.0f / 384, tu, tv - 1.0f / 384 } };
+            { tu, tv + 1.0f / 384, tu, tv - 1.0f / 384 }, {}, {} };
     }
 
     uint32_t count = 0; // Vertices built

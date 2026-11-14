@@ -65,7 +65,7 @@ public:
             free(block);
             return nullptr;
         }
-        OSSetThreadDeallocator(thread, [](OSThread *thread, void *stack) { free(thread); });
+        OSSetThreadDeallocator(thread, [](OSThread *thread, void *) { free(thread); });
         OSSetThreadRunQuantum(thread, 1000);
         OSResumeThread(thread);
         return thread;
@@ -109,7 +109,7 @@ private:
     static const int STACK_SIZE = 0x20000;
     OSThread *thread = nullptr;
 
-    static int entry(int argc, void *argv) {
+    static int entry(int, void *argv) {
         ((WorkerThread*)argv)->func();
         return 0;
     }

@@ -149,7 +149,7 @@ std::atomic<uint32_t> drcAttaches(0), drcDetaches(0), drcDraws(0);
 std::atomic<bool> drcAttached(false);
 int lastVpadError = 0;
 
-static void drcConnected(uint32_t slot, BOOL attached) {
+static void drcConnected(uint32_t, BOOL attached) {
     // Count GX2's reports of the GamePad connecting and disconnecting
     (attached ? drcAttaches : drcDetaches)++;
     drcAttached.store(attached);
@@ -271,7 +271,7 @@ FILE *openHangReport(const char *reason) {
     return file;
 }
 
-int reportVsyncs(int argc, void *argv) {
+int reportVsyncs(int, void *) {
     // Tell the UI each time the display refreshes, so the emulator can run one frame per refresh
     while (true) {
         GX2WaitForVsync();
@@ -280,7 +280,7 @@ int reportVsyncs(int argc, void *argv) {
     return 0;
 }
 
-int watchHangs(int argc, void *argv) {
+int watchHangs(int, void *) {
     // Write a hang report if the UI stops finishing frames for a few seconds, unless the system has it stopped; this
     // only wakes twice a second, and reports each hang once
     uint32_t last = 0;
@@ -318,7 +318,7 @@ void ConsoleUI::endFrame() {
         gx2Mutex.unlock();
     }
     GX2WaitTimeStamp(submitted);
-    uiFrames++;
+    uiFrames = uiFrames + 1;
 
     // Free the gamepad screen texture if it was overridden
     if (gpTexture) {
@@ -722,7 +722,7 @@ void ConsoleUI::drawTexture(void *texture, float tx, float ty, float tw, float t
     drawQuad(tempTexture ? tempTexture : (GX2Texture*)texture, filter, tempLast);
 
     // Adjust the buffer offset if there's still room
-    if (bufOffset < 8 * sizeof(float) * MAX_DRAWS)
+    if (size_t(bufOffset) < 8 * sizeof(float) * MAX_DRAWS)
         bufOffset += 8 * sizeof(float);
 }
 
@@ -762,7 +762,7 @@ void ConsoleUI::drawFrames(void *tv, void *gamepad) {
     }
 
     // Adjust the buffer offset if there's still room
-    if (bufOffset < 8 * sizeof(float) * MAX_DRAWS)
+    if (size_t(bufOffset) < 8 * sizeof(float) * MAX_DRAWS)
         bufOffset += 8 * sizeof(float);
 }
 
@@ -785,7 +785,7 @@ void ConsoleUI::drawOverlay(void *texture, float x, float y, float w, float h, b
     drawQuad((GX2Texture*)texture, true);
 
     // Adjust the buffer offset if there's still room
-    if (bufOffset < 8 * sizeof(float) * MAX_DRAWS)
+    if (size_t(bufOffset) < 8 * sizeof(float) * MAX_DRAWS)
         bufOffset += 8 * sizeof(float);
 }
 
@@ -958,7 +958,7 @@ std::u16string ConsoleUI::getMiiName() {
     bool read = nn::act::GetMiiName(name).IsSuccess();
     nn::act::Finalize();
     std::u16string result;
-    for (int i = 0; read && i < nn::act::MiiNameSize && name[i]; i++)
+    for (int i = 0; read && size_t(i) < nn::act::MiiNameSize && name[i]; i++)
         result += char16_t(name[i]);
     return result;
 }
@@ -1266,7 +1266,7 @@ void captureDrcMix(void *mix) {
 }
 #endif
 
-void outputAudio(void *data, uint8_t *buffer, int length) {
+void outputAudio(void *, uint8_t *buffer, int length) {
     // Refill the audio buffer as a callback
     uint32_t *samples = (uint32_t*)buffer;
     int count = length / sizeof(uint32_t);
@@ -1278,11 +1278,10 @@ void outputAudio(void *data, uint8_t *buffer, int length) {
         samples[i] = (samples[i] << 16) | (samples[i] >> 16);
 }
 
-int runUi(int argc, void *argv) {
+int runUi(int, void *) {
     // Initialize various things
     WHBGfxInit();
     drcStartMode = drcBufferMode = GX2GetSystemDRCMode();
-    VPADInit();
     KPADInit();
     WPADEnableURCC(TRUE);
     WHBMountSdCard();
@@ -1417,7 +1416,7 @@ int runUi(int argc, void *argv) {
 }
 
 #ifdef THREAD_PROBE
-int probeThreads(int argc, void *argv) {
+int probeThreads(int, void *) {
     // Reply to any UDP packet on port 4406 plus this thread's core with every thread's state, the mutex it waits on,
     // and where it is, using only the OS's sockets and formatting so locks held by stuck threads can't block it
     // There's one on each core, to tell which cores still run after a freeze
@@ -1488,7 +1487,7 @@ int probeThreads(int argc, void *argv) {
 #endif
 
 #ifdef HEARTBEAT
-int logHeartbeat(int argc, void *argv) {
+int logHeartbeat(int, void *) {
     // Append the progress counters to a file a few times a second, closing it every time so it survives a freeze
     std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/noodsu/heartbeat.log";
     FILE *file = fopen(path.c_str(), "w");
@@ -1645,7 +1644,7 @@ int logHeartbeat(int argc, void *argv) {
 #endif
 
 #ifdef FRAME_LOG
-int logFrames(int argc, void *argv) {
+int logFrames(int, void *) {
     // Write what the frame log collected every few seconds, unless the system wants the foreground or the UI is done
     std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/noodsu/framelog.bin";
     while (true) {
@@ -1781,6 +1780,9 @@ int main() {
 
         case PROCUI_STATUS_RELEASE_FOREGROUND:
             ProcUIDrawDoneRelease();
+            break;
+
+        case PROCUI_STATUS_IN_FOREGROUND: case PROCUI_STATUS_IN_BACKGROUND:
             break;
         }
     }

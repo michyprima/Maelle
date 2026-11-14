@@ -57,6 +57,6 @@ for variant in "$@"; do
     esac
     rm -rf "build-wiiu-$name"
     make -j8 BUILD="build-wiiu-$name" NAME="$name" APP_NAME="$title" \
-        CXXFLAGS="$BASE $flags" CFLAGS="$BASE $flags"
+        CXXFLAGS="$BASE -Wall -Wextra $flags" CFLAGS="$BASE $flags"
     echo "Built $name.wuhb ($title)"
 done

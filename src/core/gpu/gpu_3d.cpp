@@ -532,6 +532,7 @@ int Gpu3D::takeCommand(uint8_t command, uint32_t *params, int count) {
         // Clear the busy bit if no more matrix commands are queued, and then fall through
         if (--matrixQueue == 0)
             gxStat &= ~BIT(14);
+        [[fallthrough]];
 
     case 0x13: case 0x14: // MTX_STORE, MTX_RESTORE
         // Pass the stack slot as an extra parameter, since the FIFO keeps track of the stack pointers
@@ -1408,9 +1409,12 @@ void Gpu3D::normalCmd(uint32_t param) {
             g += ((ambientColor >> 6) & 0x3F) * ((lightColor[i] >> 6) & 0x3F) >> 6;
             b += ((ambientColor >> 12) & 0x3F) * ((lightColor[i] >> 12) & 0x3F) >> 6;
 
-            if (r < 0) r = 0; if (r > 0x3F) r = 0x3F;
-            if (g < 0) g = 0; if (g > 0x3F) g = 0x3F;
-            if (b < 0) b = 0; if (b > 0x3F) b = 0x3F;
+            if (r < 0) r = 0;
+            if (r > 0x3F) r = 0x3F;
+            if (g < 0) g = 0;
+            if (g > 0x3F) g = 0x3F;
+            if (b < 0) b = 0;
+            if (b > 0x3F) b = 0x3F;
 
             savedVertex.color = (b << 12) | (g << 6) | r;
         }

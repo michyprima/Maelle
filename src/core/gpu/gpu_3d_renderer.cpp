@@ -1193,6 +1193,7 @@ NO_INLINE uint32_t Gpu3DRenderer::readTexture(_Polygon *polygon, int s, int t) {
                 return rgba5ToRgba6((0x1F << 15) | U8TO16(palette, index * 2));
             }
         }
+        return 0;
     }
 
     case 6: { // A5I3 translucent
@@ -1602,7 +1603,7 @@ template <bool wBuffer, bool antiAlias, bool textured> void Gpu3DRenderer::drawS
     LinearStepper sStep(se[0] + 0xFFFF, se[1] + 0xFFFF, x1, xt), tStep(te[0] + 0xFFFF, te[1] + 0xFFFF, x1, xt);
 
     // Keep polygon settings in locals, since buffer stores would otherwise make them be reloaded for every pixel
-    const uint8_t alpha = polygon->alpha, mode = polygon->mode, id = polygon->id, textureFmt = polygon->textureFmt;
+    const uint8_t alpha = polygon->alpha, mode = polygon->mode, id = polygon->id;
     const bool depthTestEqual = polygon->depthTestEqual;
     const bool transNewDepth = polygon->transNewDepth, fog = polygon->fog;
     const int8_t wShift = polygon->wShift;
@@ -1632,7 +1633,7 @@ template <bool wBuffer, bool antiAlias, bool textured> void Gpu3DRenderer::drawS
             x = x3;
 
         // Invalid viewports can cause out-of-bounds vertices, so only draw within bounds
-        if (x >= (256 << resShift))
+        if (x >= uint32_t(256 << resShift))
             break;
 
         bool layer = 0;
@@ -1645,7 +1646,7 @@ template <bool wBuffer, bool antiAlias, bool textured> void Gpu3DRenderer::drawS
         int32_t depth;
         if (wBuffer) {
             factor = getFactor(x);
-            depth = (factor == -1) ? interpolateLinear(we[0], we[1], x1, x, x4) :
+            depth = (factor == 0xFFFFFFFF) ? interpolateLinear(we[0], we[1], x1, x, x4) :
                 interpolateFactor(factor, 8, we[0], we[1]);
             if (wShift > 0)
                 depth <<= wShift;
@@ -1660,9 +1661,9 @@ template <bool wBuffer, bool antiAlias, bool textured> void Gpu3DRenderer::drawS
         bool depthPass[2];
         if (depthTestEqual) {
             uint32_t margin = (wBuffer ? 0xFF : 0x200);
-            depthPass[0] = (depthBuffer[0][i] >= depth - margin && depthBuffer[0][i] <= depth + margin);
+            depthPass[0] = (uint32_t(depthBuffer[0][i]) >= depth - margin && uint32_t(depthBuffer[0][i]) <= depth + margin);
             depthPass[1] = antiAlias && (attribBuffer[0][i] & BIT(14)) &&
-                (depthBuffer[1][i] >= depth - margin && depthBuffer[1][i] <= depth + margin);
+                (uint32_t(depthBuffer[1][i]) >= depth - margin && uint32_t(depthBuffer[1][i]) <= depth + margin);
         }
         else {
             depthPass[0] = (depthBuffer[0][i] > depth);
@@ -1699,7 +1700,7 @@ template <bool wBuffer, bool antiAlias, bool textured> void Gpu3DRenderer::drawS
         PX_NEXT();
         if (!wBuffer) factor = getFactor(x);
         uint32_t rv, gv, bv;
-        if (factor == -1) {
+        if (factor == 0xFFFFFFFF) {
             rv = rStep.get(x) >> 3;
             gv = gStep.get(x) >> 3;
             bv = bStep.get(x) >> 3;
@@ -1715,7 +1716,7 @@ template <bool wBuffer, bool antiAlias, bool textured> void Gpu3DRenderer::drawS
         if (textured) {
             // Interpolate the texture coordinates at the current pixel
             int s, t;
-            if (factor == -1) {
+            if (factor == 0xFFFFFFFF) {
                 s = (int)(sStep.get(x) - 0xFFFF) >> 4;
                 t = (int)(tStep.get(x) - 0xFFFF) >> 4;
             }

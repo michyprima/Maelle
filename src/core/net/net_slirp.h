@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <mutex>
 #include <vector>
@@ -32,8 +33,10 @@ class WorkerThread;
 void netLog(const char *format, ...);
 void netLogFrame(const char *direction, const uint8_t *frame, size_t size);
 #else
-#define netLog(...) (0)
-#define netLogFrame(...) (0)
+// Disabled logs name their arguments inside sizeof, which never runs them, so they're still checked and count as used
+int netLogFrameArgs(const char *direction, const uint8_t *frame, size_t size);
+#define netLog(...) ((void)sizeof(printf(__VA_ARGS__)))
+#define netLogFrame(...) ((void)sizeof(netLogFrameArgs(__VA_ARGS__)))
 #endif
 struct Slirp;
 struct pollfd;

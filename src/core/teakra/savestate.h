@@ -31,7 +31,7 @@ public:
 
     Savestate(FILE *file, bool saving): Saving(saving), file(file) {}
 
-    void Section(const char *magic) {}
+    void Section(const char *) {}
     void Var8(uint8_t *var) { VarArray(var, sizeof(*var)); }
     void Var16(uint16_t *var) { VarArray(var, sizeof(*var)); }
     void Var32(uint32_t *var) { VarArray(var, sizeof(*var)); }

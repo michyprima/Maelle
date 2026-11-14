@@ -283,7 +283,7 @@ private:
 };
 
 FORCE_INLINE uint8_t *CartridgeGba::getRom(uint32_t address) {
-    return ((address &= romMask) < romSize) ? &rom[address] : nullptr;
+    return ((address &= romMask) < uint32_t(romSize)) ? &rom[address] : nullptr;
 }
 
 FORCE_INLINE bool CartridgeGba::isEeprom(uint32_t address) {

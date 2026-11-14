@@ -29,31 +29,32 @@
 #define GPU3D_START 64
 #define SPU_BATCH 16
 
-// Print critical logs in red if enabled
+// Print critical logs in red if enabled; disabled logs still name their arguments inside sizeof, which never runs
+// them, so the format is checked and values kept only for logs count as used
 #if LOG_LEVEL > 0
 #define LOG_CRIT(...) printf("\x1b[31m" __VA_ARGS__)
 #else
-#define LOG_CRIT(...) (0)
+#define LOG_CRIT(...) ((void)sizeof(printf("\x1b[31m" __VA_ARGS__)))
 #endif
 
 // Print warning logs in yellow if enabled
 #if LOG_LEVEL > 1
 #define LOG_WARN(...) printf("\x1b[33m" __VA_ARGS__)
 #else
-#define LOG_WARN(...) (0)
+#define LOG_WARN(...) ((void)sizeof(printf("\x1b[33m" __VA_ARGS__)))
 #endif
 
 // Print info logs normally if enabled
 #if LOG_LEVEL > 2
 #define LOG_INFO(...) printf("\x1b[0m" __VA_ARGS__)
 #else
-#define LOG_INFO(...) (0)
+#define LOG_INFO(...) ((void)sizeof(printf("\x1b[0m" __VA_ARGS__)))
 #endif
 
 // Compatibility toggle for systems that don't have fdopen
 #ifdef NO_FDOPEN
 #define fdopen(...) (0)
-#define ftruncate(...) (0)
+#define ftruncate(...) ((void)0)
 #else
 #include <unistd.h>
 #endif

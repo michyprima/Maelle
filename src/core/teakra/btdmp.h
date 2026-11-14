@@ -59,7 +59,7 @@ public:
         }
     }
 
-    void SetTransmitFlush(u16 value) {
+    void SetTransmitFlush(u16) {
         transmit_queue = {};
         transmit_empty = true;
         transmit_full = false;
@@ -119,7 +119,7 @@ public:
         }
     }
 
-    void SetReceiveFlush(u16 value) {
+    void SetReceiveFlush(u16) {
         receive_queue = {};
         receive_empty = true;
         receive_full = false;

@@ -20,8 +20,10 @@ LIBS := -lwut -lSDL2
 INCS := $(PORTLIBS) $(WUT_ROOT)
 
 CXXFLAGS := -g -Ofast -fno-allow-store-data-races -flto -ffunction-sections $(MACHDEP) $(INCLUDE) \
-    -D__WIIU__ -D__WUT__ -DENDIAN_BIG -DNO_FDOPEN -DLOG_LEVEL=0
-LDFLAGS = -g $(ARCH) $(RPXSPECS) -Wl,-Map,$(notdir $*.map)
+    -D__WIIU__ -D__WUT__ -DENDIAN_BIG -DNO_FDOPEN -DLOG_LEVEL=0 -Wall -Wextra
+# wut names its padding fields with __COUNTER__, so the same struct differs by field name between files and LTO's
+# -Wodr flags it though the layout is the same
+LDFLAGS = -g -flto=auto -Wno-odr $(ARCH) $(RPXSPECS) -Wl,-Map,$(notdir $*.map)
 
 # libslirp is C, built with its own include folders so its header names can't clash with others; they're added even
 # when variant builds set CFLAGS

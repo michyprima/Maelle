@@ -128,7 +128,7 @@ bool Cartridge::loadRom() {
 
     // Verify the save size; invalid sizes fall back to auto-detection
     for (size_t i = 0; i < saveSizes.size(); i++)
-        if (saveSize == saveSizes[i]) return true;
+        if (uint32_t(saveSize) == saveSizes[i]) return true;
     saveSize = -1;
     return true;
 }
@@ -753,7 +753,7 @@ bool CartridgeNds::loadRom() {
     core->memory.copyBiosLogo(&rom[0xC0]);
 
     // Calculate the mask for ROM mirroring
-    for (romMask = 1; romMask < romSize; romMask <<= 1);
+    for (romMask = 1; romMask < uint32_t(romSize); romMask <<= 1);
     romMask -= 1;
 
     // Save the ROM code, which is mainly used for encryption
@@ -845,7 +845,7 @@ void CartridgeNds::loadNdsCode(bool arm7) {
     }
 
     // Copy the initial NDS code into memory
-    for (uint32_t i = 0; i < size && offset2 + i < romSize; i += 4) {
+    for (uint32_t i = 0; i < size && offset2 + i < uint32_t(romSize); i += 4) {
         if (romEncrypted && offset2 + i >= 0x4000 && offset2 + i < 0x4800) {
             if (offset2 + i < 0x4008) {
                 // Overwrite the 'encryObj' string
@@ -886,7 +886,7 @@ void CartridgeNds::loadDsiCode(bool arm7) {
 
     // Get the initial DSi code
     std::vector<uint32_t> code;
-    for (uint32_t i = 0; i < size && offset2 + i < romSize; i += 4)
+    for (uint32_t i = 0; i < size && offset2 + i < uint32_t(romSize); i += 4)
         code.push_back(U8TO32(rom, offset + i));
 
     // Decrypt the parts in modcrypt areas, which the DSi's launcher does with AES-CTR before starting a game
@@ -1368,7 +1368,7 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 }
                 else {
                     // On writes 4+, read data from the save and send it back
-                    auxSpiData[cpu] = (auxAddress[cpu] < saveSize) ? save[auxAddress[cpu]] : 0;
+                    auxSpiData[cpu] = (auxAddress[cpu] < uint32_t(saveSize)) ? save[auxAddress[cpu]] : 0;
                     auxAddress[cpu]++;
                 }
                 break;
@@ -1382,7 +1382,7 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 }
                 else {
                     // On writes 4+, write data to the save
-                    if (auxAddress[cpu] < saveSize) {
+                    if (auxAddress[cpu] < uint32_t(saveSize)) {
                         mutex.lock();
                         save[auxAddress[cpu]] = value;
                         saveDirty = true;
@@ -1411,7 +1411,7 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 }
                 else {
                     // On writes 5+, read data from the save and send it back
-                    auxSpiData[cpu] = (auxAddress[cpu] < saveSize) ? save[auxAddress[cpu]] : 0xFF;
+                    auxSpiData[cpu] = (auxAddress[cpu] < uint32_t(saveSize)) ? save[auxAddress[cpu]] : 0xFF;
                     auxAddress[cpu]++;
                 }
                 break;
@@ -1425,9 +1425,9 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 else {
                     // On writes 5+, write data to the save
                     // Commands don't reveal the FLASH size, so grow the save if a game writes past the end of it
-                    if (auxAddress[cpu] >= saveSize) {
+                    if (auxAddress[cpu] >= uint32_t(saveSize)) {
                         for (int size: { 0x80000, 0x100000, 0x800000 }) {
-                            if (auxAddress[cpu] < size) {
+                            if (auxAddress[cpu] < uint32_t(size)) {
                                 LOG_INFO("Detected FLASH %dKB save type\n", size / 0x400);
                                 resizeSave(size, false);
                                 break;
@@ -1435,7 +1435,7 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                         }
                     }
 
-                    if (auxAddress[cpu] < saveSize) {
+                    if (auxAddress[cpu] < uint32_t(saveSize)) {
                         mutex.lock();
                         save[auxAddress[cpu]] = value;
                         saveDirty = true;
@@ -1793,7 +1793,7 @@ uint32_t CartridgeNds::readRomDataIn(bool cpu) {
         // Some games verify that the first 32KB are unreadable as an anti-piracy measure
         uint32_t address = romAddrVirt[cpu] + readCount[cpu] - 4;
         if (romAddrReal[cpu] + readCount[cpu] <= 0x8000) address = 0x8000 + (address & 0x1FF);
-        if (address < romSize) return U8TO32(rom, address);
+        if (address < uint32_t(romSize)) return U8TO32(rom, address);
         break;
     }
 
@@ -1814,6 +1814,9 @@ uint32_t CartridgeNds::readRomDataIn(bool cpu) {
         }
         return data;
     }
+
+    default:
+        break;
     }
 
     // Default to endless 0xFFs if there's no actual data to read
@@ -1858,7 +1861,7 @@ bool CartridgeGba::findString(std::string string) {
         bool found = true;
 
         for (size_t j = 0; j < string.length(); j++) {
-            if (i + j >= romSize || rom[i + j] != string[j]) {
+            if (i + j >= size_t(romSize) || rom[i + j] != string[j]) {
                 found = false;
                 break;
             }
@@ -1894,7 +1897,7 @@ bool CartridgeGba::loadRom() {
     // Calculate the mask for ROM mirroring
     if (romSize > 0xAC && rom[0xAC] == 'F') { // NES classic
         // NES classic ROMs are mirrored based on their size
-        for (romMask = 1; romMask < romSize; romMask <<= 1);
+        for (romMask = 1; romMask < uint32_t(romSize); romMask <<= 1);
         romMask--;
     }
     else {

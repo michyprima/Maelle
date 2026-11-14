@@ -315,6 +315,7 @@ void Memory::updateMap9(uint32_t start, uint32_t end, bool tcm) {
         case 0xC000000: // Main RAM (DSi mirror)
             if (!core->dsiMode)
                 break;
+            [[fallthrough]];
 
         case 0x2000000: // Main RAM
             read = write = &ram[address & ramMask()];
@@ -468,6 +469,7 @@ void Memory::updateMap7(uint32_t start, uint32_t end) {
             case 0xC000000: // Main RAM (DSi mirror)
                 if (!core->dsiMode)
                     break;
+                [[fallthrough]];
 
             case 0x2000000: // Main RAM
                 read = write = &ram[address & ramMask()];
@@ -959,6 +961,7 @@ template <typename T> T Memory::readFallback(bool arm7, uint32_t address) {
         case 0xD000000: // EEPROM/ROM
             if (core->cartridgeGba.isEeprom(address))
                 return core->cartridgeGba.eepromRead();
+            [[fallthrough]];
 
         case 0x8000000: case 0x9000000: case 0xA000000:
         case 0xB000000: case 0xC000000: // GPIO/ROM

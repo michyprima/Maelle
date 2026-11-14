@@ -97,7 +97,7 @@ void netLogFrame(const char *direction, const uint8_t *e, size_t size) {
 #endif
 
 struct SlirpGlue {
-    static int64_t clockNs(void *opaque) {
+    static int64_t clockNs(void *) {
         // Give libslirp a monotonic clock
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -114,7 +114,7 @@ struct SlirpGlue {
         return len;
     }
 
-    static void guestError(const char *msg, void *opaque) {
+    static void guestError(const char *msg, void *) {
         LOG_WARN("Slirp guest error: %s\n", msg);
     }
 
@@ -134,14 +134,14 @@ struct SlirpGlue {
         delete (NetSlirp::Timer*)timer;
     }
 
-    static void timerMod(void *timer, int64_t expireMs, void *opaque) {
+    static void timerMod(void *timer, int64_t expireMs, void *) {
         // Set when a timer fires, in milliseconds on the clock above
         ((NetSlirp::Timer*)timer)->expire = expireMs;
     }
 
-    static void registerPollFd(int fd, void *opaque) {}
-    static void unregisterPollFd(int fd, void *opaque) {}
-    static void notify(void *opaque) {}
+    static void registerPollFd(int, void *) {}
+    static void unregisterPollFd(int, void *) {}
+    static void notify(void *) {}
 
     static int addPoll(int fd, int events, void *opaque) {
         // Add a socket to wait on, converting libslirp's event flags
@@ -232,7 +232,7 @@ void NetSlirp::run() {
     static const SlirpCb callbacks = {
         SlirpGlue::sendPacket, SlirpGlue::guestError, SlirpGlue::clockNs, SlirpGlue::timerNew,
         SlirpGlue::timerFree, SlirpGlue::timerMod, SlirpGlue::registerPollFd, SlirpGlue::unregisterPollFd,
-        SlirpGlue::notify
+        SlirpGlue::notify, nullptr, nullptr
     };
     netLog("network thread started\n");
     slirp = slirp_new(&config, &callbacks, this);

@@ -118,7 +118,7 @@ namespace Heartbeat {
     extern volatile uint32_t values[HB_COUNT];
 }
 #define HB_SET(slot, value) (Heartbeat::values[slot] = (value))
-#define HB_INC(slot) (Heartbeat::values[slot]++)
+#define HB_INC(slot) (Heartbeat::values[slot] = Heartbeat::values[slot] + 1)
 #define HB_ADD(slot, value) (Heartbeat::values[slot] += (value))
 #include <coreinit/core.h>
 #define HB_SET_CORE(slot) HB_SET(slot, OSGetCoreId() + 1)

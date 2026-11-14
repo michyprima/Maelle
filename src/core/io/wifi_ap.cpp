@@ -149,7 +149,7 @@ void WifiAp::handleManagement(const uint8_t *frame, size_t size) {
     replies.push_back(std::move(reply));
 }
 
-void WifiAp::transmit(const uint8_t *frame, size_t size, const uint8_t *clientMac) {
+void WifiAp::transmit(const uint8_t *frame, size_t size, const uint8_t *) {
     // Handle a frame the DS sent, without its checksum
     if (size < 24) return;
     uint16_t control = get16(frame);

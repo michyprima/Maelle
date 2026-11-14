@@ -204,7 +204,7 @@ uint32_t *Spu::getSamples(int count) {
     }
 
     // Initialize the buffers
-    if (bufferSize != count) {
+    if (bufferSize != uint32_t(count)) {
         delete[] bufferIn;
         delete[] bufferOut;
         bufferIn = new uint32_t[count];
@@ -907,7 +907,7 @@ void Spu::startChannel(int channel) {
 }
 
 void Spu::gbaFifoTimer(int timer) {
-    if (((gbaMainSoundCntH & BIT(10)) >> 10) == timer) { // FIFO A
+    if (((gbaMainSoundCntH & BIT(10)) >> 10) == uint32_t(timer)) { // FIFO A
         // Get a new sample
         if (!gbaFifos[0].empty()) {
             gbaSampleA = gbaFifos[0].front();
@@ -919,7 +919,7 @@ void Spu::gbaFifoTimer(int timer) {
             core->dma[1].trigger(3, 0x02);
     }
 
-    if (((gbaMainSoundCntH & BIT(14)) >> 14) == timer) { // FIFO B
+    if (((gbaMainSoundCntH & BIT(14)) >> 14) == uint32_t(timer)) { // FIFO B
         // Get a new sample
         if (!gbaFifos[1].empty()) {
             gbaSampleB = gbaFifos[1].front();

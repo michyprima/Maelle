@@ -106,7 +106,7 @@ int Dldi::readSectors(bool arm7, uint32_t sector, uint32_t numSectors, uint32_t 
     }
 
     // Write the data to memory
-    for (int i = 0; i < size; i++)
+    for (int i = 0; uint64_t(i) < size; i++)
         core->memory.write<uint8_t>(arm7, buf + i, data[i]);
     delete[] data;
     return 1;
@@ -120,7 +120,7 @@ int Dldi::writeSectors(bool arm7, uint32_t sector, uint32_t numSectors, uint32_t
 
     // Read data from memory
     uint8_t *data = new uint8_t[size];
-    for (int i = 0; i < size; i++)
+    for (int i = 0; uint64_t(i) < size; i++)
         data[i] = core->memory.read<uint8_t>(arm7, buf + i);
 
     // Write the data to the SD image

@@ -132,7 +132,7 @@ uint32_t *SdMmc::init() {
 #endif
 
     // The files are read through caches in large chunks, which the standard library's buffering would only split up
-    if (sd = fopen(Settings::sdImagePath.c_str(), mode)) {
+    if ((sd = fopen(Settings::sdImagePath.c_str(), mode))) {
         setvbuf(sd, nullptr, _IONBF, 0);
         fseeko(sd, 0, SEEK_END);
         sdSize = ftello(sd);
@@ -344,7 +344,7 @@ void SdMmc::readBlock() {
     // Push the data to a FIFO
     LOG_INFO("Reading %s block from 0x%X with size 0x%X\n",
         name(), curAddress, len << 2);
-    for (int i = 0; i < len; i++) pushFifo(U8TO32(data, i * 4));
+    for (int i = 0; uint32_t(i) < len; i++) pushFifo(U8TO32(data, i * 4));
 
     // Change to read or idle state based on blocks left and trigger a DRQ
     cardStatus = (cardStatus & ~0x1E00) | ((curBlock ? 0x5 : 0x4) << 9);
@@ -362,7 +362,7 @@ void SdMmc::writeBlock() {
     uint8_t data[0x200];
     LOG_INFO("Writing %s block to 0x%X with size 0x%X\n",
         name(), curAddress, len << 2);
-    for (int i = 0; i < len; i++) {
+    for (int i = 0; uint32_t(i) < len; i++) {
         uint32_t value = popFifo();
         for (int j = 0; j < 4; j++)
             data[i * 4 + j] = value >> (j * 8);

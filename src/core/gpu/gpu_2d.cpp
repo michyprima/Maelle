@@ -554,7 +554,7 @@ void Gpu2D::skipLayers() {
     }
 }
 
-void Gpu2D::calcWinMasks(int line, int width) {
+void Gpu2D::calcWinMasks(int, int width) {
     // Get the layers enabled for each pixel of a scanline, based on which window it's in, if any
     for (int x = 0; x < width; x++) {
         if ((dispCnt & BIT(13)) && winVFlag[0] && (x >= winX1[0] && x < winX2[0]) != winHFlip[0])
@@ -568,7 +568,7 @@ void Gpu2D::calcWinMasks(int line, int width) {
     }
 }
 
-FORCE_INLINE void Gpu2D::drawBgPixel(int bg, int line, int x, uint32_t pixel) {
+FORCE_INLINE void Gpu2D::drawBgPixel(int bg, int, int x, uint32_t pixel) {
     // Skip the pixel if it's in the bounds of a window that has its layer disabled
     if ((dispCnt & 0xE000) && !(winMasks[x] & BIT(bg)))
         return;
@@ -593,7 +593,7 @@ FORCE_INLINE void Gpu2D::drawBgPixel(int bg, int line, int x, uint32_t pixel) {
     }
 }
 
-FORCE_INLINE void Gpu2D::drawObjPixel(int line, int x, uint32_t pixel, int8_t priority) {
+FORCE_INLINE void Gpu2D::drawObjPixel(int, int x, uint32_t pixel, int8_t priority) {
     // Skip the pixel if it's in the bounds of a window that has objects disabled
     if ((dispCnt & 0xE000) && !(winMasks[x] & BIT(4)))
         return;
@@ -889,7 +889,7 @@ void Gpu2D::drawExtended(int bg, int line) {
                 x &= size - 1;
                 y &= size - 1;
             }
-            else if (x < 0 || x >= size || y < 0 || y >= size) { // Transparent
+            else if (x < 0 || size_t(x) >= size || y < 0 || size_t(y) >= size) { // Transparent
                 continue;
             }
 
@@ -1403,7 +1403,7 @@ void Gpu2D::writeWinH(int win, uint16_t mask, uint16_t value) {
     if (mask & 0xFF00) winX1[win] = (value & 0xFF00) >> 8;
 
     // Invert the window if X1 exceeds X2
-    if (winHFlip[win] = (winX1[win] > winX2[win]))
+    if ((winHFlip[win] = (winX1[win] > winX2[win])))
         SWAP(winX1[win], winX2[win]);
 }
 

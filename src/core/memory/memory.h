@@ -26,8 +26,8 @@
 class Core;
 
 struct VramMapping {
-    uint8_t *mappings[7] = {};
-    uint8_t count = 0;
+    uint8_t *mappings[7];
+    uint8_t count;
 
     void add(uint8_t *mapping);
     template <typename T> T read(uint32_t address);
@@ -180,12 +180,12 @@ private:
     uint8_t nwramB[0x40000] = {}; // 256KB NWRAM block B
     uint8_t nwramC[0x40000] = {}; // 256KB NWRAM block C
 
-    VramMapping engABg[32];
-    VramMapping engBBg[8];
-    VramMapping engAObj[16];
-    VramMapping engBObj[8];
-    VramMapping lcdc[64];
-    VramMapping vram7[2];
+    VramMapping engABg[32] = {};
+    VramMapping engBBg[8] = {};
+    VramMapping engAObj[16] = {};
+    VramMapping engBObj[8] = {};
+    VramMapping lcdc[64] = {};
+    VramMapping vram7[2] = {};
 
     uint32_t dmaFill[4] = {};
     uint8_t vramCnt[9] = {};

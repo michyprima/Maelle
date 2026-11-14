@@ -543,7 +543,7 @@ void AacUcode::decodeFrame() {
     }
 
     // Set the decoder up when the format changes, ending with code 2 if it can't be or the frame can't be decoded
-    if (frequency != lastFrequency || channels != lastChannels) {
+    if (int(frequency) != lastFrequency || channels != lastChannels) {
         if (!configure(frequency, channels)) {
             LOG_WARN("Couldn't set the AAC decoder up for %u Hz, %d channels\n", frequency, channels);
             lastFrequency = lastChannels = -1;
@@ -617,7 +617,7 @@ void G711Ucode::tryStartCmd() {
     scheduleFinish(200 + cycles, 0);
 }
 
-void G711Ucode::finishCmd(uint16_t param) {
+void G711Ucode::finishCmd(uint16_t) {
     // Encode or decode, A-law for type 1 and u-law for type 2
     uint32_t command = (params[0] << 16) | params[1];
     uint8_t type = command & 0xFF;
@@ -802,7 +802,7 @@ void GraphicsUcode::tryStartCmd() {
     scheduleFinish(200 + cycles, 0);
 }
 
-void GraphicsUcode::finishCmd(uint16_t param) {
+void GraphicsUcode::finishCmd(uint16_t) {
     // Run the command, then reply and start the next one
     if (cmdIndex == 1) {
         switch (params[4]) {

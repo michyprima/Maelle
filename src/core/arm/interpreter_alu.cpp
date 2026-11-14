@@ -505,7 +505,7 @@ FORCE_INLINE int Interpreter::adcs(uint32_t opcode, uint32_t op2) { // ADCS Rd,R
     uint32_t op1 = *registers[(opcode >> 16) & 0xF] + (((opcode & 0x20F0010) == 0x00F0010) << 2);
     *op0 = op1 + op2 + ((cpsr & BIT(29)) >> 29);
     cpsr = (cpsr & ~0xF0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op1 > *op0 ||
-        (op2 == -1 && (cpsr & BIT(29)))) << 29) | ((~(op2 ^ op1) & (*op0 ^ op2) & BIT(31)) >> 3);
+        (op2 == 0xFFFFFFFF && (cpsr & BIT(29)))) << 29) | ((~(op2 ^ op1) & (*op0 ^ op2) & BIT(31)) >> 3);
 
     // Handle pipelining and mode switching
     if (op0 != registers[15]) return 1;
@@ -522,7 +522,7 @@ FORCE_INLINE int Interpreter::sbcs(uint32_t opcode, uint32_t op2) { // SBCS Rd,R
     uint32_t op1 = *registers[(opcode >> 16) & 0xF] + (((opcode & 0x20F0010) == 0x00F0010) << 2);
     *op0 = op1 - op2 - 1 + ((cpsr & BIT(29)) >> 29);
     cpsr = (cpsr & ~0xF0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op1 >= *op0 &&
-        (op2 != -1 || (cpsr & BIT(29)))) << 29) | (((op2 ^ op1) & ~(*op0 ^ op2) & BIT(31)) >> 3);
+        (op2 != 0xFFFFFFFF || (cpsr & BIT(29)))) << 29) | (((op2 ^ op1) & ~(*op0 ^ op2) & BIT(31)) >> 3);
 
     // Handle pipelining and mode switching
     if (op0 != registers[15]) return 1;
@@ -539,7 +539,7 @@ FORCE_INLINE int Interpreter::rscs(uint32_t opcode, uint32_t op2) { // RSCS Rd,R
     uint32_t op1 = *registers[(opcode >> 16) & 0xF] + (((opcode & 0x20F0010) == 0x00F0010) << 2);
     *op0 = op2 - op1 - 1 + ((cpsr & BIT(29)) >> 29);
     cpsr = (cpsr & ~0xF0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op2 >= *op0 &&
-        (op1 != -1 || (cpsr & BIT(29)))) << 29) | (((op1 ^ op2) & ~(*op0 ^ op1) & BIT(31)) >> 3);
+        (op1 != 0xFFFFFFFF || (cpsr & BIT(29)))) << 29) | (((op1 ^ op2) & ~(*op0 ^ op1) & BIT(31)) >> 3);
 
     // Handle pipelining and mode switching
     if (op0 != registers[15]) return 1;
@@ -617,7 +617,7 @@ int Interpreter::mul(uint32_t opcode) { // MUL Rd,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 2;
-    int m; for (m = 1; (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))); m++);
     return m + 1;
 }
 
@@ -631,7 +631,7 @@ int Interpreter::mla(uint32_t opcode) { // MLA Rd,Rm,Rs,Rn
 
     // Calculate timing
     if (!arm7) return 2;
-    int m; for (m = 1; (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))); m++);
     return m + 2;
 }
 
@@ -646,7 +646,7 @@ int Interpreter::umull(uint32_t opcode) { // UMULL RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 3;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
     return m + 2;
 }
 
@@ -662,7 +662,7 @@ int Interpreter::umlal(uint32_t opcode) { // UMLAL RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 3;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
     return m + 3;
 }
 
@@ -677,7 +677,7 @@ int Interpreter::smull(uint32_t opcode) { // SMULL RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 3;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))); m++);
     return m + 2;
 }
 
@@ -693,7 +693,7 @@ int Interpreter::smlal(uint32_t opcode) { // SMLAL RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 3;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))); m++);
     return m + 3;
 }
 
@@ -707,7 +707,7 @@ int Interpreter::muls(uint32_t opcode) { // MULS Rd,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 4;
-    int m; for (m = 1; (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))); m++);
     return m + 1;
 }
 
@@ -722,7 +722,7 @@ int Interpreter::mlas(uint32_t opcode) { // MLAS Rd,Rm,Rs,Rn
 
     // Calculate timing
     if (!arm7) return 4;
-    int m; for (m = 1; (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))); m++);
     return m + 2;
 }
 
@@ -738,7 +738,7 @@ int Interpreter::umulls(uint32_t opcode) { // UMULLS RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 5;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
     return m + 2;
 }
 
@@ -755,7 +755,7 @@ int Interpreter::umlals(uint32_t opcode) { // UMLALS RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 5;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < uint32_t(-1 << (m << 3)) || op3 >= uint32_t(1 << (m << 3))); m++);
     return m + 3;
 }
 
@@ -771,7 +771,7 @@ int Interpreter::smulls(uint32_t opcode) { // SMULLS RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 5;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))); m++);
     return m + 2;
 }
 
@@ -788,7 +788,7 @@ int Interpreter::smlals(uint32_t opcode) { // SMLALS RdLo,RdHi,Rm,Rs
 
     // Calculate timing
     if (!arm7) return 5;
-    int m; for (m = 1; (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))); m++);
     return m + 3;
 }
 
@@ -1274,7 +1274,7 @@ int Interpreter::adcDpT(uint16_t opcode) { // ADC Rd,Rs
     uint32_t op2 = *registers[(opcode >> 3) & 0x7];
     *op0 += op2 + ((cpsr & BIT(29)) >> 29);
     cpsr = (cpsr & ~0xF0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op1 > *op0 ||
-        (op2 == -1 && (cpsr & BIT(29)))) << 29) | ((~(op2 ^ op1) & (*op0 ^ op2) & BIT(31)) >> 3);
+        (op2 == 0xFFFFFFFF && (cpsr & BIT(29)))) << 29) | ((~(op2 ^ op1) & (*op0 ^ op2) & BIT(31)) >> 3);
     return 1;
 }
 
@@ -1285,7 +1285,7 @@ int Interpreter::sbcDpT(uint16_t opcode) { // SBC Rd,Rs
     uint32_t op2 = *registers[(opcode >> 3) & 0x7];
     *op0 = op1 - op2 - 1 + ((cpsr & BIT(29)) >> 29);
     cpsr = (cpsr & ~0xF0000000) | (*op0 & BIT(31)) | ((*op0 == 0) << 30) | ((op1 >= *op0 &&
-        (op2 != -1 || (cpsr & BIT(29)))) << 29) | (((op2 ^ op1) & ~(*op0 ^ op2) & BIT(31)) >> 3);
+        (op2 != 0xFFFFFFFF || (cpsr & BIT(29)))) << 29) | (((op2 ^ op1) & ~(*op0 ^ op2) & BIT(31)) >> 3);
     return 1;
 }
 
@@ -1365,6 +1365,6 @@ int Interpreter::mulDpT(uint16_t opcode) { // MUL Rd,Rs
 
     // Calculate timing
     if (!arm7) return 4;
-    int m; for (m = 1; (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4; m++);
+    int m; for (m = 1; m < 4 && (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))); m++);
     return m + 1;
 }

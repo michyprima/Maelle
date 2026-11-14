@@ -57,10 +57,12 @@ text = open(root + '/gpu/gpu.cpp').read()
 open(root + '/gpu/gpu.cpp', 'w').write('#include <malloc/malloc.h>\n' + text)
 edit('gpu/gpu_3d_renderer.cpp', ('asm volatile("dcbz 0, %0" :: "r"(block) : "memory");', ';'))
 
-# Clang assumes the shift by 32 in this loop never happens, so it would give different timing to GCC's build
-edit('arm/interpreter_alu.cpp', ('(op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4',
-    'm < 4 && (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3)))'), ('(op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4',
-    'm < 4 && (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3)))'))
+# Older cores shift by 32 in this loop before checking m, which Clang assumes never happens, so it would give different
+# timing to GCC's build; newer ones check m first
+if '(op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4' in open(root + '/arm/interpreter_alu.cpp').read():
+    edit('arm/interpreter_alu.cpp', ('(op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3))) && m < 4',
+        'm < 4 && (op2 < (-1 << (m << 3)) || op2 >= (1 << (m << 3)))'), ('(op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3))) && m < 4',
+        'm < 4 && (op3 < (-1 << (m << 3)) || op3 >= (1 << (m << 3)))'))
 
 # C++ functions called from generated code become fixed addresses that the test watches
 path = root + '/arm/jit_ppc.cpp'

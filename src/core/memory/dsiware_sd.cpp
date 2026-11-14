@@ -89,12 +89,12 @@ void DsiWareSd::create(const uint8_t *header, std::string savePath) {
         if (!isalnum((unsigned char)c)) c = '_';
     std::string base = savePath.substr(0, savePath.rfind('.'));
     files.clear();
-    files.push_back({ code + ".APP", "", uint32_t(core->cartridgeNds.getRomSize()) });
+    files.push_back({ code + ".APP", "", uint32_t(core->cartridgeNds.getRomSize()), 0, 0, {} });
     const char *exts[] = { "PUB", "PRV" };
     for (int i = 0; i < 2; i++) {
         uint32_t size = U8TO32(header, 0x238 + i * 4);
         if (!size) continue;
-        File file = { code + "." + exts[i], base + (i ? ".prv" : ".pub"), size };
+        File file = { code + "." + exts[i], base + (i ? ".prv" : ".pub"), size, 0, 0, {} };
         file.data = newSave(size);
         std::lock_guard<FileLock> guard(fileLock());
         if (FILE *in = fopen(file.path.c_str(), "rb")) {

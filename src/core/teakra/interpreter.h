@@ -97,7 +97,7 @@ public:
         regs.pc = new_pc;
     }
 
-    void undefined(u16 opcode) {
+    void undefined(u16) {
         UNREACHABLE();
     }
 
@@ -1726,7 +1726,7 @@ public:
         u64 value = GetAcc(a.GetName());
         SatAndSetAccAndFlag(b.GetName(), value);
     }
-    void mov_dvm(Abl a) {
+    void mov_dvm(Abl) {
         UNREACHABLE();
     }
     void mov_x0(Abl a) {
@@ -1812,7 +1812,7 @@ public:
         u16 value = LoadFromMemory(a);
         regs.sv = value;
     }
-    void mov_dvm_to(Ab b) {
+    void mov_dvm_to(Ab) {
         UNREACHABLE();
     }
     void mov_icr_to(Ab b) {

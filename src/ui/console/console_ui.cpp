@@ -1219,7 +1219,7 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
             // Disable touch mode or move the selection box down, skipping headers
             if (touchMode)
                 touchMode = false;
-            else if (index < items.size() - 1)
+            else if (size_t(index) < items.size() - 1)
                 index++;
             index += items.empty() ? 0 : items[index].header;
 
@@ -1264,7 +1264,7 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
         }
 
         // Scroll continuously while a directional input is held
-        if ((upHeld && index > min) || (downHeld && index < items.size() - 1)) {
+        if ((upHeld && index > min) || (downHeld && size_t(index) < items.size() - 1)) {
             // When the input starts, wait a bit before scrolling
             std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - timeHeld;
             if (!scroll && elapsed.count() > 0.5f)
@@ -1418,7 +1418,7 @@ uint32_t ConsoleUI::message(std::string title, std::string text, int type) {
         if (type < 2) drawString((type ? actionB : "") + actionA, SCALE(1218), SCALE(667), SCALE(34), palette[1], true);
 
         // Draw each line of text, separated by newline characters
-        for (int i = 0, j = 0, y = 0; j != std::string::npos; y += 38) {
+        for (int i = 0, j = 0, y = 0; size_t(j) != std::string::npos; y += 38) {
             j = text.find("\n", i);
             drawString(text.substr(i, j - i), SCALE(90), SCALE(124 + y), SCALE(38), palette[1]);
             i = j + 1;
@@ -2007,8 +2007,8 @@ void ConsoleUI::pauseMenu() {
             case 5: { // 3D Benchmark
                 // Re-render the paused frame's 3D with one thread on core 1, which nothing else uses while paused
                 // With the sampler, it records where rendering spends its time, shown under CPU Samples afterwards
-                struct Bench { Core *core; double ms; uint64_t px[PX_COUNT]; } bench = { core };
-                WorkerThread::Entry entry = [](int argc, void *argv) -> int {
+                struct Bench { Core *core; double ms; uint64_t px[PX_COUNT]; } bench = { core, 0, {} };
+                WorkerThread::Entry entry = [](int, void *argv) -> int {
                     Bench *b = (Bench*)argv;
                     int saved = Settings::threaded3D;
                     Settings::threaded3D = 0;
@@ -2257,7 +2257,7 @@ void ConsoleUI::jitSelfTest() {
         if (result == "") result = "Stopped early";
         done.store(true);
     };
-    WorkerThread::Entry entry = [](int argc, void *argv) -> int {
+    WorkerThread::Entry entry = [](int, void *argv) -> int {
         (*(std::function<void()>*)argv)();
         return 0;
     };
@@ -2350,7 +2350,7 @@ void ConsoleUI::romTest() {
                 core->runCore();
             finished.store(true);
         };
-        WorkerThread::Entry entry = [](int argc, void *argv) -> int {
+        WorkerThread::Entry entry = [](int, void *argv) -> int {
             (*(std::function<void()>*)argv)();
             return 0;
         };
@@ -2559,14 +2559,14 @@ void ConsoleUI::startCore() {
         return 0;
     };
 #elif defined(PROFILE_EMU) && defined(HEARTBEAT)
-    WorkerThread::Entry entry = [](int argc, void *argv) -> int {
+    WorkerThread::Entry entry = [](int, void *) -> int {
         FrameTrace::start();
         runCore();
         FrameTrace::stop();
         return 0;
     };
 #else
-    WorkerThread::Entry entry = [](int argc, void *argv) -> int { runCore(); return 0; };
+    WorkerThread::Entry entry = [](int, void *) -> int { runCore(); return 0; };
 #endif
     if ((emuThread = WorkerThread::createThread(entry, nullptr, 0x100000, priority, OS_THREAD_ATTRIB_AFFINITY_CPU1))) {
         saveThread = new WorkerThread(WorkerThread::CORE_2, checkSave);

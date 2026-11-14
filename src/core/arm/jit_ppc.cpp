@@ -1092,7 +1092,11 @@ void Jit::finishCode(uint8_t *start, size_t size, const std::vector<uint32_t*> &
         DCFlushRange(patched[i], 4);
     JS_ADD(JS_FLUSH, flushStart);
     JS_START(switchStart);
+#ifdef JIT_LOG
     BOOL rx = OSSwitchSecCodeGenMode(CODEGEN_R_X);
+#else
+    OSSwitchSecCodeGenMode(CODEGEN_R_X);
+#endif
     JS_ADD(JS_SWITCH_RX, switchStart);
     JS_START(invalidateStart);
     if (start) ICInvalidateRange(start, size);
@@ -1323,6 +1327,7 @@ static uint32_t thumbToArm(uint32_t op) {
             case 0xD: return 0xE0100090 | (rd << 16) | (rd << 8) | rs; // MUL
             case 0xE: return 0xE1D00000 | (rd << 16) | (rd << 12) | rs; // BIC
             case 0xF: return 0xE1F00000 | (rd << 12) | rs; // MVN
+            default: return none;
             }
         }
         else {

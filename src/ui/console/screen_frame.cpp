@@ -386,7 +386,7 @@ namespace ScreenFrame {
 
     void draw(uint32_t *pixels, int width, int height, int color, const Screen *screens, int count, bool lights,
         LightPatch *patches, const uint8_t *fontBmp, const uint8_t *charWidths) {
-        Canvas canvas = { pixels, width, height, fontBmp, charWidths };
+        Canvas canvas = { pixels, width, height, fontBmp, charWidths, {}, 0 };
         const Palette &palette = palettes[color];
 
         // Most of a display is usually covered by screens, so leave those parts black to save time
