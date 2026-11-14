@@ -152,6 +152,14 @@ private:
         uint32_t texelChanges, paletteChanges; // Texture and palette mapping changes when its data was last checked
     };
     std::unordered_map<uint64_t, CachedTexture> textures;
+
+    // Texel hashes are shared by every palette a texture is used with, since some games draw one texture with dozens
+    struct TexelHash {
+        uint64_t hash;
+        uint32_t frame;
+        uint32_t texelChanges; // Texture mapping changes when the data was hashed
+    };
+    std::unordered_map<uint64_t, TexelHash> texelHashes;
     std::vector<GX2Texture*> updated;
     std::vector<GpuDraw> draws;
     uint32_t frameCount = 0;
@@ -473,6 +481,12 @@ void Gpu3DWiiU::freeTextures() {
             it++;
         }
     }
+    for (auto it = texelHashes.begin(); it != texelHashes.end();) {
+        if (frameCount - it->second.frame > 120)
+            it = texelHashes.erase(it);
+        else
+            it++;
+    }
     HB_SET(HB_GPU_TEXTURES, textures.size());
     HB_SET(HB_GPU_TEXTURE_KB, bytes >> 10);
     (void)bytes;
@@ -507,7 +521,18 @@ GX2Texture *Gpu3DWiiU::lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon,
     if (!texelsChanged && cached.paletteChanges == paletteChanges) return cached.texture;
     cached.texelChanges = texelChanges;
     cached.paletteChanges = paletteChanges;
-    uint64_t texelHash = texelsChanged ? renderer->hashTexture(polygon, false) : cached.texelHash;
+    uint64_t texelHash = cached.texelHash;
+    if (texelsChanged) {
+        // The data is hashed once per mapping change, by texture address, size and format, whatever the palette
+        uint64_t texelKey = key & ~(uint64_t(0x1FFFF) << 19) & ~(uint64_t(1) << 45);
+        TexelHash &shared = texelHashes[texelKey];
+        if (shared.frame == 0 || shared.texelChanges != texelChanges) {
+            shared.hash = renderer->hashTexture(polygon, false);
+            shared.texelChanges = texelChanges;
+        }
+        shared.frame = frameCount;
+        texelHash = shared.hash;
+    }
     uint64_t paletteHash = renderer->hashTexture(polygon, true);
     if (cached.texture && cached.texelHash == texelHash && cached.paletteHash == paletteHash) return cached.texture;
     cached.texelHash = texelHash;

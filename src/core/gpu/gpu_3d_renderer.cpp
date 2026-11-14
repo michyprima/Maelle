@@ -696,19 +696,17 @@ void Gpu3DRenderer::decodeTexture(_Polygon *polygon, uint32_t *out, int pitch) {
             ((a << 2) | (a >> 4));
     };
 
-    // Palette formats are decoded through a table of every index's color, if the texel data is all in one slot;
-    // games that animate palettes need these decoded again every frame
+    // Palette formats are decoded through a table of every index's color, a row at a time; games that animate palettes
+    // need these decoded again every frame
     static const uint8_t texelBits[] = { 0, 8, 2, 4, 8, 0, 8, 0 };
     uint8_t fmt = polygon->textureFmt, bits = texelBits[fmt];
-    uint32_t bytes = polygon->sizeS * polygon->sizeT * bits / 8;
-    if (bits && (polygon->textureAddr >> 17) == ((polygon->textureAddr + bytes - 1) >> 17)) {
-        uint8_t *data = getTexture(polygon->textureAddr);
+    if (bits) {
         uint8_t *palette = getPalette(polygon->paletteAddr);
         uint32_t table[256];
         for (int i = 0; i < (1 << bits); i++) {
             // The same colors readTexture gives for each index
             uint32_t texel;
-            if (!data || !palette)
+            if (!palette)
                 texel = 0;
             else if (fmt == 1)
                 texel = rgba5ToRgba6((((i >> 5) * 4 + (i >> 5) / 2) << 15) | (U8TO16(palette, (i & 0x1F) * 2) & ~BIT(15)));
@@ -720,14 +718,21 @@ void Gpu3DRenderer::decodeTexture(_Polygon *polygon, uint32_t *out, int pitch) {
                 texel = rgba5ToRgba6((0x1F << 15) | U8TO16(palette, i * 2));
             table[i] = expand(texel);
         }
-        uint32_t mask = (1 << bits) - 1, perByte = 8 / bits;
+        // Texel data can span two slots, like a 512x512 texture, so each row is read from its own pointer, and a row
+        // split between slots is read a texel at a time
+        uint32_t mask = (1 << bits) - 1, perByte = 8 / bits, rowBytes = polygon->sizeS / perByte;
         for (int t = 0; t < polygon->sizeT; t++) {
             uint32_t *row = &out[t * pitch];
-            if (!data) {
-                for (int s = 0; s < polygon->sizeS; s++) row[s] = table[0];
+            uint32_t rowAddr = polygon->textureAddr + t * rowBytes;
+            if ((rowAddr >> 17) != ((rowAddr + rowBytes - 1) >> 17)) {
+                for (int s = 0; s < polygon->sizeS; s++) row[s] = expand(readTexture(polygon, s, t));
                 continue;
             }
-            uint8_t *src = &data[t * polygon->sizeS / perByte];
+            uint8_t *src = getTexture(rowAddr);
+            if (!src) {
+                for (int s = 0; s < polygon->sizeS; s++) row[s] = expand(0);
+                continue;
+            }
             for (int s = 0; s < polygon->sizeS; s += perByte) {
                 uint8_t byte = *src++;
                 for (uint32_t k = 0; k < perByte; k++)
