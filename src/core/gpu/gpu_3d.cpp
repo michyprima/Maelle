@@ -310,7 +310,7 @@ static bool changesExecStat(uint8_t command) {
 }
 
 void Gpu3D::startWorker() {
-    // Start executing commands on a worker thread, above the 3D renderer's priority so it doesn't fall behind
+    // Start executing commands on a worker thread
     if (!queue) {
         // Align the queue to cache blocks, so they can be claimed before being written
         queueAlloc = new uint32_t[QUEUE_SIZE + 8];
@@ -323,13 +323,22 @@ void Gpu3D::startWorker() {
     statDone.store(statSent);
     workerSleeping.store(false);
     workerStop.store(false);
-    // Keep it on core 0 where threads can be placed, where it outranks the 2D thread, since core 2 also has the frontend
-    // and a hardware 3D renderer at the same priority, which can hold up the emulator waiting on it
+    // Keep it on core 0 where threads can be placed, since core 2 also has the frontend and a hardware 3D renderer at the
+    // same priority, which can hold up the emulator waiting on it
+    // With the software renderer it outranks the 3D threads; with the hardware one it shares core 0 in turns with engine
+    // A's 2D thread, since it runs in bursts that otherwise hold up whole scanlines, and the 2D thread finishing late
+    // delays the next 3D frame
     worker = new WorkerThread(WorkerThread::CORE_0, &Gpu3D::runWorker, this);
-#ifndef GEOM_WORKER_PRIORITY
-#define GEOM_WORKER_PRIORITY 15
+    workerHardware = Settings::hardware3D;
+    worker->setPriority(workerPriority());
+}
+
+int Gpu3D::workerPriority() {
+#ifdef GEOM_WORKER_PRIORITY
+    return GEOM_WORKER_PRIORITY;
+#else
+    return workerHardware ? 16 : 15;
 #endif
-    worker->setPriority(GEOM_WORKER_PRIORITY);
 }
 
 void Gpu3D::stopWorker() {
@@ -621,6 +630,10 @@ void Gpu3D::runCommands() {
     // Execute commands on a worker thread if threaded 3D is enabled
     if (!worker != !Settings::worker3D())
         worker ? stopWorker() : startWorker();
+    else if (worker && workerHardware != bool(Settings::hardware3D)) {
+        workerHardware = Settings::hardware3D;
+        worker->setPriority(workerPriority());
+    }
 
     // Run a batch of geometry commands
     // The FIFO's state is kept in local variables, since otherwise it's read again after every store
@@ -1735,11 +1748,20 @@ void Gpu3D::finishEntries(size_t oldSize) {
             gxStat &= ~BIT(25);
     }
 
-    // Start executing commands if one is ready, after a moment so that words written one by one share a batch
-    if (state == GX_IDLE && fifo.size() >= paramCounts[fifo.front().command]) {
+    // Start executing commands if one is ready
+    if (state == GX_IDLE && fifo.size() >= paramCounts[fifo.front().command])
+        startCommands();
+}
+
+void Gpu3D::startCommands() {
+    // Start executing commands on an idle engine, after a moment so that words written one by one share a batch
+    // With fast timing, the first batch runs straight away instead, since games that write words one by one would
+    // otherwise need a scheduled task for nearly every command, and each one stops the CPUs
+    state = GX_RUNNING;
+    if (Settings::fastTiming)
+        runCommands();
+    else
         core->schedule(GPU3D_COMMANDS, GPU3D_START);
-        state = GX_RUNNING;
-    }
 }
 
 void Gpu3D::addEntry(Entry entry) {
@@ -1820,12 +1842,12 @@ void Gpu3D::writeGxFifoWord(uint32_t value) {
     bool ends = received == paramCounts[command];
     if (ends && next != 0 && paramCounts[next & 0xFF] == 0) return writeGxFifo(0xFFFFFFFF, value);
 
-    // The entry mustn't track anything, start the engine, or change more than the count in the status
+    // The entry mustn't track anything or change more than the count in the status
     // It moves straight into the pipe if the FIFO is empty and the pipe isn't full, which leaves the count alone
     size_t size = fifo.count;
     bool toPipe = size == pipeSize && pipeSize < 4;
     uint32_t count = size + 1 - pipeSize - toPipe;
-    if ((command >= 0x11 && (command <= 0x12 || command >= 0x70)) || state == GX_IDLE || size >= fifo.mask || count > 256 ||
+    if ((command >= 0x11 && (command <= 0x12 || command >= 0x70)) || size >= fifo.mask || count > 256 ||
         (count >= 128 && (gxStat & BIT(25))))
         return writeGxFifo(0xFFFFFFFF, value);
 
@@ -1840,6 +1862,10 @@ void Gpu3D::writeGxFifoWord(uint32_t value) {
     else {
         gxStat = (gxStat & ~0x05FF0000) | (count << 16);
     }
+
+    // An idle engine starts once its next command has all its parameters, like after any other write
+    if (state == GX_IDLE && fifo.count >= paramCounts[fifo.front().command])
+        startCommands();
 }
 
 void Gpu3D::writeGxFifo(const uint8_t *data, int count) {

@@ -297,6 +297,7 @@ private:
     // Each side only publishes its position now and then, and shared values are padded onto their own cache lines,
     // since sharing cache lines between cores is slow
     WorkerThread *worker = nullptr;
+    bool workerHardware = false; // Whether the worker's priority was set for the hardware 3D renderer
     uint32_t *queue = nullptr, *queueAlloc = nullptr;
     uint32_t queueEnd = 0, queueStart = 0;
     uint32_t statSent = 0;
@@ -311,6 +312,7 @@ private:
     std::condition_variable workerCond;
 
     void startWorker();
+    int workerPriority();
     void stopWorker();
     void runWorker();
     void queueCommand(uint8_t command, uint32_t *params, int count);
@@ -371,6 +373,7 @@ private:
     void trackEntry(uint8_t command);
     void queueEntry(Entry entry);
     void finishEntries(size_t oldSize);
+    void startCommands();
     void addEntry(Entry entry);
     void queueGxFifo(const uint8_t *data, int count);
 };
