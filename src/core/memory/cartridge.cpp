@@ -674,7 +674,11 @@ void CartridgeNds::saveState(FILE *file) {
 
 void CartridgeNds::loadState(FILE *file) {
     // Read state data from the file
-    fread(&saveSize, sizeof(saveSize), 1, file);
+    // Make room for the state's save first, in case it's larger than the one loaded, or there wasn't one
+    int size;
+    fread(&size, sizeof(size), 1, file);
+    if (size > 0 && size != saveSize) resizeSave(size, false);
+    saveSize = size;
     if (saveSize > 0) fread(save, 1, saveSize, file);
     fread(&cmdMode, sizeof(cmdMode), 1, file);
     fread(encTable, 4, sizeof(encTable) / 4, file);
@@ -1830,8 +1834,11 @@ void CartridgeGba::saveState(FILE *file) {
 }
 
 void CartridgeGba::loadState(FILE *file) {
-    // Read state data from the file
-    fread(&saveSize, sizeof(saveSize), 1, file);
+    // Read state data from the file, making room for the state's save first, in case it's larger than the one loaded
+    int size;
+    fread(&size, sizeof(size), 1, file);
+    if (size > 0 && size != saveSize) resizeSave(size, false);
+    saveSize = size;
     if (saveSize > 0) fread(save, 1, saveSize, file);
     fread(&eepromCount, sizeof(eepromCount), 1, file);
     fread(&eepromCmd, sizeof(eepromCmd), 1, file);
