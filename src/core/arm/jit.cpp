@@ -276,7 +276,7 @@ JitBlock *Jit::compile(uint32_t address, bool thumb, uint8_t *host, int index) {
         if (other->thumb != thumb || !other->code || host <= other->start || host >= other->end) continue;
         size_t skip = (host - other->start) / step;
         if ((host - other->start) % step || other->address + skip * step != address) continue;
-        if (void *code = generateEntry(other, skip)) {
+        if (void *code = generateEntry(block, other, skip)) {
             block->instrs.assign(other->instrs.begin() + skip, other->instrs.end());
             block->end = other->end;
             block->code = code;
@@ -457,7 +457,7 @@ void Jit::linkBlock(JitBlock *block, std::vector<uint32_t*> &patched) {
         JitLink &link = block->links[i];
         JitBlock *target = lookup(link.key & ~1, link.key & 1);
         if (target && target != block) {
-            patchJump(link.site, target->code);
+            patchJump(link.site, (uint8_t*)target->code + (link.sameLine ? target->afterFetch : 0));
             link.target = target;
             target->incoming.push_back(std::make_pair(block, link.site));
             addLinked(target);
@@ -471,9 +471,13 @@ void Jit::linkBlock(JitBlock *block, std::vector<uint32_t*> &patched) {
     for (auto it = range.first; it != range.second;) {
         JitBlock *owner = it->second.first;
         uint32_t *site = it->second.second;
-        patchJump(site, block->code);
-        for (size_t j = 0; j < owner->links.size(); j++)
-            if (owner->links[j].site == site) owner->links[j].target = block;
+        bool sameLine = false;
+        for (size_t j = 0; j < owner->links.size(); j++) {
+            if (owner->links[j].site != site) continue;
+            owner->links[j].target = block;
+            sameLine = owner->links[j].sameLine;
+        }
+        patchJump(site, (uint8_t*)block->code + (sameLine ? block->afterFetch : 0));
         block->incoming.push_back(it->second);
         addLinked(block);
         patched.push_back(site);

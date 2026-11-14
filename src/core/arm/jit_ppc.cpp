@@ -32,6 +32,8 @@
 
 // Registers that hold state while generated code runs; they're saved by the entry code
 enum PpcReg {
+    R_LINES1 = 17, // The bytes that say which lines the ARM9's code cache holds, from 96KB in
+    R_LINES0 = 18, // The same from 32KB in; an offset from one or the other reaches every line of a DS's main RAM
     R_NEXT = 19, // Global cycles when something else needs to run, from the limit and the next scheduled event
     R_BATCH = 20, // Cycles of a batch of instructions that share one check, zero outside of one
     R_TMP2 = 21, // Values kept across memory accesses
@@ -135,6 +137,7 @@ public:
     void bctr() { emit(0x4E800420); }
     void bctrl() { emit(0x4E800421); }
     void blr() { emit(0x4E800020); }
+    void bnelr() { emit(0x4C820020); }
 
     static bool inRange(uint32_t *from, void *to) {
         intptr_t offset = (intptr_t)to - (intptr_t)from;
@@ -182,6 +185,9 @@ public:
 
 // The most words of host code generated for one instruction
 static const int MAX_INSTR_WORDS = 120;
+
+// The most host code a block's checks of the code cache and their fetches take, with a new line every 8 instructions
+static const size_t FETCH_SIZE = 640;
 
 // Get the code address of a non-virtual member function
 template <typename T> static void *memberAddress(T func) {
@@ -301,9 +307,9 @@ void Jit::initCodegen() {
     addrStore8 = (uint32_t)(uintptr_t)(arm7 ? &jitStore8<true> : &jitStore8<false>);
     addrLoad16 = (uint32_t)(uintptr_t)(arm7 ? &jitLoad16<true> : &jitLoad16<false>);
     addrStore16 = (uint32_t)(uintptr_t)(arm7 ? &jitStore16<true> : &jitStore16<false>);
-    addrCp15 = (uint32_t)(uintptr_t)&core->cp15;
     addrCodeLines = (uint32_t)(uintptr_t)&core->cp15.codeLines[0];
-    addrCodeMiss = (uint32_t)(uintptr_t)&Cp15::codeMissCall;
+    addrCodeTags = (uint32_t)(uintptr_t)&core->cp15.codeTags[0];
+    addrCodeTurn = (uint32_t)(uintptr_t)&core->cp15.codeTurn;
     PpcEmitter e(codeArea);
     emitStubs(e);
     codeStart = (uint8_t*)e.here();
@@ -335,7 +341,7 @@ void Jit::emitStubs(PpcEmitter &e) {
     codeExit = e.here();
     e.lwz(0, 84, 1);
     e.mtlr(0);
-    e.lmw(R_NEXT, 20, 1);
+    e.lmw(R_LINES1, 12, 1);
     e.addi(1, 1, 80);
     e.blr();
 
@@ -345,8 +351,12 @@ void Jit::emitStubs(PpcEmitter &e) {
     e.stwu(1, -80, 1);
     e.mflr(0);
     e.stw(0, 84, 1);
-    e.stmw(R_NEXT, 20, 1);
+    e.stmw(R_LINES1, 12, 1);
     e.li(R_BATCH, 0);
+    if (!arm7) {
+        e.loadConst(R_LINES0, addrCodeLines + 0x8000);
+        e.loadConst(R_LINES1, addrCodeLines + 0x18000);
+    }
     e.mr(R_ARM, 3);
     e.mr(R_EVENTS, 4);
     e.mr(R_LIMIT, 5);
@@ -440,29 +450,44 @@ void Jit::emitStubs(PpcEmitter &e) {
         }
     }
 
-    // Fetch: before an instruction in a line of main RAM that the ARM9's code cache doesn't hold, with the program
-    // counter register at that instruction, bring the line in and count the time it takes, with any run's so far, like
-    // an instruction that does nothing else; the program counter is stored as it is before the instruction, so stopping
-    // here leaves the instruction to run next
-    for (int half = 0; half < ((core->dsiMode && !arm7) ? 3 : 0); half++) {
-        for (int thumb = 0; thumb < 2; thumb++) {
-            codeFetch[half][thumb] = e.here();
-            e.stwu(1, -16, 1);
-            e.mflr(0);
-            e.stw(0, 20, 1);
-            e.loadConst(3, addrCp15);
-            e.addi(4, R_PC, thumb ? -4 : -8);
-            e.call(addrCodeMiss);
-            e.lwz(0, 20, 1);
-            e.mtlr(0);
-            e.addi(1, 1, 16);
-            e.addi(4, R_PC, thumb ? -2 : -4);
-            e.stw(4, offPc, R_ARM);
-            if (half) e.add(3, 3, 3);
-            e.add(3, 3, R_BATCH);
-            e.li(R_BATCH, 0);
-            e.b(codePost[half][0][0]);
+    // Fetch: bring a line of main RAM into the ARM9's code cache and count the time that takes, like an instruction that
+    // does nothing else. r5 is the line's place in main RAM plus 1, which is what the cache keeps and where the line's
+    // byte is, and r4 is its set's place among the cache's. The program counter register is as it would be stored
+    // before the instruction the line was checked for, so stopping here leaves that instruction to run next; checks
+    // are only where no run's cycles are waiting to be counted. The second version is for a check of two lines at once,
+    // which doesn't say which was missing, so it looks first
+    // The line takes the place of the next of its set by turns, like Cp15::codeMiss, without calling it, since DS
+    // software misses often enough for the call to cost. The time is the same number of cycles at either of the DSi's
+    // speeds, with no odd half, so it's added here like the stubs above add an instruction's
+    int32_t tags = int32_t(addrCodeTags - addrCodeLines), turn = int32_t(addrCodeTurn - addrCodeTags);
+    bool tagsNear = tags == int16_t(tags), turnNear = turn == int16_t(turn);
+    for (int two = 0; two < (arm7 ? 0 : 2); two++) {
+        codeFetch[two] = e.here();
+        e.addi(10, R_LINES0, -0x8000);
+        if (two) {
+            e.lbzx(11, 10, 5);
+            e.cmpwi(11, 0);
+            e.bnelr();
         }
+        else {
+            e.li(11, 0);
+        }
+        if (tagsNear) e.addi(6, 10, tags); else e.loadConst(6, addrCodeTags);
+        if (!turnNear) e.loadConst(12, addrCodeTurn);
+        e.lbz(7, turnNear ? turn : 0, turnNear ? 6 : 12);
+        e.addi(8, 7, 1);
+        e.stb(8, turnNear ? turn : 0, turnNear ? 6 : 12);
+        e.rlwimi(4, 7, 2, 28, 29); // Place in the set * 4
+        e.lwzx(9, 6, 4);
+        e.stbx(11, 10, 9); // The line that was there is gone; no line has a byte too
+        e.stwx(5, 6, 4);
+        e.li(11, 1);
+        e.stbx(11, 10, 5);
+        e.addi(3, R_CYCLES, Cp15::MISS_TICKS);
+        e.cmplw(3, R_NEXT);
+        e.bge(codeSlowPost[1]);
+        e.mr(R_CYCLES, 3);
+        e.blr();
     }
 
     // Dispatch: find the next block in the cache from the program counter and jump to it
@@ -2148,35 +2173,75 @@ void Jit::findLiveFlags(JitBlock *block) {
         int reads, writes, always;
         flagUse(op, nativeKind(op, arm7), reads, writes, always);
         live = (live & ~always) | reads;
-
-        // Fetching a line into the code cache can stop before the instruction, so the flags have to be exact there
-        if (fetches(block, i)) live = FLAG_ALL;
     }
 }
 
 bool Jit::fetches(JitBlock *block) {
-    // Check if a block's code goes through the ARM9's code cache, which is only counted for main RAM in DSi software,
-    // which is what the code is generated for when it counts half cycles
-    return !arm7 && halfCycles && (block->address >> 24) == 0x02;
+    // Check if a block's code goes through the ARM9's code cache, which is only counted for main RAM
+    return !arm7 && core->cp15.codeCache && (block->address >> 24) == 0x02;
 }
 
-bool Jit::fetches(JitBlock *block, size_t i) {
-    // Check if an instruction is where its line of code has to be in the code cache: the first of the block, since
-    // jumps can come from anywhere, and the first of each line after that
-    return fetches(block) && (i == 0 || !((block->address + i * (block->thumb ? 2 : 4)) & 0x1F));
+int Jit::fetchLines(JitBlock *block, size_t i, bool entry, uint32_t &address) {
+    // Count the lines of code, starting at the address returned, that the code cache has to be checked for before an
+    // instruction: its own, if it's the first of the block, since jumps can come from anywhere, or the first of its
+    // line; and the lines that start later in a run of instructions it begins, since a run always gets to its end and
+    // only stops there, which keeps the checks out of runs and lets one check cover two lines
+    // An entry point into the middle of a block has to check what the code it jumps to doesn't: the instruction's own
+    // line, and when that's inside a run, the lines starting in the rest of the run
+    if (!fetches(block)) return 0;
+    uint32_t step = block->thumb ? 2 : 4;
+    auto joined = [&](size_t j) { return batched(block, j) && (batched(block, j + 1) || endsRun(block, j + 1)); };
+    auto first = [&](size_t j) { return !((block->address + j * step) & 0x1F); };
+    bool start = i == 0 || !joined(i - 1);
+    if (!entry && !start) return 0;
+    int lines = entry ? !(start && first(i)) : (i == 0 || first(i));
+    address = ((block->address + i * step) & ~0x1F) + (lines ? 0 : 32);
+    if (entry && start) return lines;
+    for (size_t j = i; joined(j); j++) lines += first(j + 1);
+    return lines;
 }
 
-void Jit::emitFetch(PpcEmitter &e, uint32_t address) {
-    // Check the byte that says the code cache holds an instruction's line, and fetch the line if not; the program
-    // counter register has to be at the instruction
-    uint32_t held = addrCodeLines + ((address & 0xFFFFFF) >> 5);
-    e.lis(4, (held + 0x8000) >> 16);
-    e.lbz(4, int16_t(held), 4);
-    e.cmpwi(4, 0);
-    uint32_t *there = e.here();
-    e.bne(nullptr);
-    e.call(codeFetch[postHalf()][thumbCode]);
-    e.patchBc(there);
+void Jit::emitFetch(PpcEmitter &e, uint32_t address, int lines, uint32_t pc) {
+    // Check the bytes that say the code cache holds some lines of code in a row, up to two at once, and leave fetching
+    // the ones it doesn't hold to code that's generated after the block's, so the usual way through goes straight on
+    // pc is the program counter register's value at the instruction, for when it's not set yet, or 0
+    for (uint32_t line = (address & 0xFFFFFF) >> 5; lines > 0; lines -= 2, line += 2) {
+        uint32_t at = line + 1;
+        int reg = (at < 0x10000) ? R_LINES0 : R_LINES1;
+        int32_t offset = int32_t(at & 0xFFFF) - 0x8000;
+        if (at >= 0x20000) {
+            // The DSi's main RAM goes further than the registers reach
+            uint32_t held = addrCodeLines + at;
+            e.lis(reg = 4, (held + 0x8000) >> 16);
+            offset = int16_t(held);
+        }
+        if (lines > 1) e.lhz(4, offset, reg); else e.lbz(4, offset, reg);
+        e.cmpwi(4, (lines > 1) ? 0x0101 : 1);
+        fetchPaths.push_back({ e.here(), line, (lines > 1) ? 2 : 1, pc, pc ? 0 : pcBehind });
+        e.bne(nullptr);
+    }
+}
+
+void Jit::emitFetchPaths(PpcEmitter &e) {
+    // Generate the fetches that the checks in the code so far left for later, each going back to after its check
+    // A fetch that stops stores the program counter register, so it's set to what's stored before the instruction, one
+    // instruction behind where it is at the instruction, which is where it often is already
+    for (size_t i = 0; i < fetchPaths.size(); i++) {
+        JitFetch &fetch = fetchPaths[i];
+        int32_t step = thumbCode ? 2 : 4, ahead = int32_t(fetch.behind) - step;
+        e.patchBc(fetch.site);
+        if (fetch.pc) e.loadConst(R_PC, fetch.pc - step);
+        else if (ahead) e.addi(R_PC, R_PC, ahead);
+        for (int j = 0; j < fetch.lines; j++) {
+            uint32_t line = fetch.line + j;
+            e.li(4, (line & (Cp15::CODE_SETS - 1)) * Cp15::CODE_WAYS * 4);
+            e.loadConst(5, line + 1);
+            e.call(codeFetch[fetch.lines > 1]);
+        }
+        if (!fetch.pc && ahead) e.addi(R_PC, R_PC, -ahead);
+        e.b(fetch.site + 1);
+    }
+    fetchPaths.clear();
 }
 
 bool Jit::batched(JitBlock *block, size_t i) {
@@ -2210,6 +2275,9 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
     uint32_t raw = block->instrs[i].opcode, op = armOpcode(block, i);
     flagsLive = liveFlags[i];
     if (!batched(block, i)) stepPc(e);
+
+    // A jump to somewhere in its own line of code doesn't need the code cache checked for it
+    auto sameLine = [&](uint32_t target) { return fetches(block) && !(((pc - (block->thumb ? 4 : 8)) ^ target) >> 5); };
 
     // Instructions with a condition in the middle of a run add the cycle a failed condition takes after the instruction,
     // which adds the rest of its cycles, so both ways through can share the end
@@ -2256,7 +2324,7 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
         e.addi(3, R_BATCH, 3);
         if (run) e.li(R_BATCH, 0);
         e.call(codePost[postHalf()][0][0]);
-        block->links.push_back({ e.here(), target | thumbCond, nullptr });
+        block->links.push_back({ e.here(), target | thumbCond, nullptr, sameLine(target) });
         e.b(codeDispatch);
 
         // Continue to the next instruction
@@ -2332,7 +2400,8 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
     e.call(codePost[postHalf()][!isPure(raw, block->thumb)][!memoryPc]);
     if (block->thumb && (raw & 0xF800) == 0xE000) {
         // Unconditional branches jump straight to their target like ARM ones
-        block->links.push_back({ e.here(), (pc + ((int32_t)(raw << 21) >> 20)) | 1, nullptr });
+        uint32_t target = pc + ((int32_t)(raw << 21) >> 20);
+        block->links.push_back({ e.here(), target | 1, nullptr, sameLine(target) });
         e.b(codeDispatch);
     }
     else if (!block->thumb && native && nativeKind(op, arm7) == NK_BRANCH) {
@@ -2344,12 +2413,12 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
             e.beq(nullptr);
         }
         uint32_t target = (pc + ((int32_t)(op << 8) >> 6)) & ~0x3;
-        block->links.push_back({ e.here(), target, nullptr });
+        block->links.push_back({ e.here(), target, nullptr, sameLine(target) });
         e.b(codeDispatch);
         if (same) e.patchBc(same);
     }
     else if (!block->thumb && native && nativeKind(op, arm7) == NK_BLX) {
-        block->links.push_back({ e.here(), blxTarget(op, pc) | 1, nullptr });
+        block->links.push_back({ e.here(), blxTarget(op, pc) | 1, nullptr, false });
         e.b(codeDispatch);
     }
     else if (i + 1 < block->instrs.size() && mayJump(raw, block->thumb)) {
@@ -2380,41 +2449,55 @@ void *Jit::generate(JitBlock *block) {
     if (!codeArea) return nullptr;
 
     // Make sure there's room for the block, starting over if the area is full
-    size_t maxSize = block->instrs.size() * MAX_INSTR_WORDS * 4 + 16;
+    size_t maxSize = block->instrs.size() * MAX_INSTR_WORDS * 4 + 16 + FETCH_SIZE;
     if (codePtr + maxSize > codeEnd) return nullptr;
     // The codegen area can only be touched from its core; blocks use the portable executor otherwise
     JS_START(writableStart);
     if (OSGetCoreId() != codeCore || !OSSwitchSecCodeGenMode(CODEGEN_RW_)) return nullptr;
     JS_ADD(JS_SWITCH_RW, writableStart);
 
-    // Set the program counter register at the start, then step it as instructions need it
-    // Record where each instruction starts after stepping, so other blocks can jump into the middle
+    // Check that the code cache holds the first line before anything else, so a jump that doesn't need that can skip it
+    // when it's all the check is for
     PpcEmitter e(codePtr);
     uint32_t step = block->thumb ? 2 : 4;
     uint32_t pc = block->address + step * 2;
-    e.loadConst(R_PC, pc);
     block->entries.clear();
     block->entriesBehind.clear();
     pcBehind = 0;
     thumbCode = block->thumb;
     fullSpeed = arm7 && codeFullSpeed && !Interpreter::mainRam(block->address);
     block->links.clear();
+    fetchPaths.clear();
     bool ok = true;
     JS_START(emitStart);
     findLiveFlags(block);
+    uint32_t address;
+    int lines = fetchLines(block, 0, false, address);
+    if (lines) emitFetch(e, address, lines, pc);
+    block->afterFetch = (lines == 1) ? (uint8_t*)e.here() - codePtr : 0;
+
+    // Set the program counter register at the start, then step it as instructions need it
+    // Record where each instruction starts after stepping, so other blocks can jump into the middle
+    e.loadConst(R_PC, pc);
     for (size_t i = 0; i < block->instrs.size() && ok; i++, pc += step) {
         if (i > 0) pcBehind += step;
         block->entries.push_back((uint8_t*)e.here() - codePtr);
         block->entriesBehind.push_back(pcBehind);
-        if (fetches(block, i)) {
-            stepPc(e);
-            emitFetch(e, pc - step * 2);
-        }
+        if (i > 0 && (lines = fetchLines(block, i, false, address))) emitFetch(e, address, lines, 0);
         emitInstr(e, block, i, pc, ok);
+
+        // A check's branch to its fetches only reaches so far, so they go in the middle of a block that's very long
+        if (!fetchPaths.empty() && (uint8_t*)e.here() - (uint8_t*)fetchPaths[0].site > 0x6000 && i + 1 < block->instrs.size()) {
+            uint32_t *over = e.here();
+            e.b(nullptr);
+            emitFetchPaths(e);
+            e.patchB(over);
+        }
     }
 
     // Continue to whatever block comes next
     e.b(codeDispatch);
+    emitFetchPaths(e);
     flagsLive = FLAG_ALL;
     JS_ADD(JS_EMIT, emitStart);
 
@@ -2440,29 +2523,31 @@ void *Jit::generate(JitBlock *block) {
     return code;
 }
 
-// The most host code an entry point into the middle of a block takes, which is with a check of the code cache
-static const size_t ENTRY_SIZE = 48;
+// The most host code an entry point into the middle of a block takes, which is with a check of the code cache for two
+// lines and their fetches
+static const size_t ENTRY_SIZE = 80;
 
-void *Jit::generateEntry(JitBlock *host, size_t index) {
+void *Jit::generateEntry(JitBlock *block, JitBlock *host, size_t index) {
     // Generate a small entry point into the middle of another block's code, instead of compiling it again
-    if (!codeArea || !host->code || index >= host->entries.size() || codePtr + 64 > codeEnd) return nullptr;
+    if (!codeArea || !host->code || index >= host->entries.size() || codePtr + ENTRY_SIZE > codeEnd) return nullptr;
+
+    // The code cache is checked here for the lines that the code there doesn't check for, coming from outside; a run
+    // over more lines than fit here is rare, and gets code of its own instead
+    uint32_t address;
+    int lines = fetchLines(host, index, true, address);
+    if (lines > 2) return nullptr;
     JS_START(writableStart);
     if (OSGetCoreId() != codeCore || !OSSwitchSecCodeGenMode(CODEGEN_RW_)) return nullptr;
     JS_ADD(JS_SWITCH_RW, writableStart);
     PpcEmitter e(codePtr);
-    if (fetches(host) && !fetches(host, index)) {
-        // Nothing there checks that the code cache holds the instruction's line, so that's done here, with the program
-        // counter register at the instruction until it's done
-        uint32_t step = host->thumb ? 2 : 4;
-        thumbCode = host->thumb;
-        e.loadConst(R_PC, host->address + (index + 2) * step);
-        emitFetch(e, host->address + index * step);
-        if (host->entriesBehind[index]) e.addi(R_PC, R_PC, -host->entriesBehind[index]);
-    }
-    else {
-        e.loadConst(R_PC, host->address + (index + 2) * (host->thumb ? 2 : 4) - host->entriesBehind[index]);
-    }
+    uint32_t pc = host->address + (index + 2) * (host->thumb ? 2 : 4);
+    thumbCode = host->thumb;
+    fetchPaths.clear();
+    if (lines) emitFetch(e, address, lines, pc);
+    block->afterFetch = (lines == 1) ? (uint8_t*)e.here() - codePtr : 0;
+    e.loadConst(R_PC, pc - host->entriesBehind[index]);
     e.b((uint8_t*)host->code + host->entries[index]);
+    emitFetchPaths(e);
     uint8_t *code = codePtr;
     size_t size = (uint8_t*)e.here() - code;
     codePtr += (size + 15) & ~15;

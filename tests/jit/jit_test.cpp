@@ -2539,6 +2539,7 @@ int main(int argc, char **argv) {
     uint32_t blr = swap32(0x4E800020);
     for (uint32_t a = FAKE; a < FAKE_INTERLEAVE + 0x10; a += 4) uc_mem_write(uc, a, &blr, 4);
     writeBe(EVENTS, EVENTS + 0x10);
+    core->cp15.codeCache = false; // Fetches through the code cache are left to game.sh, which has real code to fetch
     core->cp15.dtcmReg = 0x027E000A;
     writeBe(DTCM_REG, core->cp15.dtcmReg);
     uc_hook hook;

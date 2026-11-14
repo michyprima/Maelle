@@ -39,10 +39,12 @@ void Cp15::loadState(FILE *file) {
     fread(codeTags, sizeof(codeTags), 1, file);
     fread(&codeTurn, sizeof(codeTurn), 1, file);
 
-    // Mark the lines the code cache holds
+    // Mark the lines the code cache holds, and empty any place with something that can't be a line
     memset(codeLines, 0, sizeof(codeLines));
-    for (int i = 0; i < CODE_SETS * CODE_WAYS; i++)
-        if (uint32_t tag = codeTags[i / CODE_WAYS][i % CODE_WAYS]) codeLines[(tag - 1) & (sizeof(codeLines) - 1)] = 1;
+    for (int i = 0; i < CODE_SETS * CODE_WAYS; i++) {
+        if (codeTag(i) >= sizeof(codeLines)) setCodeTag(i, 0);
+        codeLines[codeTag(i)] = 1;
+    }
 
     // Set registers along with values based on them
     write(1, 0, 0, ctrl);
@@ -120,7 +122,7 @@ void Cp15::write(uint8_t cn, uint8_t cm, uint8_t cp, uint32_t value) {
         // Forget the line an address is in, if the code cache holds it
         for (int i = 0; i < CODE_WAYS; i++) {
             uint32_t at = ((value >> 5) & (CODE_SETS - 1)) * CODE_WAYS + i;
-            if ((value >> 24) == 0x02 && codeTags[at / CODE_WAYS][i] == ((value & 0xFFFFFF) >> 5) + 1) codeForget(at);
+            if ((value >> 24) == 0x02 && codeTag(at) == ((value & 0xFFFFFF) >> 5) + 1) codeForget(at);
         }
         return;
 
@@ -137,9 +139,8 @@ void Cp15::write(uint8_t cn, uint8_t cm, uint8_t cp, uint32_t value) {
 
 void Cp15::codeForget(uint32_t at) {
     // Empty one of the code cache's places
-    uint32_t &tag = codeTags[at / CODE_WAYS][at % CODE_WAYS];
-    if (tag) codeLines[tag - 1] = 0;
-    tag = 0;
+    codeLines[codeTag(at)] = 0;
+    setCodeTag(at, 0);
 }
 
 void Cp15::codeFlush() {
@@ -150,16 +151,11 @@ void Cp15::codeFlush() {
 
 int Cp15::codeMiss(uint32_t address) {
     // Fetch a line of main RAM into the code cache, in place of whatever its set's next place held, and return how long
-    // that takes
+    // that takes; generated code does the same in its fetch stubs
     uint32_t line = (address & 0xFFFFFF) >> 5;
     uint32_t at = (line & (CODE_SETS - 1)) * CODE_WAYS + (codeTurn++ & (CODE_WAYS - 1));
     codeForget(at);
-    codeTags[at / CODE_WAYS][at % CODE_WAYS] = line + 1;
-    codeLines[line] = 1;
+    setCodeTag(at, line + 1);
+    codeLines[line + 1] = 1;
     return MISS_TICKS;
-}
-
-int Cp15::codeMissCall(Cp15 *cp15, uint32_t address) {
-    // Entry point for generated code
-    return cp15->codeMiss(address);
 }

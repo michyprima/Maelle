@@ -29,6 +29,14 @@ if 'addrGxStat' not in open(root + '/arm/jit.h').read():
 if 'addrCodeLines' not in open(root + '/arm/jit.h').read():
     edit('arm/jit.h', ('    uint32_t addrDtcmReg = 0,', '    uint32_t addrCp15 = 0, addrCodeLines = 0, addrCodeMiss = 0;\n    uint32_t addrDtcmReg = 0,'))
     edit('arm/cp15.h', ('    Cp15(Core *core): core(core) {}\n', '    Cp15(Core *core): core(core) {}\n    uint8_t codeLines[1] = {};\n    int codeMiss(uint32_t address) { return 0; }\n'))
+    edit('arm/cp15.h', ('    uint8_t codeLines[1] = {};\n', '    uint8_t codeLines[1] = {}, codeTags[4] = {}, codeTurn = 0;\n'))
+# Cores up to v1.0 fetch a line of code with a call, and keep where it goes to themselves
+if 'addrCodeTags' not in open(root + '/arm/jit.h').read():
+    edit('arm/jit.h', ('    uint32_t addrDtcmReg = 0,', '    uint32_t addrCodeTags = 0, addrCodeTurn = 0;\n    uint32_t addrDtcmReg = 0,'))
+    edit('arm/cp15.h', ('private:\n    Core *core;\n', 'public:\n    Core *core;\n'))
+# while newer ones fetch it in generated code, with no call
+if 'addrCodeMiss' not in open(root + '/arm/jit.h').read():
+    edit('arm/jit.h', ('    uint32_t addrDtcmReg = 0,', '    uint32_t addrCp15 = 0, addrCodeMiss = 0;\n    uint32_t addrDtcmReg = 0,'))
 # Older cores also lack the DSi's headphone pin, reset request and SD/MMC write-back, which the harness uses
 if not os.path.exists(root + '/io/dsi_gpio.h'):
     edit('core.h', ('#include "io/spi.h"\n', '#include "io/spi.h"\n\nstruct DsiGpio { static inline std::atomic<bool> headphonesIn{false}; };\n'))

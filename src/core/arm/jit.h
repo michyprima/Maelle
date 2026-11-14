@@ -82,6 +82,16 @@ struct JitLink {
     uint32_t *site;
     uint32_t key; // Target address, with bit 0 set for THUMB
     JitBlock *target;
+    bool sameLine; // Whether the jump is in the same line of code as its target, which the code cache then holds
+};
+
+// Lines of code that weren't all in the ARM9's code cache when a block being generated checked, to fetch after its code
+struct JitFetch {
+    uint32_t *site; // The branch taken when a line is missing
+    uint32_t line; // The first line's place in main RAM
+    int lines;
+    uint32_t pc; // The program counter register's value at the instruction, or 0 if it's set and only behind
+    uint32_t behind;
 };
 
 // A run of consecutive instructions from one 4KB page of host memory
@@ -97,6 +107,7 @@ struct JitBlock {
     std::vector<JitLink> links; // Jumps from this block's code to other blocks
     std::vector<std::pair<JitBlock*, uint32_t*>> incoming; // Linked jumps to this block, and their blocks
     int linkedPos = -1; // Position in the list of blocks with linked jumps, or -1 if it's not there
+    uint8_t afterFetch = 0; // Offset in the code past a check that the code cache holds only the first line, or 0
 
     static void *operator new(size_t size);
     static void operator delete(void *block);
@@ -199,7 +210,8 @@ private:
     bool thumbCode = false; // Whether the block being generated is THUMB
     bool fullSpeed = false; // Whether it's the ARM7's from outside main RAM in DSi mode, where its cycles aren't doubled
     void *codePost[3][2][2] = {}, *codeSlowPost[2] = {}; // Indexed by how cycles are halved, impure, then storing the PC
-    void *codeFetch[3][2] = {}; // Fetching a line into the ARM9's code cache, by how cycles are halved, then THUMB
+    void *codeFetch[2] = {}; // Fetching a line into the ARM9's code cache, with a second for when it might be there already
+    std::vector<JitFetch> fetchPaths; // Fetches to generate after the code being generated
     void *codeCond[14] = {}, *codeFlags[5] = {}, *codeMemory[6] = {}, *codeShift[4] = {}, *codeShiftCarry[4] = {}, *codeMultiplyCycles = nullptr, *codeOverflowQ = nullptr, *codeMsr[2] = {}, *codeReturn = nullptr;
     int offPc = 0, offCpsr = 0, offSpsr = 0, offCycles = 0, offEventCycles = 0, offUsr = 0, offRegs = 0, offIe = 0, offIrf = 0;
     int offDsiCycle = 0, offIme = 0;
@@ -213,7 +225,7 @@ private:
     uint32_t addrDtcmReg = 0, addrWriteCpsr = 0, addrRestoreCpsr = 0, addrModeBanks = 0;
     uint32_t addrDivCnt = 0, addrDivNumer = 0, addrDivDirty = 0, addrSqrtCnt = 0, addrSqrtParam = 0, addrSqrtDirty = 0, addrGxStat = 0;
     uint32_t addrLoad32 = 0, addrLoad8 = 0, addrStore32 = 0, addrStore8 = 0, addrLoad16 = 0, addrStore16 = 0;
-    uint32_t addrCp15 = 0, addrCodeLines = 0, addrCodeMiss = 0;
+    uint32_t addrCodeLines = 0, addrCodeTags = 0, addrCodeTurn = 0;
 
     uint32_t modeBanks[32][4] = {}; // R13, R14 and the SPSR by CPU mode, for returning from exceptions in generated code
 
@@ -244,7 +256,7 @@ private:
     bool codeFull();
     void finishCode(uint8_t *start, size_t size, const std::vector<uint32_t*> &patched);
     void *generate(JitBlock *block);
-    void *generateEntry(JitBlock *host, size_t index);
+    void *generateEntry(JitBlock *block, JitBlock *host, size_t index);
     void linkEntry(JitBlock *block);
     void emitStubs(PpcEmitter &e);
     void emitMath(PpcEmitter &e, bool load, int size);
@@ -253,8 +265,9 @@ private:
     void findLiveFlags(JitBlock *block);
     bool batched(JitBlock *block, size_t i);
     bool fetches(JitBlock *block);
-    bool fetches(JitBlock *block, size_t i);
-    void emitFetch(PpcEmitter &e, uint32_t address);
+    int fetchLines(JitBlock *block, size_t i, bool entry, uint32_t &address);
+    void emitFetch(PpcEmitter &e, uint32_t address, int lines, uint32_t pc);
+    void emitFetchPaths(PpcEmitter &e);
     bool endsRun(JitBlock *block, size_t i);
     void stepPc(PpcEmitter &e);
     void emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool &ok);

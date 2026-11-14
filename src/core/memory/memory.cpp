@@ -3032,10 +3032,12 @@ void Memory::writeScfgClk(uint16_t mask, uint16_t value) {
 }
 
 void Memory::updateDsiTiming() {
-    // DSi software, which runs the ARM9 at 133MHz, gets the timing measured on a DSi: the ARM9's code cache, and the
-    // ARM7 at full speed outside main RAM. DS software keeps a DS's timing, which also costs less to emulate
+    // DSi software, which runs the ARM9 at 133MHz, gets the ARM7 at full speed outside main RAM, as measured on a DSi
+    // Both count the ARM9's code cache, which the DS's ARM9 has too; without it, the ARM9 ran ahead of the ARM7 often
+    // enough that Tokyo Beat Down read the V-blank count before the ARM7 changed it, and drew half a frame
     bool dsi = fastArm9();
     core->jit.setHalfCycles(dsi);
-    if (core->cp15.codeCache != dsi) core->cp15.codeFlush();
-    core->cp15.codeCache = core->interpreter[1].fullSpeedWram = dsi;
+    if (!core->cp15.codeCache) core->cp15.codeFlush();
+    core->cp15.codeCache = true;
+    core->interpreter[1].fullSpeedWram = dsi;
 }

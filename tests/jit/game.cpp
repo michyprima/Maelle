@@ -312,7 +312,7 @@ static void hookCall(uc_engine *uc, uint64_t address, uint32_t, void *user) {
         keepR3 = false;
     }
     else if (address == FAKE_FETCH) {
-        // A line of code the ARM9's code cache doesn't hold, like Cp15::codeMissCall
+        // A line of code the ARM9's code cache doesn't hold, which older cores fetch with a call
         if (r3 != FAKE_CP15) fatal("fetch called without the coprocessor: %08X", r3);
         result = core->cp15.codeMiss(r4);
     }
@@ -444,9 +444,13 @@ static void setup(Jit &jit) {
     jit.addrLoad16 = FAKE + 32;
     jit.addrStore16 = FAKE + 40;
 
-    // The bytes that say what the code cache holds are in the core, which is mapped whole
-    jit.addrCp15 = FAKE_CP15;
+    // The bytes that say what the code cache holds, and its places and turns, are in the core, which is mapped whole
     jit.addrCodeLines = CORE + uint32_t((uint8_t*)core->cp15.codeLines - (uint8_t*)core);
+    jit.addrCodeTags = CORE + uint32_t((uint8_t*)core->cp15.codeTags - (uint8_t*)core);
+    jit.addrCodeTurn = CORE + uint32_t((uint8_t*)&core->cp15.codeTurn - (uint8_t*)core);
+
+    // Older cores call the emulator to fetch a line instead
+    jit.addrCp15 = FAKE_CP15;
     jit.addrCodeMiss = FAKE_FETCH;
 }
 
