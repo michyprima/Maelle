@@ -64,7 +64,7 @@ volatile uint32_t gpu3dStage, gpu3dFrames;
 #include "../../core/file_lock.h"
 
 extern const uint8_t gpu3d_color_gsh[], gpu3d_modulate_gsh[], gpu3d_decal_gsh[], gpu3d_modtrans_gsh[], gpu3d_edge_gsh[],
-    gpu3d_fog_gsh[], gpu3d_aa_gsh[], gpu3d_toon_gsh[], gpu3d_pack_gsh[], gpu3d_clear_gsh[], gpu3d_fill_gsh[];
+    gpu3d_fog_gsh[], gpu3d_aa_gsh[], gpu3d_toon_gsh[], gpu3d_pack_gsh[], gpu3d_clear_gsh[], gpu3d_fill_gsh[], gpu3d_copy_gsh[];
 
 std::mutex gx2Mutex;
 
@@ -121,7 +121,7 @@ private:
     static constexpr float EDGE_BIAS = 1.0f / 256;
     static const uint32_t MAX_EDGE_INDICES = 2048 * 10 * 2; // Enough for every edge of the most polygons
 
-    WHBGfxShaderGroup groups[11];
+    WHBGfxShaderGroup groups[12];
     GX2Sampler samplers[9];
     GX2ContextState *state = nullptr;
     GX2ColorBuffer colorBuffer;
@@ -131,6 +131,8 @@ private:
     GX2Texture attribCompactTexture;
     GX2Texture colorTexture; // The colors again, for the anti-aliasing pass to read
     GX2ColorBuffer packedBuffer; // The finished frame as the 2D engine's 3D pixels, so the CPU only copies it
+    GX2Texture packedTexture; // The packed frame again, for copying high-res frames down
+    GX2ColorBuffer nativeBuffer; // High-res frames' packed pixels that the CPU reads, at the DS's resolution
     GX2Texture edgeTexture; // The 8 edge colors, with how much they're blended in as alpha
     GX2Texture toonTexture; // The 32 toon colors, for toon and highlight shading
     GX2Texture clearColorTexture, clearDepthTexture; // The rear-plane bitmap's colors, and its depths and fog flags
@@ -186,8 +188,8 @@ private:
 bool Gpu3DWiiU::init() {
     // Load the shaders, which share one vertex shader and its layout
     const uint8_t *shaders[] = { gpu3d_color_gsh, gpu3d_modulate_gsh, gpu3d_decal_gsh, gpu3d_modtrans_gsh, gpu3d_edge_gsh,
-        gpu3d_fog_gsh, gpu3d_aa_gsh, gpu3d_toon_gsh, gpu3d_pack_gsh, gpu3d_clear_gsh, gpu3d_fill_gsh };
-    for (int i = 0; i < 11; i++) {
+        gpu3d_fog_gsh, gpu3d_aa_gsh, gpu3d_toon_gsh, gpu3d_pack_gsh, gpu3d_clear_gsh, gpu3d_fill_gsh, gpu3d_copy_gsh };
+    for (int i = 0; i < int(sizeof(shaders) / sizeof(shaders[0])); i++) {
         if (!WHBGfxLoadGFDShaderGroup(&groups[i], 0, shaders[i])) return false;
         WHBGfxInitShaderAttribute(&groups[i], "position", 0, offsetof(GpuVertex, pos), GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
         WHBGfxInitShaderAttribute(&groups[i], "tex_coords", 0, offsetof(GpuVertex, tex), GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
@@ -280,7 +282,7 @@ bool Gpu3DWiiU::init() {
     GX2InitTextureRegs(&colorTexture);
     memset(&packedBuffer, 0, sizeof(packedBuffer));
     packedBuffer.surface = colorBuffer.surface;
-    packedBuffer.surface.use = GX2_SURFACE_USE_COLOR_BUFFER;
+    packedBuffer.surface.use = (GX2SurfaceUse)(GX2_SURFACE_USE_COLOR_BUFFER | GX2_SURFACE_USE_TEXTURE);
     packedBuffer.surface.image = nullptr;
     packedBuffer.surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
     packedBuffer.surface.swizzle = 0;
@@ -288,6 +290,24 @@ bool Gpu3DWiiU::init() {
     GX2CalcSurfaceSizeAndAlignment(&packedBuffer.surface);
     GX2InitColorBufferRegs(&packedBuffer);
     packedBuffer.surface.image = MEMAllocFromDefaultHeapEx(packedBuffer.surface.imageSize, packedBuffer.surface.alignment);
+    memset(&packedTexture, 0, sizeof(packedTexture));
+    packedTexture.surface = packedBuffer.surface;
+    packedTexture.surface.use = GX2_SURFACE_USE_TEXTURE;
+    packedTexture.viewNumSlices = 1;
+    packedTexture.compMap = 0x00010203;
+    GX2InitTextureRegs(&packedTexture);
+
+    // Create a linear buffer for high-res frames copied down to the DS's resolution, since the CPU only reads every
+    // other pixel of every other row, and reading those from the packed frame misses the cache twice as often
+    memset(&nativeBuffer, 0, sizeof(nativeBuffer));
+    nativeBuffer.surface = packedBuffer.surface;
+    nativeBuffer.surface.width = 256;
+    nativeBuffer.surface.height = 192;
+    nativeBuffer.surface.use = GX2_SURFACE_USE_COLOR_BUFFER;
+    nativeBuffer.surface.image = nullptr;
+    GX2CalcSurfaceSizeAndAlignment(&nativeBuffer.surface);
+    GX2InitColorBufferRegs(&nativeBuffer);
+    nativeBuffer.surface.image = MEMAllocFromDefaultHeapEx(nativeBuffer.surface.imageSize, nativeBuffer.surface.alignment);
 
     // Create the toon color texture and a white one, which are small textures like the edge colors
     auto smallTexture = [](GX2Texture &texture, uint32_t width, uint32_t height = 1,
@@ -379,7 +399,7 @@ bool Gpu3DWiiU::init() {
     if (!edgeIndices) return false;
     state = (GX2ContextState*)MEMAllocFromDefaultHeapEx(sizeof(GX2ContextState), GX2_CONTEXT_STATE_ALIGNMENT);
     if (!colorBuffer.surface.image || !attribBuffer.surface.image || !attribCompact.surface.image || !edgeTexture.surface.image || !fogTexture.surface.image ||
-            !packedBuffer.surface.image ||
+            !packedBuffer.surface.image || !nativeBuffer.surface.image ||
             !depthBuffer.surface.image || !vertices || !state)
         return false;
     GX2SetupContextStateEx(state, TRUE);
@@ -1401,6 +1421,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
 
     bool packed = false; // Whether the finished frame has been packed as the 2D engine's 3D pixels yet
     uint32_t *copy = nullptr; // Where the high-res frame was copied for the UI, if it was
+    bool native = false; // Whether the high-res frame was copied down to the DS's resolution
     {
         // Draw the frame while holding GX2, setting this context's state up again after clearing
         HB_ADD_US(HB_GPU_POSTLOOP_US, hbPostLoop);
@@ -1666,6 +1687,31 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, QUAD, 1);
         }
 
+        // Copy high-res frames down to the DS's resolution for the CPU, taking the top-left pixel of each 4
+        native = (height == 384 && nativeBuffer.surface.pitch == 256);
+        if (native) {
+            GX2Invalidate((GX2InvalidateMode)(GX2_INVALIDATE_MODE_COLOR_BUFFER | GX2_INVALIDATE_MODE_TEXTURE),
+                packedBuffer.surface.image, packedBuffer.surface.imageSize);
+            GX2SetColorBuffer(&nativeBuffer, GX2_RENDER_TARGET_0);
+            GX2SetViewport(0, 0, 256, 192, 0, 1);
+            GX2SetScissor(0, 0, 256, 192);
+            WHBGfxShaderGroup &group = groups[11];
+            GX2SetFetchShader(&group.fetchShader);
+            GX2SetVertexShader(group.vertexShader);
+            GX2SetPixelShader(group.pixelShader);
+            GX2SetPixelTexture(&packedTexture, 0);
+            GX2SetPixelSampler(&samplers[0], 0);
+            GX2SetDepthStencilControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS, FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS,
+                GX2_STENCIL_FUNCTION_KEEP, GX2_STENCIL_FUNCTION_KEEP, GX2_STENCIL_FUNCTION_KEEP, GX2_COMPARE_FUNC_ALWAYS,
+                GX2_STENCIL_FUNCTION_KEEP, GX2_STENCIL_FUNCTION_KEEP, GX2_STENCIL_FUNCTION_KEEP);
+            GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
+            GX2SetColorControl(GX2_LOGIC_OP_COPY, 0x00, FALSE, TRUE);
+            GX2SetTargetChannelMasks(GX2_CHANNEL_MASK_RGBA, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS,
+                NO_CHANNELS, NO_CHANNELS);
+            GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, QUAD, 1);
+            GX2Invalidate(GX2_INVALIDATE_MODE_COLOR_BUFFER, nativeBuffer.surface.image, nativeBuffer.surface.imageSize);
+        }
+
         // Write out the packed frame, then let the UI submit while the GPU finishes this frame
         GPU_STAGE(6);
         GX2Invalidate(GX2_INVALIDATE_MODE_COLOR_BUFFER, packedBuffer.surface.image, packedBuffer.surface.imageSize);
@@ -1753,6 +1799,9 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
     }
     bool direct = (packedBuffer.surface.pitch == 512);
     renderer->setHardwareBuffer(direct ? (uint32_t*)packedBuffer.surface.image : nullptr);
+    if (native)
+        DCInvalidateRange(nativeBuffer.surface.image, nativeBuffer.surface.imageSize);
+    renderer->setHardwareNative((direct && native) ? (uint32_t*)nativeBuffer.surface.image : nullptr);
     for (int y = 0; y < height; y++) {
         if (uint32_t *line = direct ? nullptr : renderer->hardwareLine(y))
             memcpy(line, (uint32_t*)packedBuffer.surface.image + y * packedBuffer.surface.pitch, width * sizeof(uint32_t));

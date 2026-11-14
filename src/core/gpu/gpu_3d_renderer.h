@@ -65,6 +65,7 @@ public:
     void drawScanline(int line);
     void finishHardwareFrame();
     uint32_t *getLine(int line);
+    uint32_t *getNativeLine(int line, int &shift);
     bool hasFrame() { return (hardwareFrame && hardwareBuffer) || framebuffer; }
 
     uint16_t readDisp3DCnt() { return disp3DCnt | (ramOverflow.load() << 13); }
@@ -89,6 +90,7 @@ public:
     void decodeTexture(_Polygon *polygon, uint32_t *out, int pitch);
     uint32_t *hardwareLine(int line) { return allocBuffers() ? &framebuffer[0][line * 256 * 2] : nullptr; }
     void setHardwareBuffer(uint32_t *buffer) { hardwareBuffer = buffer; }
+    void setHardwareNative(uint32_t *buffer) { hardwareNative = buffer; }
     uint32_t *getHardwareCopy() { return hardwareCopy; }
     void hardwareCopyDone() { hardwareCopied = true; }
     uint32_t *takeHardwareCopy();
@@ -122,6 +124,7 @@ private:
     bool hardwareFrame = false; // Whether the current frame is being rendered by the hardware renderer
     int hardwareLines = 192; // How many scanlines the hardware frame has, which doubles in high-res
     uint32_t *hardwareBuffer = nullptr; // Where a hardware renderer leaves its frames instead, with lines 512 apart
+    uint32_t *hardwareNative = nullptr; // Where it also leaves high-res frames at the DS's resolution, with lines 256 apart
     uint32_t *hardwareCopy = nullptr; // Where a hardware renderer also copies high-res frames for the frontend
     bool hardwareCopied = false; // Whether the current frame was copied there
     uint32_t *lastCopy = nullptr; // The last copy handed over, held while no frame has been drawn since, to hand it again
@@ -174,7 +177,7 @@ private:
 
     static uint32_t rgba5ToRgba6(uint32_t color);
 
-    uint32_t *getLine1(int line);
+    uint32_t *getLine1(int line, bool forget = true);
 
     void drawThreaded(int thread);
     void drawScanline1(int line);

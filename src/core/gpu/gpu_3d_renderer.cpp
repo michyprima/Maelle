@@ -151,7 +151,27 @@ uint32_t *Gpu3DRenderer::getLine(int line) {
     return getLine1(line);
 }
 
-uint32_t *Gpu3DRenderer::getLine1(int line) {
+uint32_t *Gpu3DRenderer::getNativeLine(int line, int &shift) {
+    // Get a line to read at the DS's resolution, giving the shift between the pixels to read
+    // A hardware renderer can leave high-res frames at that resolution too, which misses the cache half as often as
+    // reading every other pixel of the high-res rows, so only that row is dropped from the cache
+    if (resShift && hardwareFrame) {
+        getLine1(line * 2, false);
+        getLine1(line * 2 + 1, false);
+        if (uint32_t *native = hardwareNative) {
+            DCInvalidateRange(&native[line * 256], 256 * sizeof(uint32_t));
+            shift = 0;
+            return &native[line * 256];
+        }
+        forgetHardwareRows(line * 2, 2);
+        shift = 1;
+        return lineData(line * 2);
+    }
+    shift = resShift;
+    return getLine(line);
+}
+
+uint32_t *Gpu3DRenderer::getLine1(int line, bool forget) {
     // If a thread is falling behind, see if this thread can help out instead of waiting around
     // Threads go back for the final pass after drawing their next scanline, so check 2 scanlines ahead
     // There's nothing to help with when the hardware renderer is drawing the frame
@@ -189,7 +209,7 @@ uint32_t *Gpu3DRenderer::getLine1(int line) {
     HB_ADD_US(HB_3D_WAIT_US, hbWait);
     EP_ADD_EMU(EP_3D_WAIT, wait);
     HB_SET(HB_EMU_WAIT, 0);
-    forgetHardwareRows(line, 1);
+    if (forget) forgetHardwareRows(line, 1);
 #ifdef FRAME_CAPTURE
     // Record the row as the 2D engine gets it, with the 3D frame it's from and when it was read
     if (!resShift && line < 192) {

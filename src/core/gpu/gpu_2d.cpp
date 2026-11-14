@@ -662,8 +662,10 @@ template <bool is3D> void Gpu2D::drawBgLine(int bg, const uint32_t *pixels, int 
 template <bool gbaMode> void Gpu2D::drawText(int bg, int line) {
     // If 3D is enabled, override BG0 in text mode
     if (!gbaMode && bg == 0 && (dispCnt & BIT(3))) {
-        // In high-res 3D mode, skip every other pixel
-        drawBgLine<true>(bg, core->gpu3DRenderer.getLine(line), 256, Settings::highRes3D);
+        // In high-res 3D mode, the line can skip every other pixel
+        int shift;
+        uint32_t *pixels = core->gpu3DRenderer.getNativeLine(line, shift);
+        drawBgLine<true>(bg, pixels, 256, shift);
         return;
     }
 
