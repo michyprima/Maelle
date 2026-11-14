@@ -92,7 +92,8 @@ public:
     void setHardwareBuffer(uint32_t *buffer) { hardwareBuffer = buffer; }
     void setHardwareNative(uint32_t *buffer) { hardwareNative = buffer; }
     uint32_t *getHardwareCopy() { return hardwareCopy; }
-    void hardwareCopyDone() { hardwareCopied = true; }
+    void hardwareCopyStarted() { hardwareCopyState.store(1); }
+    void hardwareCopyDone() { hardwareCopyState.store(2); }
     uint32_t *takeHardwareCopy();
     uint32_t *reuseHardwareCopy();
     void forgetHardwareRows(int first, int count);
@@ -126,7 +127,7 @@ private:
     uint32_t *hardwareBuffer = nullptr; // Where a hardware renderer leaves its frames instead, with lines 512 apart
     uint32_t *hardwareNative = nullptr; // Where it also leaves high-res frames at the DS's resolution, with lines 256 apart
     uint32_t *hardwareCopy = nullptr; // Where a hardware renderer also copies high-res frames for the frontend
-    bool hardwareCopied = false; // Whether the current frame was copied there
+    std::atomic<int> hardwareCopyState{0}; // Whether the current frame is being copied there (1) or was (2)
     uint32_t *lastCopy = nullptr; // The last copy handed over, held while no frame has been drawn since, to hand it again
 
     // Get where a finished scanline is, which can be in the hardware renderer's own buffer

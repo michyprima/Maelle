@@ -57,6 +57,9 @@ void Gpu3DRenderer::finishHardwareFrame() {
     if (!hardwareFrame) return;
     SpinWait spin;
     while (ready[hardwareLines - 1].load() < 3) spin.pause();
+
+    // The copy for the frontend can finish after the last scanline
+    while (hardwareCopyState.load() == 1) spin.pause();
 }
 
 Gpu3DRenderer::~Gpu3DRenderer() {
@@ -83,10 +86,15 @@ void Gpu3DRenderer::forgetHardwareRows(int first, int count) {
 
 uint32_t *Gpu3DRenderer::takeHardwareCopy() {
     // Hand over the high-res frame the hardware renderer copied, if it did, so the frontend can use it as it is
-    if (!hardwareFrame || !hardwareCopied) return nullptr;
+    // A copy that's still being made is waited for, since the last one would show the previous frame
+    if (!hardwareFrame) return nullptr;
+    SpinWait spin;
+    int state;
+    while ((state = hardwareCopyState.load()) == 1) spin.pause();
+    if (state != 2) return nullptr;
     uint32_t *copy = hardwareCopy;
     hardwareCopy = nullptr;
-    hardwareCopied = false;
+    hardwareCopyState.store(0);
 
     // Keep holding it, in case the next frames don't draw 3D again
     core->gpu.freeHiRes3D(lastCopy);
@@ -379,7 +387,7 @@ void Gpu3DRenderer::drawScanline(int line) {
                 ready[i].store(0);
 
             // Give it somewhere to copy high-res frames for the frontend, so they don't have to be copied here
-            hardwareCopied = false;
+            hardwareCopyState.store(0);
             if (resShift && !hardwareCopy)
                 hardwareCopy = core->gpu.newHiRes3D();
             hardware->render(this);

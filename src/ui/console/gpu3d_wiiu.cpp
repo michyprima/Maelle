@@ -1419,8 +1419,45 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
     }
     HB_TIMER(hbPostLoop);
 
+    // Wait for the GPU, but show an error screen if it stops responding, which would otherwise freeze silently
+    auto waitForGpu = [&](OSTime submitted) {
+        OSTime start = OSGetSystemTime();
+        while (GX2GetRetiredTimeStamp() < submitted) {
+            if (OSTicksToMilliseconds(OSGetSystemTime() - start) > 2000) {
+                GPU_STAGE(8);
+#ifdef HEARTBEAT
+                // Heartbeat builds keep waiting instead of stopping the system, so the log shows the GPU stuck
+                OSSleepTicks(OSMillisecondsToTicks(10));
+                continue;
+#endif
+                // Display the timeout without depending on C runtime locks or working file access
+                char message[256];
+                __os_snprintf(message, sizeof(message), "The GPU stopped responding to the GPU 3D renderer\n"
+                    "Frame %u: %u draws, %u vertices, 3D display control %04X, anti-aliasing setting %d",
+                    frameCount, (uint32_t)draws.size(), count, disp3DCnt, Settings::gpuAntiAlias);
+                // Write it to the hang report first, with the frame's draws, since the error screen might not show
+                // with the GPU stuck
+                if (FILE *file = openHangReport(message)) {
+                    fprintf(file, "multisample %d, edges %d, fog %d, DS anti-aliasing %d, attributes %d, compact %d, "
+                        "high-res %d, overlapped %d, alpha cutoff %f\n", msaa, gpuEdges, fog, dsAntiAlias, writeAttribs,
+                        compact, shift, chunked, alphaMin);
+                    for (GpuDraw &draw : draws)
+                        fprintf(file, "shader %d texture %ux%u sampler %d translucent %d depthEqual %d depthWrite %d solid %d "
+                            "stencil %02X shadow %d clearMask %d split %d first %u count %u\n", draw.shader,
+                            draw.texture ? draw.texture->surface.width : 0, draw.texture ? draw.texture->surface.height : 0,
+                            draw.sampler, draw.translucent, draw.depthEqual, draw.depthWrite, draw.solid, draw.stencil,
+                            draw.shadow, draw.clearMask, draw.split, draw.first, draw.count);
+                    fclose(file);
+                }
+                OSFatal(message);
+            }
+            OSSleepTicks(OSMicrosecondsToTicks(100));
+        }
+    };
+
     bool packed = false; // Whether the finished frame has been packed as the 2D engine's 3D pixels yet
     uint32_t *copy = nullptr; // Where the high-res frame was copied for the UI, if it was
+    OSTime copySubmitted = 0; // When that copy was submitted to the GPU
     bool native = false; // Whether the high-res frame was copied down to the DS's resolution
     {
         // Draw the frame while holding GX2, setting this context's state up again after clearing
@@ -1715,8 +1752,12 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
         // Write out the packed frame, then let the UI submit while the GPU finishes this frame
         GPU_STAGE(6);
         GX2Invalidate(GX2_INVALIDATE_MODE_COLOR_BUFFER, packedBuffer.surface.image, packedBuffer.surface.imageSize);
+        GX2Flush();
+        OSTime submitted = GX2GetLastSubmittedTimeStamp();
 
         // Copy high-res frames for the UI too, which is much faster on the GPU than reading them with the CPU
+        // It's submitted on its own, so the 2D engine can have the frame before it's done, since the UI's copy is only
+        // taken at the end of the emulated frame
         copy = renderer->getHardwareCopy();
         if (copy && height == 384 && !((uintptr_t)copy & (packedBuffer.surface.alignment - 1))) {
             GX2Surface surface = packedBuffer.surface;
@@ -1727,51 +1768,19 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
 
             // Copying sets up GPU state of its own, so set this context's state again, like after resolving
             GX2SetContextState(state);
+            GX2Flush();
+            copySubmitted = GX2GetLastSubmittedTimeStamp();
         }
         else {
             copy = nullptr;
         }
-        GX2Flush();
-        OSTime submitted = GX2GetLastSubmittedTimeStamp();
 #if defined(HEARTBEAT) && defined(GPU_TIMELINE)
         Heartbeat::values[HB_GPU_SUBMIT_US] += hbUs();
         hbLap(HB_GPU_PASS_PACK_US);
 #endif
         guard.unlock();
-        // Wait for the GPU, but show an error screen if it stops responding, which would otherwise freeze silently
         GPU_STAGE(7);
-        OSTime start = OSGetSystemTime();
-        while (GX2GetRetiredTimeStamp() < submitted) {
-            if (OSTicksToMilliseconds(OSGetSystemTime() - start) > 2000) {
-                GPU_STAGE(8);
-#ifdef HEARTBEAT
-                // Heartbeat builds keep waiting instead of stopping the system, so the log shows the GPU stuck
-                OSSleepTicks(OSMillisecondsToTicks(10));
-                continue;
-#endif
-                // Display the timeout without depending on C runtime locks or working file access
-                char message[256];
-                __os_snprintf(message, sizeof(message), "The GPU stopped responding to the GPU 3D renderer\n"
-                    "Frame %u: %u draws, %u vertices, 3D display control %04X, anti-aliasing setting %d",
-                    frameCount, (uint32_t)draws.size(), count, disp3DCnt, Settings::gpuAntiAlias);
-                // Write it to the hang report first, with the frame's draws, since the error screen might not show
-                // with the GPU stuck
-                if (FILE *file = openHangReport(message)) {
-                    fprintf(file, "multisample %d, edges %d, fog %d, DS anti-aliasing %d, attributes %d, compact %d, "
-                        "high-res %d, overlapped %d, alpha cutoff %f\n", msaa, gpuEdges, fog, dsAntiAlias, writeAttribs,
-                        compact, shift, chunked, alphaMin);
-                    for (GpuDraw &draw : draws)
-                        fprintf(file, "shader %d texture %ux%u sampler %d translucent %d depthEqual %d depthWrite %d solid %d "
-                            "stencil %02X shadow %d clearMask %d split %d first %u count %u\n", draw.shader,
-                            draw.texture ? draw.texture->surface.width : 0, draw.texture ? draw.texture->surface.height : 0,
-                            draw.sampler, draw.translucent, draw.depthEqual, draw.depthWrite, draw.solid, draw.stencil,
-                            draw.shadow, draw.clearMask, draw.split, draw.first, draw.count);
-                    fclose(file);
-                }
-                OSFatal(message);
-            }
-            OSSleepTicks(OSMicrosecondsToTicks(100));
-        }
+        waitForGpu(submitted);
         HB_ADD_US(HB_GPU_DRAW_US, hbDraw);
 #ifdef FRAME_CAPTURE
         FrameCapture::renders[renderer->captureId % FrameCapture::RENDERS].endTime = OSGetSystemTime();
@@ -1793,10 +1802,8 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
     GPU_STAGE(5);
     HB_TIMER(hbConvert);
     DCInvalidateRange(packedBuffer.surface.image, packedBuffer.surface.imageSize);
-    if (copy) {
-        DCInvalidateRange(copy, packedBuffer.surface.imageSize);
-        renderer->hardwareCopyDone();
-    }
+    if (copy)
+        renderer->hardwareCopyStarted();
     bool direct = (packedBuffer.surface.pitch == 512);
     renderer->setHardwareBuffer(direct ? (uint32_t*)packedBuffer.surface.image : nullptr);
     if (native)
@@ -1808,6 +1815,15 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
         renderer->hardwareDone(y);
     }
     HB_ADD_US(HB_GPU_CONVERT_US, hbConvert);
+
+    // Hand over the UI's copy once it's done too
+    if (copy) {
+        GPU_STAGE(7);
+        waitForGpu(copySubmitted);
+        DCInvalidateRange(copy, packedBuffer.surface.imageSize);
+        renderer->hardwareCopyDone();
+        GPU_STAGE(5);
+    }
 
 #ifdef GPU_DUMP
     // Debug builds save what the GPU was given and what it drew 4 times a second, cycling through 20 files
