@@ -152,7 +152,6 @@ private:
         uint32_t mapChanges; // Texture mapping changes when its data was last checked
     };
     std::unordered_map<uint64_t, CachedTexture> textures;
-    std::vector<uint32_t> decoded;
     std::vector<GX2Texture*> updated;
     std::vector<GpuDraw> draws;
     uint32_t frameCount = 0;
@@ -535,11 +534,7 @@ GX2Texture *Gpu3DWiiU::lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon,
     }
 
     // Decode the texture into it, with rows at its pitch
-    decoded.resize(polygon->sizeS * polygon->sizeT);
-    renderer->decodeTexture(polygon, decoded.data());
-    for (int y = 0; y < polygon->sizeT; y++)
-        memcpy((uint32_t*)texture->surface.image + y * texture->surface.pitch, &decoded[y * polygon->sizeS],
-            polygon->sizeS * sizeof(uint32_t));
+    renderer->decodeTexture(polygon, (uint32_t*)texture->surface.image, texture->surface.pitch);
 
     // Invalidating it adds a GPU command, so that waits until the frame is drawn while holding GX2
     updated.push_back(texture);

@@ -83,7 +83,7 @@ public:
     uint8_t getFogTable(int index) { return fogTable[index]; }
     uint8_t getAlphaTestRef() { return alphaTestRef; }
     uint64_t hashTexture(_Polygon *polygon);
-    void decodeTexture(_Polygon *polygon, uint32_t *out);
+    void decodeTexture(_Polygon *polygon, uint32_t *out, int pitch);
     uint32_t *hardwareLine(int line) { return allocBuffers() ? &framebuffer[0][line * 256 * 2] : nullptr; }
     void setHardwareBuffer(uint32_t *buffer) { hardwareBuffer = buffer; }
     uint32_t *getHardwareCopy() { return hardwareCopy; }
