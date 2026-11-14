@@ -536,10 +536,25 @@ static uint64_t hash(const void *data, size_t size, uint64_t h = 0xCBF29CE484222
     return h;
 }
 
+// For loading Wii U states, see shim/state_swap.h: the sizes of the fields of each structure saved whole, by type name
+bool stateSwap = false;
+const char *stateLayout(const char *type) {
+    static const std::pair<const char*, const char*> layouts[] = {
+        { "6Matrix", "4*16" },
+        { "6Vector", "4*3" },
+        { "10SchedEvent", "4 4" },
+        { "6Vertex", "4*4 2 2 4" },
+        { "8_Polygon", "4 4 2 2 1*6 2 1*11" }
+    };
+    for (auto &layout: layouts)
+        if (!strcmp(layout.first, type)) return layout.second;
+    return nullptr;
+}
+
 int main(int argc, char **argv) {
     if (argc < 5) {
         printf("Usage: game <system files folder> <rom, or - for none> <interp|portable|native|clear|set> <frames> [fast] [dsi] [firmware] [press=N] "
-            "[start=N] [touch=N] [trace=frame] [ppm=path] [shots=N] [sd=path] [dsplle] [mictone=Hz] [state=save:load] [headphones=N] [results=path] [ram=path] [dump=address:size:path] [audio] [wav=path] [keys=frame:key,...] [taps=frame:x:y,...] [wifi] [realtime] [live] [window] [input] [exact] [romtest=path]\n");
+            "[start=N] [touch=N] [trace=frame] [ppm=path] [shots=N] [sd=path] [dsplle] [mictone=Hz] [state=save:load] [statefile=path] [headphones=N] [results=path] [ram=path] [dump=address:size:path] [audio] [wav=path] [keys=frame:key,...] [taps=frame:x:y,...] [wifi] [realtime] [live] [window] [input] [exact] [romtest=path]\n");
         return 2;
     }
     std::string files = argv[1], mode = argv[3];
@@ -547,7 +562,7 @@ int main(int argc, char **argv) {
     int stateSave = -1, stateLoad = -1, micTone = 0;
     bool fast = false, dsi = false, firmware = false, window = false, wifi = false, realtime = false, input = false;
     bool threads = false, stress = false, audio = false;
-    std::string ppm, results, ramFile, wav, sdImage, romtest;
+    std::string ppm, results, ramFile, wav, sdImage, romtest, stateFile;
     struct Dump { uint32_t address, size; std::string path; };
     std::vector<Dump> dumps;
     std::vector<std::pair<int, int>> inputs; // Frame and key to press then, for 2 frames
@@ -580,6 +595,7 @@ int main(int argc, char **argv) {
             stateSave = atoi(arg.c_str() + 6);
             stateLoad = atoi(arg.c_str() + arg.find(':') + 1);
         }
+        else if (arg.rfind("statefile=", 0) == 0) stateFile = arg.substr(10); // A state to load at state's load frame instead
         else if (arg.rfind("results=", 0) == 0) results = arg.substr(8);
         else if (arg.rfind("ram=", 0) == 0) ramFile = arg.substr(4);
         else if (arg.rfind("dump=", 0) == 0) { // Save memory as the ARM7 sees it at the end, as address:size:path in hex
@@ -766,7 +782,21 @@ int main(int argc, char **argv) {
             core->saveStates.setPath("test.state", false);
             printf("state saved at frame %d: %d\n", i, core->saveStates.saveState());
         }
-        if (i == stateLoad) printf("state loaded at frame %d: %d\n", i, core->saveStates.loadState());
+        if (i == stateLoad) {
+            // A state from the Wii U has its version big-endian, and its values get swapped as they're read
+            if (!stateFile.empty()) {
+                core->saveStates.setPath(stateFile, false);
+                uint32_t version = 0;
+                if (FILE *file = fopen(stateFile.c_str(), "rb")) {
+                    fseek(file, 4, SEEK_SET);
+                    fread(&version, 4, 1, file);
+                    fclose(file);
+                }
+                stateSwap = (version >> 24) != 0;
+            }
+            printf("state loaded at frame %d: %d\n", i, core->saveStates.loadState());
+            stateSwap = false;
+        }
         do core->runCore(); while (!core->frameEnded.exchange(false));
         if (realtime) std::this_thread::sleep_until(start + std::chrono::microseconds(int64_t(i + 1) * 1000000 / 60));
         if (core->gpu.getFrame(frame, false)) {

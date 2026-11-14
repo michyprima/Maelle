@@ -89,6 +89,10 @@ program counters, then hashes of RAM and WRAM, and every way is compared with th
 - `headphones=N` to plug headphones into the DSi at frame N, as the GamePad's jack would
 - `sd=file` to give DSi mode an SD card image, which the run writes to, so give it a copy; without it the SD slot is empty
 - `shots=N` with `ppm=file` to also save the screens every N frames, named after it with the frame number added
+- `state=S:L` to save a state before frame S and load it before frame L, and `statefile=file` to load that file at frame L
+  instead, such as a state from the console: those are big-endian, and every value is byte-swapped as it's read, by its
+  type, with the field sizes of structures saved whole listed in `stateLayout`. The system files must be the ones the
+  console has, since a state can stop a CPU inside the BIOS
 
 A run also ends early when the DSi asks to be reset, as it does to go back to its menu, since the harness can't start a new
 core; it prints the frame, and the NAND and SD images keep what was written.

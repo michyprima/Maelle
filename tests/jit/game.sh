@@ -46,7 +46,7 @@ fi
 rm -rf "$build/new"; mkdir -p "$build/new"; cp -R "$here/../../src/core/" "$build/new/"
 python3 -I "$here/patch.py" "$build/new" "$mutation" game
 if rsync -rci --delete "$build/new/" "$build/src/" | grep -q '\.h$'; then rm -f "$build"/obj/*.o; fi
-flags="-std=c++17 -O2 -w $JIT_TEST_CFLAGS -I$here/shim -I$build/src -I$build/src/gpu -I$build/src/io -I$uni/include -DNO_FDOPEN"
+flags="-std=c++17 -O2 -w $JIT_TEST_CFLAGS -I$here/shim -I$build/src -I$build/src/gpu -I$build/src/io -I$uni/include -DNO_FDOPEN -include state_swap.h"
 for f in $(cd "$build/src"; find . -name '*.cpp'); do
     o="$build/obj/$(echo "${f#./}" | tr '/' '_').o"
     if [ ! -e "$o" ] || [ "$build/src/$f" -nt "$o" ]; then clang++ $flags -c "$build/src/$f" -o "$o" & fi
