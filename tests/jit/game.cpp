@@ -554,14 +554,14 @@ const char *stateLayout(const char *type) {
 int main(int argc, char **argv) {
     if (argc < 5) {
         printf("Usage: game <system files folder> <rom, or - for none> <interp|portable|native|clear|set> <frames> [fast] [dsi] [firmware] [press=N] "
-            "[start=N] [touch=N] [trace=frame] [ppm=path] [shots=N] [sd=path] [dsplle] [mictone=Hz] [state=save:load] [statefile=path] [headphones=N] [results=path] [ram=path] [dump=address:size:path] [audio] [wav=path] [keys=frame:key,...] [taps=frame:x:y,...] [wifi] [realtime] [live] [window] [input] [exact] [romtest=path]\n");
+            "[start=N] [touch=N] [trace=frame] [ppm=path] [shots=N] [sd=path] [dsplle] [mictone=Hz] [state=save:load] [statefile=path] [headphones=N] [results=path] [ram=path] [dump=address:size:path] [audio] [wav=path] [keys=frame:key,...] [taps=frame:x:y,...] [wifi] [realtime] [live] [window] [input] [exact] [highres] [romtest=path]\n");
         return 2;
     }
     std::string files = argv[1], mode = argv[3];
     int frames = atoi(argv[4]), shots = 0, headphones = -1, press = 0, startKey = 0, touch = 0, traceFrom = -1;
     int stateSave = -1, stateLoad = -1, micTone = 0;
     bool fast = false, dsi = false, firmware = false, window = false, wifi = false, realtime = false, input = false;
-    bool threads = false, stress = false, audio = false;
+    bool threads = false, stress = false, audio = false, highRes = false;
     std::string ppm, results, ramFile, wav, sdImage, romtest, stateFile;
     struct Dump { uint32_t address, size; std::string path; };
     std::vector<Dump> dumps;
@@ -578,6 +578,7 @@ int main(int argc, char **argv) {
         else if (arg == "realtime") realtime = true; // 60 frames a second, to watch a run or give a network time
         else if (arg == "wifi") wifi = true; // Needs game.sh's --wifi for the real libslirp
         else if (arg == "threads") threads = true; // 2D threads drawing behind the emulator, as the console does
+        else if (arg == "highres") highRes = true; // Software 3D at twice the resolution, as high-res 3D draws
         else if (arg == "audio") audio = true; // Mix the sound, and print a hash of it after the memory
         else if (arg == "vramstress") stress = true; // Only run the VRAM test, see vramStress
         else if (arg == "exact") exactCount = true; // Count the PowerPC instructions one by one, which is much slower
@@ -664,7 +665,7 @@ int main(int argc, char **argv) {
     }
     Settings::fpsLimiter = 0;
     Settings::fast2D = threads;
-    Settings::highRes3D = 0;
+    Settings::highRes3D = highRes;
     Settings::hardware3D = 0;
     Settings::screenFilter = 0;
     Settings::wifi = wifi;
@@ -722,8 +723,10 @@ int main(int argc, char **argv) {
     static uint32_t frame[256 * 192 * 2 * 4];
     auto savePpm = [](const std::string &path) {
         FILE *out = fopen(path.c_str(), "wb");
-        fprintf(out, "P6\n256 384\n255\n");
-        for (int p = 0; p < 256 * 384; p++) {
+        // High-res 3D makes frames twice as wide and tall
+        int scale = Settings::highRes3D ? 2 : 1;
+        fprintf(out, "P6\n%d %d\n255\n", 256 * scale, 384 * scale);
+        for (int p = 0; p < 256 * 384 * scale * scale; p++) {
             uint8_t rgb[3] = { uint8_t(frame[p]), uint8_t(frame[p] >> 8), uint8_t(frame[p] >> 16) };
             fwrite(rgb, 1, 3, out);
         }

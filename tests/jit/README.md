@@ -72,6 +72,8 @@ program counters, then hashes of RAM and WRAM, and every way is compared with th
 - `audio` to mix the sound as well, which is left out otherwise for speed, and add a running hash of it to every frame's line, so comparing runs shows the first frame it differs on
 - `wav=file` to also save the sound as a WAV file, at 32768 Hz in 16-bit stereo, which turns on `audio`
 - `realtime` to run at most 60 frames a second, to watch a run in its window or give a network real time to answer
+- `highres` to draw 3D at twice the resolution, as high-res 3D does with the software renderer; saved screens are then
+  twice as wide and tall
 - `threads` to run with the 2D threads drawing behind the emulator, as fast 2D does on the console; their timing varies, so
   runs with it aren't expected to match each other
 - `vramstress` to run only a test of VRAM reads from another thread during VRAM bank changes, which ignores the frame count
