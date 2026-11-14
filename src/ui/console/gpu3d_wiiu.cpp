@@ -37,6 +37,7 @@
 #include <gx2/surface.h>
 #include <gx2/texture.h>
 #include <whb/gfx.h>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
@@ -111,6 +112,7 @@ public:
 
 private:
     static const int MAX_VERTICES = 2048 * 8 * 3;
+    static const int STRIP_ROWS = 2048; // The most rows polygons are drawn in a frame, see renderFrame
     static const int QUAD = MAX_VERTICES; // Where the screen quad is, after the polygons
     static const int CHUNK_POLYGONS = 256; // How many polygons a frame needs to be sent in pieces
     static const uint32_t FIRST_CHUNK_VERTICES = 768, CHUNK_VERTICES = 1536; // How many vertices go in each piece
@@ -629,6 +631,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
     bool fillCracks = disp3DCnt & (BIT(4) | BIT(5));
 #endif
     uint32_t edgeCount = 0;
+    int stripRows = 0; // How many rows polygons have been drawn in this frame, which is limited to keep frames quick
     bool writeAttribs = gpuEdges || fog || dsAntiAlias || fillCracks;
 
     // Pixels are dropped if their alpha is 0, or with the alpha test, if their 5-bit alpha isn't greater than the
@@ -1135,6 +1138,15 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             // a pixel to line them up, but just short of that, so pixels exactly on an edge are drawn or skipped like
             // on the DS; texture coordinates move back by the same amount, using how they change across the polygon
             float shiftS = 0, shiftT = 0;
+            // The DS works out texture coordinates along the left and right edges of each row, then across the row
+            // between its first and last whole pixels; on a slanted edge those aren't where the edge really is, and
+            // with about a texel per pixel, as for sprites drawn with 3D, the GPU's triangles read the next texel along
+            // the edge in places. Flat polygons with a slanted edge are drawn a row at a time instead, with the
+            // software renderer's own values for each row. Moving a row's end by up to a pixel moves its texels by up to
+            // how much they change across a pixel, so this is only done where that's 0.4 texels or more, as for sprites,
+            // and not where textures are much smaller than drawn, which could only show neighbors along edges anyway;
+            // past a budget of rows a frame, the rest are drawn as triangles too
+            bool strips = false, sized = false;
             if (textured) {
                 Vertex &a = vertex(0), &b = vertex(1), &c = vertex(2);
                 float bx = b.x - a.x, by = b.y - a.y, cx = c.x - a.x, cy = c.y - a.y;
@@ -1142,7 +1154,28 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 if (float det = bx * cy - cx * by) {
                     shiftS = EDGE_BIAS * ((bs * cy - cs * by) + (cs * bx - bs * cx)) / det;
                     shiftT = EDGE_BIAS * ((bt * cy - ct * by) + (ct * bx - bt * cx)) / det;
+
+                    // From 0.4 texels a pixel across rows, in either coordinate, to 1.5 texels a native pixel in both
+                    float ds = fabsf(bs * cy - cs * by), dt = fabsf(bt * cy - ct * by), area = fabsf(det);
+                    float limit = 1.5f / (1 << shift) * area;
+                    sized = std::max(ds, dt) >= 0.4f * area && ds <= limit && dt <= limit;
                 }
+
+                // Only flat polygons have linear rows; rows are counted here to see that they fit
+                int top = vertex(0).y, bottom = top;
+                bool flat = true, slanted = false;
+                for (int k = 0; k < polygon->size; k++) {
+                    Vertex &v = vertex(k), &n = vertex((k + 1) % polygon->size);
+                    flat &= (v.w == a.w);
+                    slanted |= (v.x != n.x && v.y != n.y);
+                    top = std::min<int>(top, v.y);
+                    bottom = std::max<int>(bottom, v.y);
+                }
+                // With anti-aliasing like the DS, rows can take 3 quads, for the edge pixels on each side and the middle
+                int rows = bottom - top + 1, quads = (dsAntiAlias && !translucent) ? 3 : 1;
+                strips = !wireframe && flat && slanted && sized && stripRows + rows <= STRIP_ROWS &&
+                    count + rows * quads * 6 <= MAX_VERTICES;
+                if (strips) stripRows += rows;
             }
 
             // At high resolution, flat polygons only read the texels their native pixels would, so the pixels in
@@ -1155,20 +1188,25 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             // Convert a polygon vertex for the shaders, with texture coordinates in texels
             // Wireframe edges are opaque; toon and highlight colors come from the shader, by the red level
             float alpha = wireframe ? 1.0f : (polygon->alpha / 63.0f);
-            auto convert = [&](GpuVertex &out, int k) {
-                Vertex &v = vertex(k);
-                float w = (v.w > 0) ? float(v.w) : 1.0f;
+            auto place = [&](GpuVertex &out, float x, float y, float z, float w) {
                 // The DS passes the equal depth test within a margin, so those polygons are drawn that much closer,
                 // which shadows and other decals on the ground rely on, since their depth isn't exactly the ground's
                 float depth;
                 if (polygon->depthTestEqual)
-                    depth = wBuffer ? (minW / std::max(w - 0xFF, minW)) : (float(std::max(v.z - 0x200, 0)) / 0x1000000);
+                    depth = wBuffer ? (minW / std::max(w - 0xFF, minW)) : (std::max(z - 0x200, 0.0f) / 0x1000000);
                 else
-                    depth = wBuffer ? (minW / w) : (float(v.z) / 0x1000000);
-                out.pos[0] = ((float(v.x) + 0.5f - EDGE_BIAS) * xScale - 1) * w;
-                out.pos[1] = (1 - (float(v.y) + 0.5f - EDGE_BIAS) * yScale) * w;
+                    depth = wBuffer ? (minW / w) : (z / 0x1000000);
+                out.pos[0] = ((x + 0.5f - EDGE_BIAS) * xScale - 1) * w;
+                out.pos[1] = (1 - (y + 0.5f - EDGE_BIAS) * yScale) * w;
                 out.pos[2] = depth * w;
                 out.pos[3] = w;
+                out.attrib[2] = wBuffer ? 1.0f : w;
+                out.attrib[3] = wBuffer ? w : z * w;
+            };
+            auto convert = [&](GpuVertex &out, int k) {
+                Vertex &v = vertex(k);
+                float w = (v.w > 0) ? float(v.w) : 1.0f;
+                place(out, float(v.x), float(v.y), float(v.z), w);
                 out.tex[0] = v.s / 16.0f - shiftS;
                 out.tex[1] = v.t / 16.0f - shiftT;
                 out.color[0] = ((v.color >> 0) & 0x3F) / 63.0f;
@@ -1177,8 +1215,6 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 out.color[3] = alpha;
                 out.attrib[0] = polygon->id * 4 + 1 + (polygon->fog ? 2 : 0);
                 out.attrib[1] = 0.0f;
-                out.attrib[2] = wBuffer ? 1.0f : w;
-                out.attrib[3] = wBuffer ? w : float(v.z) * w;
                 memcpy(out.bounds, bounds, sizeof(bounds));
             };
 
@@ -1204,7 +1240,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                     out.tex[2] = out.tex[3] = out.attrib[1] = 1000.0f;
                 }
             }
-            for (int j = 1; !wireframe && j + 1 < polygon->size; j++) {
+            for (int j = 1; !wireframe && !strips && j + 1 < polygon->size; j++) {
                 int tri[3] = { 0, j, j + 1 };
                 float dist[3][3] = {};
                 if (distances) {
@@ -1247,11 +1283,98 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 }
             }
 
+            // Draw a polygon a row at a time, each row from where the software renderer's span starts to where it ends,
+            // with the values it has at those ends; within a row they change linearly, so the GPU interpolates them
+            // exactly. Texture coordinates are brought just past where the DS's rounding down would put them, so the
+            // shader's rounding gives the same texels. Their edges aren't filled for cracks, which the DS's full spans
+            // with anti-aliasing or edge marking don't leave anyway
+            // With anti-aliasing like the DS, the edge pixels at each end of a row get the DS's coverage, which changes
+            // linearly across them; it goes in the first edge distance, as the coverage minus half a pixel
+            if (strips) {
+                int top = 192 << shift, bottom = 0;
+                for (int k = 0; k < polygon->size; k++) {
+                    top = std::min<int>(top, vertex(k).y);
+                    bottom = std::max<int>(bottom, vertex(k).y);
+                }
+                if (top == bottom) bottom++;
+                top = std::max(top, 0);
+                bottom = std::min(bottom, 192 << shift);
+                bool blended = translucent && (disp3DCnt & BIT(3));
+                float w = (vertex(0).w > 0) ? float(vertex(0).w) : 1.0f;
+
+                for (int line = top; line < bottom; line++) {
+                    Span span;
+                    renderer->getSpan(line, i, span);
+                    int x1 = span.x1, x2 = span.x2, x3 = span.x3, x4 = span.x4;
+                    int left = blended ? x1 : span.x1e, right = std::min<int>(blended ? x4 : span.x4e, 256 << shift);
+                    if (right <= left) continue;
+
+                    // Get the values at a point along the row, as the DS works them out before rounding down
+                    auto value = [&](const uint32_t (&ends)[2], float x) {
+                        float a = int32_t(ends[0]), b = int32_t(ends[1]);
+                        return (x4 > x1) ? (a + (b - a) * (x - x1) / (x4 - x1)) : a;
+                    };
+                    float margin = 1.0f / 512 - 1.0f / (32 * std::max(x4 - x1, 1));
+
+                    // Add a quad over part of the row, with the edge coverage changing linearly between 2 points, or
+                    // full coverage without them
+                    auto addQuad = [&](int from, int to, float ca, float va, float cb, float vb) {
+                        if (to <= from) return;
+                        auto edge = [&](float x) {
+                            if (!distances) return 1000.0f;
+                            float cover = (cb > ca) ? (va + (vb - va) * (x - ca) / (cb - ca)) : va;
+                            return cover / 63 - 0.5f;
+                        };
+
+                        // Make the corners: top left, top right, bottom left, bottom right
+                        GpuVertex corners[4];
+                        for (int c = 0; c < 4; c++) {
+                            float x = (c & 1) ? to : from, y = line + (c >> 1);
+                            float at = x - EDGE_BIAS; // Where the DS samples for the GPU pixel centers
+                            GpuVertex &out = corners[c];
+                            out = converted[0];
+                            place(out, x, y, value(span.ze, at), w);
+                            out.tex[0] = value(span.se, at) / 16 - margin;
+                            out.tex[1] = value(span.te, at) / 16 - margin;
+                            out.tex[2] = edge(at);
+                            out.tex[3] = out.attrib[1] = 1000.0f;
+                            out.color[0] = value(span.re, at) / (8 * 63.0f);
+                            out.color[1] = value(span.ge, at) / (8 * 63.0f);
+                            out.color[2] = value(span.be, at) / (8 * 63.0f);
+                        }
+
+                        // Add it as 2 triangles, claiming the vertices' cache blocks before writing them
+                        static const int order[6] = { 0, 2, 3, 0, 3, 1 };
+                        for (int c = 0; c < 6; c++) {
+                            GpuVertex &out = vertices[count++];
+                            claimBlock(&out);
+                            claimBlock(&out.color);
+                            claimBlock(&out.bounds);
+                            out = corners[order[c]];
+                        }
+                    };
+
+                    // Without anti-aliasing the whole row is one quad; with it, the DS gives the pixels up to x2 the
+                    // left edge's coverage, then the ones from x3 the right edge's, and the rest full coverage
+                    if (!distances) {
+                        addQuad(left, right, 0, 0, 0, 0);
+                        continue;
+                    }
+                    // Edge pixels with full coverage join the middle, so most rows still take a single quad
+                    int middle = std::max(left, std::min(x2 + 1, right)), end = std::max(middle, std::min(x3, right));
+                    bool leftFull = (span.x1a == 0x3F && span.x2a == 0x3F), rightFull = (span.x3a == 0x3F && span.x4a == 0x3F);
+                    int from = leftFull ? left : middle, to = rightFull ? right : end;
+                    if (!leftFull) addQuad(left, middle, x1, span.x1a, x2, span.x2a);
+                    addQuad(from, to, 0, 1000 * 63, 0, 1000 * 63);
+                    if (!rightFull) addQuad(end, right, x3, span.x3a, x4, span.x4a);
+                }
+            }
+
             HB_ADD_TICKS(HB_GPU_FAN_US, hbFan);
 
             // List the polygon's edges, using the fan's vertices: the first triangle has the first 3 polygon vertices,
             // and the last vertex of each later one is the next polygon vertex
-            if (fillCracks && draw.solid && !wireframe && edgeCount + polygon->size * 2 <= MAX_EDGE_INDICES) {
+            if (fillCracks && draw.solid && !wireframe && !strips && edgeCount + polygon->size * 2 <= MAX_EDGE_INDICES) {
                 auto fanVertex = [&](int k) { return draw.first + ((k < 2) ? k : ((k - 2) * 3 + 2)); };
                 for (int k = 0; k < polygon->size; k++) {
                     edgeIndices[edgeCount++] = fanVertex(k);

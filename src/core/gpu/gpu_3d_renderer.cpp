@@ -1196,9 +1196,8 @@ NO_INLINE uint32_t Gpu3DRenderer::readTexture(_Polygon *polygon, int s, int t) {
     }}
 }
 
-void Gpu3DRenderer::drawPolygon(int line, int polygonIndex) {
-    PX_SLOTS;
-    PX_START(spanStart);
+void Gpu3DRenderer::getSpan(int line, int polygonIndex, Span &span) {
+    // Work out where a polygon's span on a scanline starts and ends, and its values at either end
     _Polygon *polygon = &core->gpu3D.polygonsOut[polygonIndex];
 
     // Get the polygon vertices
@@ -1496,19 +1495,6 @@ void Gpu3DRenderer::drawPolygon(int line, int polygonIndex) {
         }
     }
 
-    // Keep track of shadow mask polygons
-    if (polygon->mode == 3 && polygon->id == 0) { // Shadow mask polygon
-        // Clear the stencil buffer at the start of a shadow mask polygon group
-        if (!stencilClear[line]) {
-            memset(&stencilBuffer[line * 256 * 2], 0, 256 << resShift);
-            stencilClear[line] = true;
-        }
-    }
-    else {
-        // End a shadow mask polygon group
-        stencilClear[line] = false;
-    }
-
     // Increment the right bound not only for drawing, but for interpolation across the scanline as well
     // This seems to give results accurate to hardware
     uint32_t x1e = x1, x4e = ++x4;
@@ -1525,12 +1511,34 @@ void Gpu3DRenderer::drawPolygon(int line, int polygonIndex) {
     // Instead, simply consider the entire span across the top and bottom of a polygon to be an edge
     bool horizontal = (line == polygonTop[polygonIndex] || line == polygonBot[polygonIndex] - 1);
 
+    span = { polygon, line, x1, x2, x3, x4, x1e, x4e, x1a, x2a, x3a, x4a, horizontal,
+        { ze[0], ze[1] }, { we[0], we[1] }, { re[0], re[1] }, { ge[0], ge[1] }, { be[0], be[1] }, { se[0], se[1] }, { te[0], te[1] },
+        polygonTexBounds[polygonIndex] };
+}
+
+void Gpu3DRenderer::drawPolygon(int line, int polygonIndex) {
+    PX_SLOTS;
+    PX_START(spanStart);
+    Span span;
+    getSpan(line, polygonIndex, span);
+    _Polygon *polygon = span.polygon;
+
+    // Keep track of shadow mask polygons
+    if (polygon->mode == 3 && polygon->id == 0) { // Shadow mask polygon
+        // Clear the stencil buffer at the start of a shadow mask polygon group
+        if (!stencilClear[line]) {
+            memset(&stencilBuffer[line * 256 * 2], 0, 256 << resShift);
+            stencilClear[line] = true;
+        }
+    }
+    else {
+        // End a shadow mask polygon group
+        stencilClear[line] = false;
+    }
+
     PX_ADD(PX_SPAN, spanStart);
 
     // Draw the span with a version of the loop specialized for the polygon's main settings
-    Span span = { polygon, line, x1, x2, x3, x4, x1e, x4e, x1a, x2a, x3a, x4a, horizontal,
-        { ze[0], ze[1] }, { we[0], we[1] }, { re[0], re[1] }, { ge[0], ge[1] }, { be[0], be[1] }, { se[0], se[1] }, { te[0], te[1] },
-        polygonTexBounds[polygonIndex] };
     switch ((polygon->wBuffer << 2) | (bool(disp3DCnt & BIT(4)) << 1) | (polygon->textureFmt != 0)) {
         case 0: drawSpan<false, false, false>(span); break;
         case 1: drawSpan<false, false, true>(span); break;
