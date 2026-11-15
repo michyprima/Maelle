@@ -37,6 +37,7 @@ public:
     uint32_t entryAddr = 0;
     uint8_t halted = 0;
     bool fullSpeedWram = false; // Whether the ARM7 only counts its cycles double in main RAM, which is for DSi software
+    bool fullSpeedItcm = false; // Whether the ARM9 counts its cycles half in its instruction TCM, see Cartridge::loadRom
 #ifdef STATE_DEBUG
     uint32_t wakes = 0; // Times the CPU has been woken from halting
 #endif
@@ -124,6 +125,7 @@ private:
         return (pc < 0x10000 || (fullSpeedWram && !mainRam(pc))) ? cycles : (cycles << 1);
     }
     static bool mainRam(uint32_t address) { return (address >> 24) == 0x02 || (address >> 24) == 0x0C; }
+    static bool itcm(uint32_t pc) { return pc < 0x2000000; } // The ARM9 can only run code below main RAM from its instruction TCM
     int fetchCycles() {
         // Check if the ARM9's next instruction is in a line of main RAM that its code cache doesn't hold, in which case
         // the line is fetched before the instruction runs; returns how long that takes in 33MHz cycles, or 0

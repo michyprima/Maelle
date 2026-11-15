@@ -679,11 +679,17 @@ void Jit::restoreCpsrCall(Interpreter *arm, uint32_t before) {
     arm->restoreCpsr(before);
 }
 
+bool Jit::half(const JitBlock *block) {
+    // Check if a block's cycles count half, as for the DSi's ARM9 at 133MHz, or code in the instruction TCM of a game
+    // whose ARM9 counts that at its own speed
+    return halfCycles || (!arm7 && core->interpreter[0].fullSpeedItcm && Interpreter::itcm(block->address));
+}
+
 bool Jit::pollsGxStat(JitBlock *block, size_t index) {
     // Check if a block's instructions from an index are a loop that only reads a register and tests it until it changes,
     // like games waiting on GXSTAT for the geometry engine to finish: LDR Rd,[Rn,#imm], then TST/TEQ/CMP/CMN Rd,#imm,
     // then a conditional branch back to the load; the block can go on with what runs after the loop
-    if (arm7 || block->thumb || halfCycles || testing || block->instrs.size() < index + 3) return false;
+    if (arm7 || block->thumb || half(block) || testing || block->instrs.size() < index + 3) return false;
     uint32_t load = block->instrs[index].opcode, test = block->instrs[index + 1].opcode, branch = block->instrs[index + 2].opcode;
     uint32_t rd = (load >> 12) & 0xF, rn = (load >> 16) & 0xF;
     if ((load & 0xFF700000) != 0xE5100000 || rd == rn || rd == 15 || rn == 15) return false;
@@ -790,7 +796,7 @@ void Jit::execute(JitBlock *block, const uint32_t *limit) {
             // instruction if nothing else needs to run first
             // An instruction that took no time also stops at the limit, since the run loop would run the ARM7 next if
             // it was due when the instruction started, which is now
-            if (halfCycles) cycles = arm.dsiCycles(cycles);
+            if (half(block)) cycles = arm.dsiCycles(cycles);
             else if (arm7) cycles = arm.arm7Cycles(cycles, pc);
             uint32_t next = core->globalCycles + cycles;
             arm.cycles = next;

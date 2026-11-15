@@ -154,7 +154,7 @@ template <bool _arm7, int shift> void Interpreter::runCoreSingle(Core &core) {
             uint32_t pc = *arm.registers[15];
             int cycles = _arm7 ? 0 : (arm.fetchCycles() << (shift < 0));
             if (!cycles) cycles = arm.runOpcode();
-            if (shift < 0) cycles = arm.dsiCycles(cycles);
+            if (shift < 0 || (!_arm7 && arm.fullSpeedItcm && itcm(pc))) cycles = arm.dsiCycles(cycles);
             else if (shift) cycles = arm.arm7Cycles(cycles, pc);
             arm.cycles = (core.globalCycles += cycles);
             if (!_arm7) EP_INC(EC_INTERP9);
@@ -190,9 +190,10 @@ template <bool dsi> void Interpreter::runCoreNds(Core &core) {
             if (core.globalCycles >= arm9.cycles) {
                 if (core.jit.enabled && core.jit.run(&arm7.cycles)) continue;
                 if (arm9.pipelineStale) arm9.refillPipeline();
+                bool half = dsi || (arm9.fullSpeedItcm && itcm(*arm9.registers[15]));
                 int cycles = arm9.fetchCycles() << dsi;
                 if (!cycles) cycles = arm9.runOpcode();
-                arm9.cycles = core.globalCycles + (dsi ? arm9.dsiCycles(cycles) : cycles);
+                arm9.cycles = core.globalCycles + (half ? arm9.dsiCycles(cycles) : cycles);
                 EP_INC(EC_INTERP9);
             }
             if (core.globalCycles >= arm7.cycles) {
@@ -237,9 +238,10 @@ template <bool dsi> void Interpreter::runCoreNdsFast(Core &core) {
                 core.sliceLimit = arm7.cycles + Core::FAST_SLICE;
                 if (core.jit.enabled && core.jit.run(&core.sliceLimit)) continue;
                 if (arm9.pipelineStale) arm9.refillPipeline();
+                bool half = dsi || (arm9.fullSpeedItcm && itcm(*arm9.registers[15]));
                 int cycles = arm9.fetchCycles() << dsi;
                 if (!cycles) cycles = arm9.runOpcode();
-                uint32_t next = core.globalCycles + (dsi ? arm9.dsiCycles(cycles) : cycles);
+                uint32_t next = core.globalCycles + (half ? arm9.dsiCycles(cycles) : cycles);
                 EP_INC(EC_INTERP9);
                 arm9.cycles = next;
                 if (next <= core.sliceLimit && next < core.events[0].cycles) {

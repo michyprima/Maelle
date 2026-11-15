@@ -759,6 +759,12 @@ bool CartridgeNds::loadRom() {
     // Save the ROM code, which is mainly used for encryption
     romCode = U8TO32(rom, 0x0C);
 
+    // The ARM9's cycles are counted at 33MHz, half its own speed, which stands in for the waits its loads and stores
+    // aren't charged, but code in its instruction TCM never waits; the KORG M01's synth runs there, and at half speed
+    // left OAM half filled while the top of the screen was drawn, so its sprites blinked. Counting the TCM at full
+    // speed for every game costs others frame rate, so it's only for that one
+    core->interpreter[0].fullSpeedItcm = (romCode == 0x4A4D5A42); // BZMJ
+
     // ROM dumps don't provide a chip ID, so make one up from the ROM's size like melonDS, marking DSi titles with a
     // region; the DSi menu doesn't show a card whose ID doesn't fit it
     uint32_t size = std::max(romMask + 1, 0x100000U);

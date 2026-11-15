@@ -232,7 +232,8 @@ private:
     uint32_t codeCore = 0;
     bool codeFailed = false;
     bool codeFast = false; // Whether code was generated for fast timing, which checks cycles less often
-    int postHalf() { return arm7 ? fullSpeed : !halfCycles ? 0 : (codeFast && !testing) ? 2 : 1; } // Which post-instruction stubs to use
+    bool half(const JitBlock *block); // Whether a block's cycles count half
+    int postHalf(const JitBlock *block) { return arm7 ? fullSpeed : !half(block) ? 0 : (codeFast && !testing) ? 2 : 1; } // Which post-instruction stubs to use
 
     // Addresses that native instructions use, which tests can point elsewhere
     uint32_t addrMemory = 0, addrReadMap = 0, addrWriteMap = 0;

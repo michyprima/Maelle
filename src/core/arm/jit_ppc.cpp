@@ -405,9 +405,10 @@ void Jit::emitStubs(PpcEmitter &e) {
 
     // After an instruction, with its cycles in r3: add them, doubled for the half-speed ARM7 and halved for the DSi's
     // ARM9 at 133MHz, then continue if nothing else needs to run first, which includes code having changed, since
-    // refreshing sets when to stop to now for that. The DSi's ARM9 gets versions for both of its speeds, and at 133MHz
-    // a cheaper one for fast timing; its ARM7 gets a second version that doesn't double, for code outside main RAM
-    for (int half = 0; half < (!core->dsiMode ? 1 : arm7 ? 2 : 3); half++) {
+    // refreshing sets when to stop to now for that. The ARM9 gets versions for both of its speeds, the faster one for
+    // the DSi at 133MHz and for code in the instruction TCM of a game that needs it, and a cheaper one of that for fast
+    // timing; the DSi's ARM7 gets a second version that doesn't double, for code outside main RAM
+    for (int half = 0; half < (!arm7 ? 3 : core->dsiMode ? 2 : 1); half++) {
         for (int store = 0; store < 2; store++) {
             codePost[half][store] = e.here();
             if (arm7 && !half) e.add(3, 3, 3);
@@ -2420,7 +2421,7 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
         e.stw(5, offPc, R_ARM);
         e.addi(3, R_BATCH, 3 + runCycles);
         if (run) e.li(R_BATCH, 0);
-        e.call(codePost[postHalf()][0]);
+        e.call(codePost[postHalf(block)][0]);
         block->links.push_back({ e.here(), target | thumbCond, nullptr, sameLine(target) });
         e.b(codeDispatch);
 
@@ -2429,7 +2430,7 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
         e.addi(3, R_BATCH, 1 + runCycles);
         if (run) e.li(R_BATCH, 0);
         runCycles = 0;
-        e.call(codePost[postHalf()][1]);
+        e.call(codePost[postHalf(block)][1]);
         if (i + 1 == block->instrs.size()) e.stw(R_PC, offPc, R_ARM);
         return;
     }
@@ -2511,7 +2512,7 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
     // Then check for jumps, which leave the program counter in memory different from the register
     // Branches to known addresses jump through a site that's linked to the target block once it exists
     stepPc(e);
-    e.call(codePost[postHalf()][!memoryPc]);
+    e.call(codePost[postHalf(block)][!memoryPc]);
     if (callPair) {
         // Calls to known addresses do too, and the ones to ARM change mode like BLX label
         bool toThumb = raw & BIT(12);

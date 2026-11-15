@@ -137,7 +137,7 @@ MUTATIONS = [
     ('e.loadConst(R_PC, pc - host->entriesBehind[index]);', 'e.loadConst(R_PC, pc);'), # 9: mid-block entry has the wrong PC
     ('block->links.push_back({ e.here(), target | thumbCond, nullptr, sameLine(target) });', 'block->links.push_back({ e.here(), target, nullptr, sameLine(target) });'), # 10: THUMB branch links to ARM
     ('    e.stw(3, offCycles, R_ARM);\n    e.stw(R_CYCLES, 0, R_GLOBAL);\n', '    e.stw(3, offCycles, R_ARM);\n'), # 11: a stop doesn't save the time
-    ('    stepPc(e);\n    e.call(codePost[postHalf()][!memoryPc]);', '    e.call(codePost[postHalf()][!memoryPc]);'), # 12: the PC is stale at a check
+    ('    stepPc(e);\n    e.call(codePost[postHalf(block)][!memoryPc]);', '    e.call(codePost[postHalf(block)][!memoryPc]);'), # 12: the PC is stale at a check
     ('*last = (14 << 26) | (3 << 21) | (R_BATCH << 16) | ((*last & 0xFFFF) + runCycles);', '*last = (14 << 26) | (3 << 21) | (R_BATCH << 16) | (*last & 0xFFFF);'), # 13: a run's cycles are lost
     ('    e.lwz(R_CYCLES, 0, R_GLOBAL);\n    e.lwz(4, 0, R_LIMIT);', '    e.lwz(4, 0, R_LIMIT);'), # 14: refresh doesn't reload the time
     ('e.rlwinm(R_TMP2, 5, 0, 0, 29);', 'e.mr(R_TMP2, 5);'), # 15: LDM/STM addresses aren't aligned
