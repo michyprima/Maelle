@@ -95,7 +95,7 @@ static const uint32_t
     CACHE_AREA = 0x30000, CACHE = CACHE_AREA + 0x1000, // Live: the code changed flag, then the block cache
     STACK = 0x60000, STACK_TOP = 0x7FF00, END = 0x80000,
     COND_TABLE = 0x200000, MODE_BANKS = COND_TABLE + 0x400, // Fixed
-    FAKE_HANDLERS = 0x3E0000, FAKE = 0x3F0000, FAKE_MEMORY = 0x3F0800, FAKE_MSR = 0x3F1800, FAKE_RESTORE = 0x3F1840, FAKE_FETCH = 0x3F1880, FAKE_CP15 = 0x3F18C0, FAKE_INTERLEAVE = 0x3F2000, FAKE_POLL = 0x3F2008,
+    FAKE_HANDLERS = 0x3E0000, FAKE = 0x3F0000, FAKE_MEMORY = 0x3F0800, FAKE_MSR = 0x3F1800, FAKE_RESTORE = 0x3F1840, FAKE_FETCH = 0x3F1880, FAKE_CP15 = 0x3F18C0, FAKE_INTERLEAVE = 0x3F2000, FAKE_POLL = 0x3F2008, FAKE_SEND = 0x3F2010,
     READ_MAP = 0x400000, WRITE_MAP = 0x800000, // Live: memory maps, with host pointers turned into emulator addresses
     CODE = 0x10000000, CODE_SIZE = 0x2000000,
     RAM = 0x20000000, // Main RAM, shared with the core
@@ -366,6 +366,10 @@ static void hookCall(uc_engine *uc, uint64_t address, uint32_t, void *user) {
     else if (address == FAKE_POLL) {
         result = en.jit->skipPoll(r4, r5, reg(uc, UC_PPC_REG_6), reg(uc, UC_PPC_REG_7), reg(uc, UC_PPC_REG_8));
     }
+    else if (address == FAKE_SEND) {
+        if (reg(uc, UC_PPC_REG_6) != LIMIT) fatal("send loop called without the limit: %08X", reg(uc, UC_PPC_REG_6));
+        result = en.jit->sendWords(r4, r5, en.limit, reg(uc, UC_PPC_REG_7), reg(uc, UC_PPC_REG_8));
+    }
     else {
         fatal("call to %llX", (unsigned long long)address);
     }
@@ -538,7 +542,7 @@ static void startEngine(Engine &en, bool arm7) {
     std::vector<uint32_t> blr((FAKE_INTERLEAVE + 0x1000 - FAKE_HANDLERS) / 4, swap32(0x4E800020));
     uc_mem_write(uc, FAKE_HANDLERS, blr.data(), blr.size() * 4);
     uc_hook hook, blocks;
-    uc_hook_add(uc, &hook, UC_HOOK_CODE, (void*)hookCall, &en, FAKE_HANDLERS, FAKE_POLL + 4);
+    uc_hook_add(uc, &hook, UC_HOOK_CODE, (void*)hookCall, &en, FAKE_HANDLERS, FAKE_SEND + 4);
 
     // Count the PowerPC instructions generated code runs, for comparing builds; a block left early still counts in full
     uc_hook_add(uc, &blocks, exactCount ? UC_HOOK_CODE : UC_HOOK_BLOCK, exactCount ? (void*)countInstruction : (void*)countBlock,

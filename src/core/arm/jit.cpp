@@ -728,6 +728,98 @@ uint32_t Jit::skipPollCall(Jit *jit, uint32_t load, uint32_t test, uint32_t bran
     return jit->skipPoll(load, test, branch, cycles, next);
 }
 
+uint32_t Jit::sendsWords(JitBlock *block, size_t index) {
+    // Check if a block's instruction at an index is the branch back of a loop that sends words from memory to one address,
+    // like the SDK's MI_CpuSend32 that games feed GXFIFO with: CMP Ra,Rb, then LDMLTIA Ra!,{Rv}, then STRLT Rv,[Rp], then
+    // BLT back to the CMP; returns the four registers packed, or 0. It's only for fast timing, whose checks the helper
+    // follows
+    if (arm7 || block->thumb || half(block) || testing || !codeFast || index < 3 || index >= block->instrs.size()) return 0;
+    uint32_t cmp = block->instrs[index - 3].opcode, load = block->instrs[index - 2].opcode;
+    uint32_t store = block->instrs[index - 1].opcode, branch = block->instrs[index].opcode;
+    uint32_t ra = (cmp >> 16) & 0xF, rb = cmp & 0xF, rp = (store >> 16) & 0xF, rv = (store >> 12) & 0xF;
+    if ((cmp & 0xFFF0FFF0) != 0xE1500000 || (load & 0xFFFF0000) != (0xB8B00000 | (ra << 16)) || (load & 0xFFFF) != BIT(rv))
+        return 0;
+    if ((store & 0xFFF00FFF) != 0xB5800000 || branch != 0xBAFFFFFB) return 0;
+    if (ra == 15 || rb == 15 || rp == 15 || rv == 15 || rv == ra || rv == rb || rv == rp || rp == ra) return 0;
+    return 0x10000 | (ra << 12) | (rb << 8) | (rv << 4) | rp;
+}
+
+uint32_t Jit::refreshNext(const uint32_t *limit) {
+    // When generated code stops next, worked out like its refresh stub does after anything that could change it
+    uint32_t next = core->events[0].cycles, stop = *limit + 1;
+    if (stop != 0 && stop < next) next = stop;
+    return codeChanged ? 0 : next;
+}
+
+int Jit::sendWords(uint32_t address, uint32_t regs, const uint32_t *limit, uint32_t cycles, uint32_t next) {
+    // Called when a loop that sendsWords found goes back to its start at an address, with the global cycles and when to
+    // stop next, after the branch's check. Each time around
+    // that sends to GXFIFO from mapped memory goes here instead, doing what the generated code would: the memory routine
+    // storing the cycles before the store and refreshing after it, the check after the store with the run's cycles, then
+    // the branch's, and when a check has to stop, the slow path's call to interleave, with the program counter and cycles
+    // it would see. The generated code goes on with the loop from its start, which is left for anything else, like the
+    // last time around; it returns 2 if it went around none, so the generated code's cycles stay as they are, and 1 if
+    // the generated code has to refresh them, which reads the global cycles that are stored for it, since nothing else
+    // reads them before they're next stored. It returns 0 if the CPU has to stop, like the slow path's exit
+    Interpreter &arm = core->interpreter[0];
+    Memory &memory = core->memory;
+    Cp15 &cp15 = core->cp15;
+    uint32_t *ra = arm.registers[(regs >> 12) & 0xF], *rb = arm.registers[(regs >> 8) & 0xF];
+    uint32_t *rv = arm.registers[(regs >> 4) & 0xF], *rp = arm.registers[regs & 0xF];
+    bool sent = false;
+    auto check = [&](uint32_t taken) {
+        uint32_t after = cycles + taken;
+        if (after < next) {
+            cycles = after;
+            return true;
+        }
+        arm.cycles = after;
+        core->globalCycles = cycles;
+        bool go = interleave(limit);
+        cycles = core->globalCycles;
+        next = refreshNext(limit);
+        return go;
+    };
+
+    while (true) {
+        uint32_t a = *ra, b = *rb, p = *rp;
+        uint8_t *data = memory.readMap9A[a >> 12];
+        if ((int32_t)a >= (int32_t)b || (p & ~0x3F) != 0x4000400 || memory.writeMap9A[p >> 12] || !data) break;
+        if (cp15.codeCache && (cp15.codeMissing(address) || cp15.codeMissing(address + 12))) break;
+
+        // CMP, then LDM, which writes back first
+        uint32_t result = a - b;
+        arm.cpsr = (arm.cpsr & ~0xF0000000) | (result & BIT(31)) | ((result == 0) << 30) | ((a >= b) << 29) |
+            ((((a ^ b) & (a ^ result)) >> 31) << 28);
+        *ra = a + 4;
+        uint32_t value = readLsb<uint32_t>(&data[a & 0xFFC]);
+        *rv = value;
+
+        // STR, through the memory routine, which stores the cycles first and refreshes after; GXFIFO is the first thing
+        // the memory handlers check for
+        arm.cycles = cycles;
+        core->globalCycles = cycles;
+        core->gpu3D.writeGxFifoWord(value);
+        sent = true;
+        cycles = core->globalCycles;
+        next = refreshNext(limit);
+        arm.registersUsr[15] = address + 16;
+        if (!check(4)) return 0;
+
+        // BLT, taken, which stores where it goes first
+        arm.registersUsr[15] = address + 4;
+        if (!check(3)) return 0;
+    }
+    if (!sent) return 2;
+    core->globalCycles = cycles;
+    return 1;
+}
+
+int Jit::sendWordsCall(Jit *jit, uint32_t address, uint32_t regs, const uint32_t *limit, uint32_t cycles, uint32_t next) {
+    // Entry point for generated code
+    return jit->sendWords(address, regs, limit, cycles, next);
+}
+
 int Jit::interleaveCall(Jit *jit, const uint32_t *limit) {
     // Entry point for generated code
     return jit->interleave(limit);

@@ -2461,6 +2461,7 @@ void Jit::emitInstr(PpcEmitter &e, JitBlock *block, size_t i, uint32_t pc, bool 
         e.addi(3, R_BATCH, 3 + runCycles);
         if (run) e.li(R_BATCH, 0);
         e.call(codePost[postHalf(block)][0]);
+        if (!thumbCond) emitSendWords(e, block, i);
         block->links.push_back({ e.here(), target | thumbCond, nullptr, sameLine(target) });
         e.b(codeDispatch);
 
@@ -2617,6 +2618,29 @@ void Jit::emitPollSkip(PpcEmitter &e, JitBlock *block, size_t index) {
     e.mr(8, R_NEXT);
     e.call((void*)&Jit::skipPollCall);
     e.add(R_CYCLES, R_CYCLES, 3);
+}
+
+void Jit::emitSendWords(PpcEmitter &e, JitBlock *block, size_t index) {
+    // A loop that sends words to GXFIFO lets a helper go around for it each time its branch goes back, then goes on from
+    // its start, refreshing the cycles and when to stop if the helper went around, or stops if the helper says to
+    uint32_t regs = sendsWords(block, index);
+    if (!regs) return;
+    e.loadConst(3, (uint32_t)(uintptr_t)this);
+    e.loadConst(4, block->address + (index - 3) * 4);
+    e.loadConst(5, regs);
+    e.mr(6, R_LIMIT);
+    e.mr(7, R_CYCLES);
+    e.mr(8, R_NEXT);
+    e.call((void*)&Jit::sendWordsCall);
+    e.cmpwi(3, 1);
+    uint32_t *none = e.here();
+    e.bgt(nullptr);
+    uint32_t *went = e.here();
+    e.beq(nullptr);
+    e.b(codeExit);
+    e.patchBc(went);
+    e.call(codeRefresh);
+    e.patchBc(none);
 }
 
 void *Jit::generate(JitBlock *block) {
