@@ -130,7 +130,7 @@ public:
     static const uint32_t pointerKeys; // The right stick's directions, which the pointer takes from the game
 
     // Functions that are implemented per-platform
-    static void startFrame(uint32_t color);
+    static void startFrame(uint32_t color, bool framed = false);
     static void endFrame();
     static void *createTexture(uint32_t *data, int width, int height);
     static void writeTexture(void *texture, const uint32_t *data, int x, int y, int width, int height);

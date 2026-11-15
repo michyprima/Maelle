@@ -210,7 +210,7 @@ void releaseForeground() {
     if (resume) ConsoleUI::startCore();
 }
 
-void ConsoleUI::startFrame(uint32_t color) {
+void ConsoleUI::startFrame(uint32_t color, bool framed) {
     // Stop drawing while the system needs the foreground, like for the HOME menu
     if (releaseRequested)
         releaseForeground();
@@ -228,10 +228,14 @@ void ConsoleUI::startFrame(uint32_t color) {
         uiHoldsGx2 = true;
         updateDrcBuffer();
     }
+    // Displays the game's frames will be drawn on are left as they are, since the frames are opaque and cover them
+    // whole, and clearing a 1080p TV takes the GPU over a millisecond
     WHBGfxBeginRenderTV();
-    WHBGfxClearColor(r, g, b, a);
+    if (!framed || !frameTextures[0])
+        WHBGfxClearColor(r, g, b, a);
     WHBGfxBeginRenderDRC();
-    WHBGfxClearColor(r, g, b, a);
+    if (!framed || !frameTextures[1])
+        WHBGfxClearColor(r, g, b, a);
 
 }
 

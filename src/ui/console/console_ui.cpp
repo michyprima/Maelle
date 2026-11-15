@@ -557,7 +557,7 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
         HB_ADD_US(HB_UI_TEXTURE_US, hbTexture);
         HB_SET(HB_UI_STAGE, 2);
         HB_TIMER(hbDraw);
-        startFrame(0);
+        startFrame(0, true);
         HB_SET(HB_UI_STAGE, 3);
         // Build the screens at twice the size once for each new frame
         if (compose && (update || !composed[0]))
