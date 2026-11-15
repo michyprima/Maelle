@@ -1199,8 +1199,8 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
     }
 
     // Define variables for button input
-    bool upHeld = false;
-    bool downHeld = false;
+    uint32_t heldKey = 0;
+    int heldStep = 0;
     bool scroll = false;
     std::chrono::steady_clock::time_point timeHeld;
 
@@ -1249,31 +1249,41 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
         uint32_t pressed = getInputPress();
         uint32_t held = getInputHeld();
 
-        // Handle up input presses
-        if ((pressed & defaultKeys[INPUT_UP]) && !(pressed & defaultKeys[INPUT_DOWN])) {
-            // Disable touch mode or move the selection box up, skipping headers
-            if (touchMode)
+        // Move the selection by a step, clamped to the list and skipping headers in the step's direction
+        auto move = [&](int step) {
+            if (items.empty()) return;
+            int dir = (step < 0) ? -1 : 1;
+            int next = std::max(min, std::min<int>(items.size() - 1, index + step));
+            if (items[next].header) next += (next + dir >= min && next + dir < (int)items.size()) ? dir : -dir;
+            index = next;
+        };
+
+        // Handle directional input presses, with up and down moving one item and left and right a whole page
+        const uint32_t dirKeys[] = { defaultKeys[INPUT_UP], defaultKeys[INPUT_DOWN],
+            defaultKeys[INPUT_LEFT], defaultKeys[INPUT_RIGHT] };
+        const int dirSteps[] = { -1, 1, -rows, rows };
+        for (int i = 0; i < 4; i++) {
+            if (!(pressed & dirKeys[i]) || (pressed & dirKeys[i ^ 1])) continue;
+
+            // Disable touch mode or move the selection box, wrapping around from either end on a fresh press
+            if (touchMode) {
                 touchMode = false;
-            else if (index > min)
-                index--;
-            index -= items.empty() ? 0 : items[index].header;
+                if (!items.empty()) index += items[index].header * ((dirSteps[i] < 0) ? -1 : 1);
+            }
+            else if (dirSteps[i] < 0 && index == min) {
+                move(items.size());
+            }
+            else if (dirSteps[i] > 0 && !items.empty() && size_t(index) == items.size() - 1) {
+                index = min;
+            }
+            else {
+                move(dirSteps[i]);
+            }
 
-            // Remember when the up input started
-            upHeld = true;
-            timeHeld = std::chrono::steady_clock::now();
-        }
-
-        // Handle down input presses
-        if ((pressed & defaultKeys[INPUT_DOWN]) && !(pressed & defaultKeys[INPUT_UP])) {
-            // Disable touch mode or move the selection box down, skipping headers
-            if (touchMode)
-                touchMode = false;
-            else if (size_t(index) < items.size() - 1)
-                index++;
-            index += items.empty() ? 0 : items[index].header;
-
-            // Remember when the down input started
-            downHeld = true;
+            // Remember when the input started
+            heldKey = dirKeys[i];
+            heldStep = dirSteps[i];
+            scroll = false;
             timeHeld = std::chrono::steady_clock::now();
         }
 
@@ -1300,31 +1310,22 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
             index += items.empty() ? 0 : items[index].header;
         }
 
-        // Cancel up input if it was released
-        if (upHeld && !(held & defaultKeys[INPUT_UP])) {
-            upHeld = false;
-            scroll = false;
-        }
-
-        // Cancel down input if it was released
-        if (downHeld && !(held & defaultKeys[INPUT_DOWN])) {
-            downHeld = false;
+        // Cancel directional input if it was released
+        if (heldKey && !(held & heldKey)) {
+            heldKey = 0;
             scroll = false;
         }
 
         // Scroll continuously while a directional input is held
-        if ((upHeld && index > min) || (downHeld && size_t(index) < items.size() - 1)) {
+        if (heldKey && ((heldStep < 0) ? (index > min) : (size_t(index) < items.size() - 1))) {
             // When the input starts, wait a bit before scrolling
             std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - timeHeld;
             if (!scroll && elapsed.count() > 0.5f)
                 scroll = true;
 
-            // Scroll up or down at a fixed time interval, skipping headers
+            // Scroll by the held step at a fixed time interval
             if (scroll && elapsed.count() > 0.1f) {
-                int step = upHeld ? -1 : 1;
-                int next = index + step;
-                if (!items.empty() && items[next].header) next += step;
-                if (next >= min && next < (int)items.size()) index = next;
+                move(heldStep);
                 timeHeld = std::chrono::steady_clock::now();
             }
         }
