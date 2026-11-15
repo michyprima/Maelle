@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cstring>
 #include <malloc.h>
+#include <vector>
 #include <nn/ac.h>
 #include <nsysnet/_socket.h>
 #endif
@@ -192,6 +193,52 @@ const char *ConsoleUI::keyNames[] {
     "LS Down", "LS Up", "LS Right", "LS Left"
 };
 
+// The frames around the screens are only drawn again where something else was drawn over them, since the TV's and
+// gamepad's color buffers keep what was drawn, the screens are opaque and drawn in the same places every frame, and
+// drawing a whole 1080p frame takes the GPU over a millisecond; for each display, this keeps the frame texture drawn
+// on it, and the areas to draw again, in display pixels, which overlays add for the next frame and lights for this one
+struct FrameArea { int x0, y0, x1, y1; };
+static void *frameShown[2];
+static std::vector<FrameArea> frameRepaint[2], frameCovered[2];
+
+static void addFrameArea(std::vector<FrameArea> &areas, FrameArea area) {
+    // Add an area, merging it with one near it so a string's characters become one
+    if (area.x0 >= area.x1 || area.y0 >= area.y1) return;
+    for (FrameArea &other : areas) {
+        if (area.x0 > other.x1 + 8 || other.x0 > area.x1 + 8 || area.y0 > other.y1 + 8 || other.y0 > area.y1 + 8)
+            continue;
+        other = { std::min(area.x0, other.x0), std::min(area.y0, other.y0), std::max(area.x1, other.x1),
+            std::max(area.y1, other.y1) };
+        return;
+    }
+    // Too many separate areas become one covering them all
+    if (areas.size() >= 16) {
+        for (const FrameArea &other : areas)
+            area = { std::min(area.x0, other.x0), std::min(area.y0, other.y0), std::max(area.x1, other.x1),
+                std::max(area.y1, other.y1) };
+        areas.clear();
+    }
+    areas.push_back(area);
+}
+
+static void addFrameArea(std::vector<FrameArea> &areas, int display, float nx0, float ny0, float nx1, float ny1) {
+    // Add an area given in the display's coordinates from -1 to 1, as whole pixels with a pixel to spare around it
+    int width = display ? 854 : tvWidth, height = display ? 480 : tvHeight;
+    addFrameArea(areas, { std::max(0, int((std::min(nx0, nx1) + 1) * width / 2) - 1),
+        std::max(0, int((1 - std::max(ny0, ny1)) * height / 2) - 1),
+        std::min(width, int((std::max(nx0, nx1) + 1) * width / 2) + 2),
+        std::min(height, int((1 - std::min(ny0, ny1)) * height / 2) + 2) });
+}
+
+static void forgetFrames() {
+    // Draw the frames whole next time, after the displays were drawn without them or their buffers were set up again
+    for (int i = 0; i < 2; i++) {
+        frameShown[i] = nullptr;
+        frameRepaint[i].clear();
+        frameCovered[i].clear();
+    }
+}
+
 void releaseForeground() {
     // Stop the emulator, since threads on cores 0 and 1 are suspended in the background
     bool resume = ConsoleUI::running;
@@ -206,6 +253,7 @@ void releaseForeground() {
     procCond.wait(lock, [] { return !releaseRequested; });
     uiParked = false;
     drcBufferMode = drcStartMode;
+    forgetFrames();
     lock.unlock();
     if (resume) ConsoleUI::startCore();
 }
@@ -233,6 +281,7 @@ void ConsoleUI::startFrame(uint32_t color, bool framed) {
 #endif
     // Displays the game's frames will be drawn on are left as they are, since the frames are opaque and cover them
     // whole, and clearing a 1080p TV takes the GPU over a millisecond
+    if (!framed) forgetFrames();
     WHBGfxBeginRenderTV();
     if (!framed || !frameTextures[0])
         WHBGfxClearColor(r, g, b, a);
@@ -330,6 +379,11 @@ void ConsoleUI::endFrame() {
     gpuLap(HB_UI_GPU_REST_US);
 #endif
     WHBGfxFinishRenderTV();
+    for (int i = 0; i < 2; i++) {
+        for (const FrameArea &area : frameCovered[i])
+            addFrameArea(frameRepaint[i], area);
+        frameCovered[i].clear();
+    }
 #if defined(HEARTBEAT) && defined(GPU_TIMELINE)
     gpuLap(HB_UI_GPU_COPY_TV_US);
 #endif
@@ -453,6 +507,8 @@ void *ConsoleUI::createTexture(uint32_t *data, int width, int height) {
 void ConsoleUI::destroyTexture(void *texture) {
     // Clean up a texture
     if (!texture) return;
+    for (int i = 0; i < 2; i++)
+        if (texture == frameShown[i]) frameShown[i] = nullptr;
     uint32_t *image = (uint32_t*)((GX2Texture*)texture)->surface.image;
     if (image < ConsoleUI::framebuffer || image >= ConsoleUI::framebuffer + sizeof(ConsoleUI::framebuffer) / sizeof(uint32_t))
         freeImage(((GX2Texture*)texture)->surface);
@@ -462,6 +518,8 @@ void ConsoleUI::destroyTexture(void *texture) {
 void ConsoleUI::releaseTexture(void *texture) {
     // Clean up a large texture that won't be recreated, giving its memory back instead of keeping it for reuse
     if (!texture) return;
+    for (int i = 0; i < 2; i++)
+        if (texture == frameShown[i]) frameShown[i] = nullptr;
     MEMFreeToDefaultHeap(((GX2Texture*)texture)->surface.image);
     delete (GX2Texture*)texture;
 }
@@ -721,6 +779,10 @@ void ConsoleUI::drawTexture(void *texture, float tx, float ty, float tw, float t
     };
 
     uploadQuad(posCoords, &texCoords[rotation * 8], vtxColors);
+    if (!(running && tw >= 240)) {
+        addFrameArea(frameCovered[0], 0, x1, y1, x2, y2);
+        addFrameArea(frameCovered[1], 1, x1a, y1a, x2a, y2a);
+    }
 #if defined(HEARTBEAT) && defined(GPU_TIMELINE)
     bool lapScreen = running && tw >= 240;
     if (lapScreen) gpuLap(HB_UI_GPU_REST_US);
@@ -785,28 +847,47 @@ void ConsoleUI::writeTexture(void *texture, const uint32_t *data, int x, int y, 
     if (!uiHoldsGx2) gx2Mutex.lock();
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, dst, ((height - 1) * surface.pitch + width) * sizeof(uint32_t));
     if (!uiHoldsGx2) gx2Mutex.unlock();
+
+    // Draw the part again if it's a frame, like when a light changes
+    for (int i = 0; i < 2; i++) {
+        if (texture != frameShown[i]) continue;
+        float sx = 2.0f / surface.width, sy = 2.0f / surface.height;
+        addFrameArea(frameRepaint[i], i, x * sx - 1, 1 - y * sy, (x + width) * sx - 1, 1 - (y + height) * sy);
+    }
 }
 
 void ConsoleUI::drawFrames(void *tv, void *gamepad) {
-    // Fill each display with its own frame, without counting as a screen for the gamepad's layout
+    // Fill each display with its own frame, without counting as a screen for the gamepad's layout; a frame that's
+    // already there is only drawn again where it was covered or changed, limited to those areas by the scissor
+    void *textures[] = { tv, gamepad };
+    bool needed = false;
+    for (int i = 0; i < 2; i++)
+        needed |= textures[i] && (textures[i] != frameShown[i] || !frameRepaint[i].empty());
+    if (!needed) return;
     static const float posCoords[] = { -1, 1, 1, 1, 1, -1, -1, -1, -1, 1, 1, 1, 1, -1, -1, -1 };
     static const float texCoords[] = { 0, 0, 1, 0, 1, 1, 0, 1 };
     static const float vtxColors[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
     uploadQuad(posCoords, texCoords, vtxColors);
 
-    if (tv) {
-        WHBGfxBeginRenderTV();
-        GX2RSetAttributeBuffer(&posBuffer, 0, posBuffer.elemSize, bufOffset * 2);
+    for (int i = 0; i < 2; i++) {
+        if (!textures[i]) continue;
+        if (i) WHBGfxBeginRenderDRC();
+        else WHBGfxBeginRenderTV();
+        GX2RSetAttributeBuffer(&posBuffer, 0, posBuffer.elemSize, bufOffset * 2 + (i ? 8 * sizeof(float) : 0));
         GX2RSetAttributeBuffer(&texBuffer, 1, texBuffer.elemSize, bufOffset);
         GX2RSetAttributeBuffer(&colBuffer, 2, colBuffer.elemSize, bufOffset * 2);
-        drawQuad((GX2Texture*)tv, false);
-    }
-    if (gamepad) {
-        WHBGfxBeginRenderDRC();
-        GX2RSetAttributeBuffer(&posBuffer, 0, posBuffer.elemSize, bufOffset * 2 + 8 * sizeof(float));
-        GX2RSetAttributeBuffer(&texBuffer, 1, texBuffer.elemSize, bufOffset);
-        GX2RSetAttributeBuffer(&colBuffer, 2, colBuffer.elemSize, bufOffset * 2);
-        drawQuad((GX2Texture*)gamepad, false);
+        if (textures[i] != frameShown[i]) {
+            drawQuad((GX2Texture*)textures[i], false);
+            frameShown[i] = textures[i];
+        }
+        else if (!frameRepaint[i].empty()) {
+            for (const FrameArea &area : frameRepaint[i]) {
+                GX2SetScissor(area.x0, area.y0, area.x1 - area.x0, area.y1 - area.y0);
+                drawQuad((GX2Texture*)textures[i], false);
+            }
+            GX2SetScissor(0, 0, i ? 854 : tvWidth, i ? 480 : tvHeight);
+        }
+        frameRepaint[i].clear();
     }
 
     // Adjust the buffer offset if there's still room
@@ -824,6 +905,7 @@ void ConsoleUI::drawOverlay(void *texture, float x, float y, float w, float h, b
     static const float texCoords[] = { 0, 0, 1, 0, 1, 1, 0, 1 };
     static const float vtxColors[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
     uploadQuad(posCoords, texCoords, vtxColors);
+    addFrameArea(frameCovered[gamepad], gamepad, x1, y1, x2, y2);
 
     if (gamepad) WHBGfxBeginRenderDRC();
     else WHBGfxBeginRenderTV();
