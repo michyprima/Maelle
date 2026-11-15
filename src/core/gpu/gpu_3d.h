@@ -323,6 +323,11 @@ private:
     int stackSlot(uint8_t mode, uint8_t command, uint32_t param);
     int takeCommand(uint8_t command, uint32_t *params, int count);
     __attribute__((noinline)) void runCommand(uint8_t command, size_t head, int count);
+    __attribute__((noinline)) void sendCommand(uint8_t command, uint32_t *params, int count);
+    uint32_t batchRoom();
+    void endBatch(uint32_t end, uint32_t pipe, bool halted, uint32_t cycles);
+    bool sendGxFifo(const uint8_t *data, int count);
+    void queueWords(const uint8_t *data, int count);
     void execute(uint8_t command, uint32_t *params);
 
     static uint32_t rgb5ToRgb6(uint16_t color);

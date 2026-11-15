@@ -628,14 +628,33 @@ void Gpu3D::execute(uint8_t command, uint32_t *params) {
 }
 
 void Gpu3D::runCommand(uint8_t command, size_t head, int count) {
-    // Fetch a command's parameters from the FIFO, apply the parts of it that the FIFO handles, and then execute it, on
-    // the worker if running; this is kept apart from the batch loop for the few commands that need it
+    // Fetch a command's parameters from the FIFO, and run it; this is kept apart from the batch loop for the few
+    // commands that need it
     uint32_t params[32];
     for (int i = 0; i < count; i++)
         params[i] = fifo.entries[(head + i) & fifo.mask].param;
+    sendCommand(command, params, count);
+}
+
+void Gpu3D::sendCommand(uint8_t command, uint32_t *params, int count) {
+    // Apply the parts of a command that the FIFO handles, and then execute it, on the worker if running
     int passed = (command >= 0x20 && command < 0x50) ? count : takeCommand(command, params, count);
     if (worker) queueCommand(command, params, passed);
     else execute(command, params);
+}
+
+uint32_t Gpu3D::batchRoom() {
+    // Make room in the worker's queue for a whole batch, so commands that only go to the queue don't each check for it,
+    // and return the queue's end
+    if (worker) {
+        SpinWait spin;
+        while (queueEnd + (GPU3D_BATCH / 2) * 33 + 8 - queueStart > QUEUE_SIZE) {
+            publishQueue(true);
+            spin.pause();
+            queueStart = queueHead.load();
+        }
+    }
+    return queueEnd;
 }
 
 void Gpu3D::runCommands() {
@@ -657,17 +676,8 @@ void Gpu3D::runCommands() {
     size_t mask = fifo.mask, head = fifo.head, size = fifo.count;
     uint32_t pipe = pipeSize, cycles = 0;
 
-    // With a worker, the queue's end is kept locally too, since stores to the queue could otherwise be any member, and
-    // room for a whole batch is made first, so commands that only go to the queue don't each check for it
-    uint32_t *words = queue, end = queueEnd;
-    if (worker) {
-        SpinWait spin;
-        while (end + (GPU3D_BATCH / 2) * 33 + 8 - queueStart > QUEUE_SIZE) {
-            publishQueue(true);
-            spin.pause();
-            queueStart = queueHead.load();
-        }
-    }
+    // With a worker, the queue's end is kept locally too, since stores to the queue could otherwise be any member
+    uint32_t *words = queue, end = batchRoom();
     bool halted = (state == GX_HALTED);
 
     while (cycles < GPU3D_BATCH) {
@@ -708,9 +718,15 @@ void Gpu3D::runCommands() {
         if (halted || size == 0 || size < paramCounts[entries[head].command])
             break;
     }
-    queueEnd = end;
     fifo.head = head;
     fifo.count = size;
+    endBatch(end, pipe, halted, cycles);
+}
+
+void Gpu3D::endBatch(uint32_t end, uint32_t pipe, bool halted, uint32_t cycles) {
+    // Finish a batch of commands, with the FIFO's head and count already updated
+    size_t size = fifo.count;
+    queueEnd = end;
     pipeSize = pipe;
 
     // Let the worker see the batch's commands
@@ -1906,10 +1922,8 @@ void Gpu3D::writeGxFifoWord(uint32_t value) {
         startCommands();
 }
 
-void Gpu3D::writeGxFifo(const uint8_t *data, int count) {
-    // Write a batch of little-endian words to GXFIFO, as a DMA transfer does, updating the FIFO status once at the end
-    EP_START(fifoStart);
-    size_t oldSize = fifo.size();
+void Gpu3D::queueWords(const uint8_t *data, int count) {
+    // Add entries for a batch of little-endian words written to GXFIFO, without updating the FIFO status
     while (count > 0) {
         // A word adds at most 4 entries, so make room for a run of words first
         int run = std::min<size_t>(count, (fifo.mask + 1 - fifo.size()) / 4);
@@ -1921,7 +1935,115 @@ void Gpu3D::writeGxFifo(const uint8_t *data, int count) {
         data += run * 4;
         count -= run;
     }
-    finishEntries(oldSize);
+}
+
+bool Gpu3D::sendGxFifo(const uint8_t *data, int count) {
+    // With fast timing and a worker, words written to an empty FIFO on an idle engine would all be added, and then a
+    // batch would start straight away and take the commands it gets to back out, which is most of them; send those
+    // straight from the words instead, and add only the rest. Nothing reads the FIFO between the two, so what's left
+    // has to match: the commands taken run like the batch runs them, the FIFO status is updated for the entries that
+    // would have been added, the pipe goes through the same steps for the entries taken, and the batch ends the same way
+    // It returns false for anything else, before changing anything, which leaves the words to the usual way
+    if (!Settings::fastTiming || !worker || !Settings::worker3D() || workerHardware != bool(Settings::hardware3D) ||
+        state != GX_IDLE || fifo.count != 0 || pipeSize != 0 || gxFifoCount != 0 || matrixQueue != 0 || testQueue != 0)
+        return false;
+
+    // The batch only starts if the first command has all its parameters; words of 0 have no commands
+    int i = 0;
+    uint32_t packed = gxFifo;
+    while (packed == 0 && i < count)
+        packed = readLsb<uint32_t>(&data[i++ * 4]);
+    if (packed == 0 || i + paramCounts[packed & 0xFF] > count) return false;
+
+    // Run the commands the batch would, until it ends or a command doesn't have all its parameters
+    // Commands without parameters still take up an entry, with a parameter of 0
+    state = GX_RUNNING;
+    uint32_t *words = queue, end = batchRoom(), cycles = 0, taken = 0;
+    uint8_t counts[GPU3D_BATCH / 2];
+    int commands = 0;
+    bool halted = false;
+    while (cycles < GPU3D_BATCH && !halted) {
+        if (packed == 0) {
+            if (i == count) break;
+            packed = readLsb<uint32_t>(&data[i++ * 4]);
+            continue;
+        }
+        uint8_t command = packed;
+        int params = paramCounts[command], entries = std::max(params, 1);
+        if (i + params > count) break;
+        if (command >= 0x20 && command < 0x50) {
+            // Each cache block is claimed instead of being read from memory, like the batch does
+            uint32_t index = end & (QUEUE_SIZE - 1);
+            if (!(index & 7)) claimBlock(&words[index]);
+            words[index] = command | (entries << 8);
+            for (int j = 0; j < entries; j++) {
+                index = (end + 1 + j) & (QUEUE_SIZE - 1);
+                if (!(index & 7)) claimBlock(&words[index]);
+                words[index] = params ? readLsb<uint32_t>(&data[(i + j) * 4]) : 0;
+            }
+            end += entries + 1;
+        }
+        else {
+            // Commands that the FIFO keeps track of are counted as their entries would be when added
+            uint32_t values[32];
+            for (int j = 0; j < entries; j++) {
+                values[j] = params ? readLsb<uint32_t>(&data[(i + j) * 4]) : 0;
+                if (command >= 0x11 && (command <= 0x12 || command >= 0x70)) trackEntry(command);
+            }
+            queueEnd = end;
+            sendCommand(command, values, entries);
+            end = queueEnd;
+            halted = (state == GX_HALTED);
+        }
+        i += params;
+        packed >>= 8;
+        counts[commands++] = entries;
+        taken += entries;
+        cycles += 2;
+    }
+
+    // Add the rest as entries after the ones taken, starting with commands without parameters that would have been
+    // added after the word before; the pipe is set below
+    fifo.head = (fifo.head + taken) & fifo.mask;
+    gxFifo = packed;
+    while (gxFifo != 0 && paramCounts[gxFifo & 0xFF] == 0) {
+        fifo.push_back(Entry(gxFifo, 0));
+        trackEntry(gxFifo & 0xFF);
+        gxFifo >>= 8;
+    }
+    queueWords(&data[i * 4], count - i);
+
+    // Update the FIFO status like adding every entry would have, before the batch started
+    size_t size = taken + fifo.count;
+    uint32_t pipe = std::min<size_t>(size, 4);
+    gxStat |= BIT(27); // Commands executing
+    if (uint32_t waiting = size - pipe) {
+        if (waiting > 256)
+            core->interpreter[0].halt(1);
+        gxStat = (gxStat & ~0x01FF0000) | (waiting << 16);
+        gxStat &= ~BIT(26);
+        if (waiting >= 128 && (gxStat & BIT(25)))
+            gxStat &= ~BIT(25);
+    }
+
+    // Move the pipe on for each command taken, like the batch does, and end the batch
+    for (int j = 0; j < commands; j++) {
+        size -= counts[j];
+        pipe = 4 - ((pipe + counts[j]) & 1);
+        if (pipe > size) pipe = size;
+    }
+    endBatch(end, pipe, halted, cycles);
+    return true;
+}
+
+void Gpu3D::writeGxFifo(const uint8_t *data, int count) {
+    // Write a batch of little-endian words to GXFIFO, as a DMA transfer does, updating the FIFO status once at the end
+    EP_START(fifoStart);
+    if (!sendGxFifo(data, count)) {
+        size_t oldSize = fifo.size();
+        queueWords(data, count);
+        finishEntries(oldSize);
+    }
     EP_ADD(EP_GXFIFO, fifoStart);
 }
 
