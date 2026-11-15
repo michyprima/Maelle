@@ -279,9 +279,10 @@ namespace ScreenFrame {
         }
     }
 
-    static float lightGap(float hingeLeft) {
-        // Give the distance between the hinge's lights, which their icons above use too
-        return 20 * std::min(hingeLeft / 160, 1.3f);
+    static float lightGap(float hingeLeft, float u) {
+        // Give the distance between the hinge's lights, which their icons above use too, spreading them out where
+        // there's more room than they need
+        return std::max(20 * u, hingeLeft * 0.09f);
     }
 
     static void drawLightPatch(Canvas &canvas, float x, float y, float u, Color color, LightPatch &patch) {
@@ -308,7 +309,7 @@ namespace ScreenFrame {
     }
 
     static void drawHinge(Canvas &canvas, const Palette &palette, float y, float t, float s,
-        float leftRoom, float rightRoom, bool lights, LightPatch *patches) {
+        float leftRoom, float rightRoom, float u, bool lights, LightPatch *patches) {
         // Draw the hinge across the display, with a soft shadow around it
         Color base = rgb(palette.color), ink = rgb(palette.ink);
         float w = canvas.width;
@@ -323,7 +324,7 @@ namespace ScreenFrame {
             canvas.rect(end, y - t, seam, t * 2, { 0, 0, 0 }, 0.45f);
             if (lights) {
                 // Draw the wireless, charge, and power lights unlit, with patches of them lit in their colors
-                float u = std::min(leftRoom / 160, 1.3f), x = leftRoom * 0.28f, gap = lightGap(leftRoom);
+                float x = leftRoom * 0.28f, gap = lightGap(leftRoom, u);
                 for (int i = -1; i <= 1; i++)
                     canvas.rounded(x + i * gap - 2 * u, y - 7 * u, 4 * u, 14 * u, 2 * u, shade(base, -0.4f));
                 if (patches) {
@@ -434,8 +435,16 @@ namespace ScreenFrame {
             hingeLeft = std::min(hingeLeft, screens[i].x);
             hingeRight = std::min(hingeRight, width - (screens[i].x + screens[i].width));
         }
+        // The lights and the icons above them are the same size, small enough for the hinge, the room beside the
+        // screens, and the room above the hinge beside the top screen
+        float lightU = std::min(hingeLeft / 160, 1.3f * s);
+        for (int i = 0; i < count; i++) {
+            if (screens[i].bottom || !hasHinge) continue;
+            float span = (screens[i].y + screens[i].height / 2 < hinge) ? (hinge - t) : (height - hinge - t);
+            lightU = std::min(lightU, std::min(leftRooms[i] / 160, span / 288));
+        }
         if (patches) std::fill(patches, patches + LIGHT_COUNT, LightPatch());
-        if (hasHinge) drawHinge(canvas, palette, hinge, t, s, hingeLeft, hingeRight, lights, patches);
+        if (hasHinge) drawHinge(canvas, palette, hinge, t, s, hingeLeft, hingeRight, lightU, lights, patches);
 
         // Draw what's beside the top screen, leaving out any side without room for it
         // The bottom screen is left plain, since buttons drawn beside it can't be pressed
@@ -455,8 +464,8 @@ namespace ScreenFrame {
             if (left) {
                 drawSpeaker(canvas, leftStart + leftRoom / 2, slot, leftU);
                 drawPad(canvas, base, leftStart + leftRoom / 2, y0 + 30 * leftU, leftU);
-                if (hasHinge) drawStatusIcons(canvas, ink, hingeLeft * 0.28f, y1 - 13 * leftU, leftU,
-                    lightGap(hingeLeft));
+                if (hasHinge) drawStatusIcons(canvas, ink, hingeLeft * 0.28f, y1 - 13 * lightU, lightU,
+                    lightGap(hingeLeft, lightU));
             }
             if (right) {
                 drawSpeaker(canvas, rightStart + rightRoom / 2, slot, rightU);

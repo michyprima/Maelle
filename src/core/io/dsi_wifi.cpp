@@ -664,6 +664,9 @@ void DsiWifi::sendPacket(uint16_t size) {
     for (int i = 0; i < len - 8; i++)
         frame.push_back(readMailbox(0, false));
     ap->sendEthernet(frame.data(), frame.size());
+
+    // Count it like the DS Wi-Fi's frames, so the wireless light shows the activity
+    core->wifi.activity.store(core->wifi.activity.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
 }
 
 void DsiWifi::receivePackets() {

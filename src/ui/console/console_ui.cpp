@@ -177,8 +177,8 @@ int ConsoleUI::stickPointer = 0;
 float ConsoleUI::pointerX = 128, ConsoleUI::pointerY = 96;
 std::chrono::steady_clock::time_point ConsoleUI::pointerHide;
 void *ConsoleUI::frameTextures[2];
-ScreenFrame::LightPatch ConsoleUI::lightPatches[ScreenFrame::LIGHT_COUNT];
-int ConsoleUI::lightsShown[3] = { -1, -1, -1 };
+ScreenFrame::LightPatch ConsoleUI::lightPatches[2][ScreenFrame::LIGHT_COUNT];
+int ConsoleUI::lightsShown[2][3] = { { -1, -1, -1 }, { -1, -1, -1 } };
 int ConsoleUI::keyBinds[] = {};
 int ConsoleUI::keyCombos[] = {};
 int ConsoleUI::keyLayout = 0;
@@ -1011,8 +1011,8 @@ bool ConsoleUI::updatePointer(uint32_t held, ScreenLayout *gamepad) {
 }
 
 void ConsoleUI::updateLights() {
-    // Light up the TV frame's lights by writing them into its texture, only when they change
-    if (!core || !frameTextures[0]) return;
+    // Light up the display frames' lights by writing them into their textures, only when they change
+    if (!core || (!frameTextures[0] && !frameTextures[1])) return;
     auto now = std::chrono::steady_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     bool lit[ScreenFrame::LIGHT_COUNT] = {};
@@ -1049,13 +1049,16 @@ void ConsoleUI::updateLights() {
     for (int i = 0; i < ScreenFrame::LIGHT_COUNT; i++) {
         if (lit[i]) shown[places[i]] = i;
     }
-    for (int place = 0; place < 3; place++) {
-        if (shown[place] == lightsShown[place]) continue;
-        lightsShown[place] = shown[place];
-        const ScreenFrame::LightPatch &patch = lightPatches[(shown[place] < 0) ? place : shown[place]];
-        if (patch.width) {
-            writeTexture(frameTextures[0], (shown[place] < 0) ? patch.unlit.data() : patch.lit.data(), patch.x,
-                patch.y, patch.width, patch.height);
+    for (int i = 0; i < 2; i++) {
+        if (!frameTextures[i]) continue;
+        for (int place = 0; place < 3; place++) {
+            if (shown[place] == lightsShown[i][place]) continue;
+            lightsShown[i][place] = shown[place];
+            const ScreenFrame::LightPatch &patch = lightPatches[i][(shown[place] < 0) ? place : shown[place]];
+            if (patch.width) {
+                writeTexture(frameTextures[i], (shown[place] < 0) ? patch.unlit.data() : patch.lit.data(), patch.x,
+                    patch.y, patch.width, patch.height);
+            }
         }
     }
 }
@@ -1089,8 +1092,8 @@ void ConsoleUI::updateFrames(ScreenLayout *gamepad) {
         releaseTexture(frameTextures[i]);
         frameTextures[i] = nullptr;
     }
-    for (int i = 0; i < 3; i++)
-        lightsShown[i] = -1;
+    for (int i = 0; i < 6; i++)
+        lightsShown[i / 3][i % 3] = -1;
     if (!frameColor) return;
 
     // Draw each display's frame in memory, leaving black bars if there isn't enough for it
@@ -1101,8 +1104,11 @@ void ConsoleUI::updateFrames(ScreenLayout *gamepad) {
         int width = (i == 0) ? uiWidth : 854, height = (i == 0) ? uiHeight : 480;
         uint32_t *pixels = new (std::nothrow) uint32_t[width * height];
         if (!pixels) continue;
-        ScreenFrame::draw(pixels, width, height, frameColor - 1, screens[i], count, i == 0,
-            (i == 0) ? lightPatches : nullptr, &_binary_src_ui_console_images_font_bmp_start, charWidths);
+        // Like the real system's one hinge, the lights go under the top screen, so a display that only shows the bottom
+        // screen has none
+        bool top = (count == 2 || !screens[i][0].bottom);
+        ScreenFrame::draw(pixels, width, height, frameColor - 1, screens[i], count, top, lightPatches[i],
+            &_binary_src_ui_console_images_font_bmp_start, charWidths);
         frameTextures[i] = createTexture(pixels, width, height);
         delete[] pixels;
     }

@@ -192,8 +192,8 @@ private:
     static std::string basePath, curPath, defaultFolder, lastRom;
     static bool changed;
     static void *frameTextures[2]; // The screen frame for the TV and the gamepad
-    static ScreenFrame::LightPatch lightPatches[ScreenFrame::LIGHT_COUNT]; // The TV frame's lights, lit and unlit
-    static int lightsShown[3]; // The light lit in each of the TV frame's places for them, or -1 if it's unlit
+    static ScreenFrame::LightPatch lightPatches[2][ScreenFrame::LIGHT_COUNT]; // Each display frame's lights, lit and unlit
+    static int lightsShown[2][3]; // The light lit in each of a frame's places for them, or -1 if it's unlit
     static void updateFrames(ScreenLayout *gamepad);
 
     // The right stick's pointer, in touch screen pixels, and when it hides
