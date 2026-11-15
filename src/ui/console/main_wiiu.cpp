@@ -228,6 +228,9 @@ void ConsoleUI::startFrame(uint32_t color, bool framed) {
         uiHoldsGx2 = true;
         updateDrcBuffer();
     }
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    gpuLap(HB_UI_GPU_PRIOR_US);
+#endif
     // Displays the game's frames will be drawn on are left as they are, since the frames are opaque and cover them
     // whole, and clearing a 1080p TV takes the GPU over a millisecond
     WHBGfxBeginRenderTV();
@@ -236,8 +239,21 @@ void ConsoleUI::startFrame(uint32_t color, bool framed) {
     WHBGfxBeginRenderDRC();
     if (!framed || !frameTextures[1])
         WHBGfxClearColor(r, g, b, a);
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    gpuLap(HB_UI_GPU_CLEAR_US);
+#endif
 
 }
+
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+void ConsoleUI::gpuLap(int slot) {
+    // Wait for the GPU to run what the UI added since the last lap, adding only the wait to the slot, so building the
+    // commands on the CPU isn't counted; this serializes the UI's drawing with the 3D renderer, like its own timeline
+    OSTime start = OSGetSystemTime();
+    GX2DrawDone();
+    Heartbeat::values[slot] += (uint32_t)OSTicksToMicroseconds(OSGetSystemTime() - start);
+}
+#endif
 
 FILE *openHangReport(const char *reason) {
     // Append a report of a hang to hang.txt on the SD card, with every thread's state and stack, and return the file
@@ -310,12 +326,21 @@ int watchHangs(int, void *) {
 void ConsoleUI::endFrame() {
     // Finish and display a frame, doing what WHBGfxFinishRender does but waiting for the GPU without holding GX2,
     // so the 3D renderer can submit its frame in the meantime
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    gpuLap(HB_UI_GPU_REST_US);
+#endif
     WHBGfxFinishRenderTV();
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    gpuLap(HB_UI_GPU_COPY_TV_US);
+#endif
     WHBGfxFinishRenderDRC();
     GX2SwapScanBuffers();
     GX2Flush();
     GX2SetTVEnable(TRUE);
     GX2SetDRCEnable(TRUE);
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    gpuLap(HB_UI_GPU_COPY_DRC_US);
+#endif
     OSTime submitted = GX2GetLastSubmittedTimeStamp();
     if (uiHoldsGx2) {
         uiHoldsGx2 = false;
@@ -696,6 +721,10 @@ void ConsoleUI::drawTexture(void *texture, float tx, float ty, float tw, float t
     };
 
     uploadQuad(posCoords, &texCoords[rotation * 8], vtxColors);
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    bool lapScreen = running && tw >= 240;
+    if (lapScreen) gpuLap(HB_UI_GPU_REST_US);
+#endif
 
     // Draw a texture on the TV, with high-res 3D over it if given
     WHBGfxBeginRenderTV();
@@ -703,6 +732,9 @@ void ConsoleUI::drawTexture(void *texture, float tx, float ty, float tw, float t
     GX2RSetAttributeBuffer(&texBuffer, 1, texBuffer.elemSize, bufOffset);
     GX2RSetAttributeBuffer(&colBuffer, 2, colBuffer.elemSize, bufOffset * 2);
     drawQuad((GX2Texture*)texture, filter, (GX2Texture*)drawLastScreen);
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    if (lapScreen) gpuLap(HB_UI_GPU_SCREENS_TV_US);
+#endif
 
     // Override the gamepad screen texture with the other screen in single screen mode
     GX2Texture *tempTexture = nullptr, *tempLast = (GX2Texture*)drawLastScreen;
@@ -733,6 +765,9 @@ void ConsoleUI::drawTexture(void *texture, float tx, float ty, float tw, float t
     GX2RSetAttributeBuffer(&texBuffer, 1, texBuffer.elemSize, bufOffset);
     GX2RSetAttributeBuffer(&colBuffer, 2, colBuffer.elemSize, bufOffset * 2);
     drawQuad(tempTexture ? tempTexture : (GX2Texture*)texture, filter, tempLast);
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    if (lapScreen) gpuLap(HB_UI_GPU_SCREENS_DRC_US);
+#endif
 
     // Adjust the buffer offset if there's still room
     if (size_t(bufOffset) < 8 * sizeof(float) * MAX_DRAWS)
@@ -1546,6 +1581,11 @@ int logHeartbeat(int, void *) {
             per(HB_GPU_MAIN_DONE_US, gpuFrames), per(HB_GPU_SUBMIT_US, gpuFrames), per(HB_GPU_DRAW_US, gpuFrames),
             per(HB_GPU_DRAWS, gpuFrames), per(HB_GPU_VERTICES, gpuFrames));
 #ifdef GPU_TIMELINE
+        fprintf(file, "   ui gpu per frame (TV %ux%u): waits for earlier work %u, clear %u, compose %u, frames %u, screens on "
+            "TV %u gamepad %u, rest %u, copy TV %u gamepad %u us\n", tvWidth, tvHeight, per(HB_UI_GPU_PRIOR_US, uiFrames),
+            per(HB_UI_GPU_CLEAR_US, uiFrames), per(HB_UI_GPU_COMPOSE_US, uiFrames), per(HB_UI_GPU_FRAMES_US, uiFrames),
+            per(HB_UI_GPU_SCREENS_TV_US, uiFrames), per(HB_UI_GPU_SCREENS_DRC_US, uiFrames), per(HB_UI_GPU_REST_US, uiFrames),
+            per(HB_UI_GPU_COPY_TV_US, uiFrames), per(HB_UI_GPU_COPY_DRC_US, uiFrames));
         fprintf(file, "   gpu passes per frame: multisampled %u, polygons %u, crack marking %u, crack filling %u, edges %u, fog %u, anti-alias %u, pack and copy %u us"
             " | frames multisampled %u, high-res %u\n", per(HB_GPU_PASS_MSAA_US, gpuFrames), per(HB_GPU_PASS_POLY_US, gpuFrames),
             per(HB_GPU_PASS_MARK_US, gpuFrames), per(HB_GPU_PASS_FILL_US, gpuFrames), per(HB_GPU_PASS_EDGE_US, gpuFrames), per(HB_GPU_PASS_FOG_US, gpuFrames), per(HB_GPU_PASS_AA_US, gpuFrames),

@@ -132,6 +132,9 @@ public:
     // Functions that are implemented per-platform
     static void startFrame(uint32_t color, bool framed = false);
     static void endFrame();
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+    static void gpuLap(int slot);
+#endif
     static void *createTexture(uint32_t *data, int width, int height);
     static void writeTexture(void *texture, const uint32_t *data, int x, int y, int width, int height);
     static void destroyTexture(void *texture);

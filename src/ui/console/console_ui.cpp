@@ -564,11 +564,17 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
             composeScreens(topTexture, botTexture, hiResTexture, hiResTop);
         if (composeGba && (update || !composed[0]))
             composeGbaScreen(gbaTexture);
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+        gpuLap(HB_UI_GPU_COMPOSE_US);
+#endif
 
         // Draw the screen frames first, so the screens go over them
         if (frameTextures[0] || frameTextures[1]) {
             updateLights();
             drawFrames(frameTextures[0], frameTextures[1]);
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+            gpuLap(HB_UI_GPU_FRAMES_US);
+#endif
         }
 
         if (gbaMode) {

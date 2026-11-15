@@ -110,6 +110,15 @@ enum HeartbeatSlot {
     HB_UI_END_US, // Total microseconds the UI spent finishing frames, waiting for the GPU and vsync
     HB_UI_SKIPPED, // Frames the UI never got, between ones it did
     HB_UI_REPEATS, // UI frames without a new frame
+    HB_UI_GPU_PRIOR_US, // With GPU_TIMELINE, GPU time the UI waits for once it holds GX2: work queued before, like 3D frames
+    HB_UI_GPU_CLEAR_US, // GPU time for clearing the TV and gamepad
+    HB_UI_GPU_COMPOSE_US, // Building the screens at twice the size
+    HB_UI_GPU_FRAMES_US, // Drawing the frames around the screens
+    HB_UI_GPU_SCREENS_TV_US, // Drawing the DS or GBA screens on the TV
+    HB_UI_GPU_SCREENS_DRC_US, // Drawing them on the gamepad
+    HB_UI_GPU_REST_US, // Everything else drawn, like text
+    HB_UI_GPU_COPY_TV_US, // Copying the TV's frame to its scan buffer
+    HB_UI_GPU_COPY_DRC_US, // Copying the gamepad's frame to its scan buffer, and swapping both
     HB_COUNT
 };
 
