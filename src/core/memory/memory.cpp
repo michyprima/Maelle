@@ -884,6 +884,24 @@ void Memory::updateVram(bool all) {
         paletteMapChanges = paletteMapChanges + 1;
 }
 
+bool Memory::vramUnmapped9(uint32_t address, uint32_t size) {
+    // Check that ARM9 reads anywhere in a range of VRAM find no bank and nothing mapped over it, so they all read 0,
+    // which lets the 2D engines skip layers and objects whose data a game has unmapped
+    for (uint32_t page = address >> 12; page <= (address + size - 1) >> 12; page++) {
+        if ((page >> 12) != 0x6 || readMap9A[page]) return false;
+        VramMapping *mapping;
+        switch ((page << 12) & 0xFFE00000) {
+            case 0x6000000: mapping = &engABg[((page << 12) & 0x7FFFF) >> 14]; break;
+            case 0x6200000: mapping = &engBBg[((page << 12) & 0x1FFFF) >> 14]; break;
+            case 0x6400000: mapping = &engAObj[((page << 12) & 0x3FFFF) >> 14]; break;
+            case 0x6600000: mapping = &engBObj[((page << 12) & 0x1FFFF) >> 14]; break;
+            default: mapping = &lcdc[((page << 12) & 0xFFFFF) >> 14]; break;
+        }
+        if (mapping->count) return false;
+    }
+    return true;
+}
+
 template <typename T> T Memory::readFallback(bool arm7, uint32_t address) {
     // Align the address
     address &= ~(sizeof(T) - 1);

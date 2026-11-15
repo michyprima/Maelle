@@ -90,6 +90,7 @@ public:
         uint8_t *data = (arm7 ? readMap7 : (tcm ? readMap9A : readMap9B))[address >> 12];
         return data ? &data[address & 0xFFF] : nullptr;
     }
+    bool vramUnmapped9(uint32_t address, uint32_t size);
     uint8_t *getWritePtr(bool arm7, uint32_t address, bool tcm = true) {
         uint8_t *data = (arm7 ? writeMap7 : (tcm ? writeMap9A : writeMap9B))[address >> 12];
         return data ? &data[address & 0xFFF] : nullptr;

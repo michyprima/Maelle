@@ -820,7 +820,11 @@ void Gpu2D::drawExtended(int bg, int line) {
         const uint16_t sizeX = size[0];
         const uint16_t sizeY = size[1];
 
-        if (bgCnt[bg] & BIT(2)) { // Direct color bitmap
+        // Every pixel of a bitmap in unmapped VRAM reads as 0, which is transparent, so it can be skipped
+        if (core->memory.vramUnmapped9(dataBase, sizeX * sizeY * ((bgCnt[bg] & BIT(2)) ? 2 : 1))) {
+            // Nothing to draw
+        }
+        else if (bgCnt[bg] & BIT(2)) { // Direct color bitmap
             // Draw a line
             for (int i = 0; i < 256; i++) {
                 // Increment the rotscaled coordinates and remove the fraction
@@ -1074,6 +1078,10 @@ template <bool gbaMode> void Gpu2D::drawObjects(int line, bool window) {
                 dataBase = objVramAddr + (object[2] & xMask) * 0x10 + (object[2] & 0x3FF & ~xMask) * 0x80;
                 bitmapWidth = (dispCnt & BIT(5)) ? 256 : 128;
             }
+
+            // Every pixel of a bitmap in unmapped VRAM reads as 0, which is transparent, so it can be skipped
+            if (core->memory.vramUnmapped9(dataBase, height * bitmapWidth * 2))
+                continue;
 
             if (object[0] & BIT(8)) { // Rotscale
                 // Get the rotscale parameters
