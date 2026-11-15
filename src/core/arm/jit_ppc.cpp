@@ -21,8 +21,10 @@
 // PowerPC code generation for the JIT, used on Wii U
 // Generated blocks do exactly what the portable executor in jit.cpp does, one instruction at a time
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <string>
 #include <coreinit/cache.h>
 #include <coreinit/codegen.h>
 #include <coreinit/core.h>
@@ -321,7 +323,44 @@ void Jit::initCodegen() {
     codeStart = (uint8_t*)e.here();
     codePtr = codeStart;
     finishCode(codeArea, codePtr - codeArea, std::vector<uint32_t*>());
+#if defined(PROFILE_EMU) && defined(HEARTBEAT)
+    traceStubs();
+#endif
 }
+
+#if defined(PROFILE_EMU) && defined(HEARTBEAT)
+void Jit::traceStubs() {
+    // Log each stub in the frame tracer's block log, up to the next one, with its name packed into the opcode words, so
+    // samples in them can be named
+    std::vector<std::pair<void*, std::string>> stubs = { { codeRefresh, "refresh" }, { codeExit, "exit" },
+        { codeEnter, "enter" }, { codeDispatch, "dispatch" }, { codeDispatchMiss, "dispatch miss" },
+        { codeMultiplyCycles, "multiply cycles" }, { codeMultiplyCyclesUnsigned, "multiply cycles unsigned" },
+        { codeOverflowQ, "overflow Q" }, { codeReturn, "return" } };
+    for (int i = 0; i < 2; i++) {
+        stubs.push_back({ codeSlowPost[i], "slow post " + std::to_string(i) });
+        stubs.push_back({ codeFetch[i], "fetch " + std::to_string(i) });
+        stubs.push_back({ codeMsr[i], "msr " + std::to_string(i) });
+    }
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 2; j++)
+            stubs.push_back({ codePost[i][j], "post " + std::to_string(i) + " " + std::to_string(j) });
+    for (int i = 0; i < 7; i++) stubs.push_back({ codeCond[i], "condition " + std::to_string(i) });
+    for (int i = 0; i < 5; i++) stubs.push_back({ codeFlags[i], "flags " + std::to_string(i) });
+    for (int i = 0; i < 6; i++) stubs.push_back({ codeMemory[i], "memory " + std::to_string(i) });
+    for (int i = 0; i < 4; i++) {
+        stubs.push_back({ codeShift[i], "shift " + std::to_string(i) });
+        stubs.push_back({ codeShiftCarry[i], "shift carry " + std::to_string(i) });
+    }
+    std::sort(stubs.begin(), stubs.end());
+    for (size_t i = 0; i < stubs.size(); i++) {
+        if (!stubs[i].first || (i + 1 < stubs.size() && stubs[i + 1].first == stubs[i].first)) continue;
+        void *end = (i + 1 < stubs.size()) ? stubs[i + 1].first : codeStart;
+        uint32_t name[8] = {};
+        memcpy(name, stubs[i].second.c_str(), std::min<size_t>(stubs[i].second.size(), sizeof(name) - 1));
+        EmuProfile::traceBlock(EmuProfile::TRACE_STUB, arm7, 0, stubs[i].first, end, name, 8);
+    }
+}
+#endif
 
 void Jit::emitStubs(PpcEmitter &e) {
     // Refresh: load the global cycles and when to stop next, after anything that could have changed them

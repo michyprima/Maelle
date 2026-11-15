@@ -277,6 +277,9 @@ private:
     void *generateEntry(JitBlock *block, JitBlock *host, size_t index);
     void linkEntry(JitBlock *block);
     void emitStubs(PpcEmitter &e);
+#if defined(PROFILE_EMU) && defined(HEARTBEAT)
+    void traceStubs();
+#endif
     void emitMath(PpcEmitter &e, bool load, int size);
     bool emitNative(PpcEmitter &e, uint32_t op, uint32_t pc);
     uint32_t *condSkip(PpcEmitter &e, uint32_t cond);

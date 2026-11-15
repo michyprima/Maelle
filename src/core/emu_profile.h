@@ -131,7 +131,7 @@ namespace EmuProfile {
     // A log of compiled JIT blocks and resets, so the frame tracer can match samples in generated code to guest code
     // Each entry is a word with the type, CPU and opcode count, then the record count, guest address (bit 0 set for
     // THUMB), host code start and end, and the opcodes; the heartbeat logger writes it out and drops what it missed
-    enum { TRACE_BLOCK = 1, TRACE_RESET = 2 };
+    enum { TRACE_BLOCK = 1, TRACE_RESET = 2, TRACE_STUB = 3 }; // Stubs have their name packed into 8 opcode words
     static const uint32_t TRACE_WORDS = 1 << 20;
     extern uint32_t traceWords[TRACE_WORDS];
     extern volatile uint32_t traceHead; // Words written so far; the latest is at (head - 1) % TRACE_WORDS

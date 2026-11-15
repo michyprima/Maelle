@@ -24,6 +24,7 @@
 #include <coreinit/alarm.h>
 #include <coreinit/codegen.h>
 #include <coreinit/context.h>
+#include <coreinit/thread.h>
 #include <coreinit/time.h>
 
 #include "frame_trace.h"
@@ -32,7 +33,8 @@
 namespace FrameTrace {
     // Where the emulator's core was when sampled: the record count at the time, which is the index of the frame record
     // the sample ends up in, the interrupted address and link register, saved return addresses from the stack, and
-    // the last JIT block entered
+    // the last JIT block entered. When another thread or none was running instead of the emulator's, the record count
+    // has its top bit set, and the link register and return addresses are where the emulator's thread was stopped
     struct Sample {
         uint32_t record, pc, lr, returns[4], block;
     };
@@ -41,18 +43,25 @@ namespace FrameTrace {
     static Sample samples[SAMPLES];
     static volatile uint32_t sampleHead = 0;
     static OSAlarm alarm, rendererAlarm;
+    static OSThread *emuThread;
 
     // Samples of the GPU 3D renderer's core, with the polygons in its frame in place of the JIT block
     static const uint32_t RENDERER_SAMPLES = 1 << 15;
     static Sample rendererSamples[RENDERER_SAMPLES];
     static volatile uint32_t rendererHead = 0;
 
-    static void fillSample(Sample &sample, OSContext *context) {
-        // Record a sample, following the stack's back chain while it stays in the range stacks are in
+    static void fillSample(Sample &sample, OSContext *context, OSThread *thread = nullptr) {
+        // Record a sample, following the stack's back chain while it stays in the range stacks are in; given a thread
+        // that wasn't the one running, follow that thread's stack instead
         sample.record = EmuProfile::recordCount;
         sample.pc = context->srr0;
         sample.lr = context->lr;
         uint32_t sp = context->gpr[1];
+        if (thread) {
+            sample.record |= 0x80000000;
+            sample.lr = thread->context.srr0;
+            sp = thread->context.gpr[1];
+        }
         for (int i = 0; i < 4; i++) {
             uint32_t frame = (sp - 0x10000000 < 0x40000000) ? *(uint32_t*)(uintptr_t)sp : 0;
             bool valid = (frame - 0x10000000 < 0x40000000);
@@ -63,7 +72,8 @@ namespace FrameTrace {
 
     static void callback(OSAlarm *, OSContext *context) {
         Sample &sample = samples[sampleHead % SAMPLES];
-        fillSample(sample, context);
+        bool running = (context == &emuThread->context || OSGetCurrentThread() == emuThread);
+        fillSample(sample, context, running ? nullptr : emuThread);
         sample.block = Heartbeat::values[HB_JIT_BLOCK];
         __sync_synchronize();
         sampleHead = sampleHead + 1;
@@ -84,7 +94,8 @@ namespace FrameTrace {
         // Keep the frame records only, since sampling this often slows the emulator down enough to change the results
         return;
 #endif
-        // Sample the current core 5,000 times a second
+        // Sample the current core 5,000 times a second, from the emulator's thread
+        emuThread = OSGetCurrentThread();
         OSCreateAlarm(&alarm);
         OSSetPeriodicAlarm(&alarm, OSMicrosecondsToTicks(200), OSMicrosecondsToTicks(200), callback);
     }
@@ -161,21 +172,21 @@ namespace FrameTrace {
         std::vector<uint32_t> kept;
         for (; sampleTail != head; sampleTail++) {
             const Sample &sample = samples[sampleTail % SAMPLES];
-            if (sample.record >= records) break;
-            if (records - sample.record > EmuProfile::RECORDS - 8) continue;
-            const EmuFrameRecord &record = EmuProfile::records[sample.record % EmuProfile::RECORDS];
+            uint32_t index = sample.record & 0x7FFFFFFF;
+            if (index >= records) break;
+            if (records - index > EmuProfile::RECORDS - 8) continue;
+            const EmuFrameRecord &record = EmuProfile::records[index % EmuProfile::RECORDS];
             bool slow = (record.wall - record.ticks[EP_DISPLAY] > 16000 || record.wall > 17500);
-            if (!slow && sample.record % 60) continue;
-            if (sample.record != lastKept) {
+            if (!slow && index % 60) continue;
+            if (index != lastKept) {
                 if (!kept.empty()) chunk(file, "SMPS", kept.data(), kept.size());
                 kept.clear();
-                uint32_t index = sample.record;
                 fwrite("FRAM", 1, 4, file);
                 uint32_t words = 1 + sizeof(record) / 4;
                 fwrite(&words, 4, 1, file);
                 fwrite(&index, 4, 1, file);
                 fwrite(&record, 4, sizeof(record) / 4, file);
-                lastKept = sample.record;
+                lastKept = index;
             }
             const uint32_t *data = (const uint32_t*)&sample;
             kept.insert(kept.end(), data, data + sizeof(Sample) / 4);
