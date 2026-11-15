@@ -623,6 +623,17 @@ void Gpu3D::execute(uint8_t command, uint32_t *params) {
         (command < 0x20) ? EP_GEOM_MTX : EP_GEOM_OTHER, cmdStart);
 }
 
+void Gpu3D::runCommand(uint8_t command, size_t head, int count) {
+    // Fetch a command's parameters from the FIFO, apply the parts of it that the FIFO handles, and then execute it, on
+    // the worker if running; this is kept apart from the batch loop for the few commands that need it
+    uint32_t params[32];
+    for (int i = 0; i < count; i++)
+        params[i] = fifo.entries[(head + i) & fifo.mask].param;
+    int passed = (command >= 0x20 && command < 0x50) ? count : takeCommand(command, params, count);
+    if (worker) queueCommand(command, params, passed);
+    else execute(command, params);
+}
+
 void Gpu3D::runCommands() {
 #ifdef PROFILE_EMU
     EP_START(geom);
@@ -641,29 +652,46 @@ void Gpu3D::runCommands() {
     Entry *entries = fifo.entries;
     size_t mask = fifo.mask, head = fifo.head, size = fifo.count;
     uint32_t pipe = pipeSize, cycles = 0;
-    while (cycles < GPU3D_BATCH) {
-        // Fetch the next geometry command
-        Entry entry = entries[head];
-        int count = paramCounts[entry.command];
-        uint32_t params[32];
 
-        // Fetch the command's parameters; commands without any still take up an entry
-        if (count > 1) {
-            for (int i = 0; i < count; i++)
-                params[i] = entries[(head + i) & mask].param;
+    // With a worker, the queue's end is kept locally too, since stores to the queue could otherwise be any member, and
+    // room for a whole batch is made first, so commands that only go to the queue don't each check for it
+    uint32_t *words = queue, end = queueEnd;
+    if (worker) {
+        SpinWait spin;
+        while (end + (GPU3D_BATCH / 2) * 33 + 8 - queueStart > QUEUE_SIZE) {
+            publishQueue(true);
+            spin.pause();
+            queueStart = queueHead.load();
+        }
+    }
+    bool halted = (state == GX_HALTED);
+
+    while (cycles < GPU3D_BATCH) {
+        // Fetch the next geometry command; commands without parameters still take up an entry
+        Entry entry = entries[head];
+        int count = std::max<int>(paramCounts[entry.command], 1);
+
+        if (worker && entry.command >= 0x20 && entry.command < 0x50) {
+            // Most commands don't involve the FIFO's state, so they go straight from the FIFO to the worker's queue
+            // Each cache block is claimed instead of being read from memory, since everything in it is new
+            uint32_t index = end & (QUEUE_SIZE - 1);
+            if (!(index & 7)) claimBlock(&words[index]);
+            words[index] = entry.command | (count << 8);
+            for (int i = 0; i < count; i++) {
+                index = (end + 1 + i) & (QUEUE_SIZE - 1);
+                if (!(index & 7)) claimBlock(&words[index]);
+                words[index] = entries[(head + i) & mask].param;
+            }
+            end += count + 1;
         }
         else {
-            count = 1;
-            params[0] = entry.param;
+            queueEnd = end;
+            runCommand(entry.command, head, count);
+            end = queueEnd;
+            halted = (state == GX_HALTED);
         }
         head = (head + count) & mask;
         size -= count;
-
-        // Apply the parts of the command that the FIFO handles, and then execute it, on the worker if running
-        // Most commands don't involve the FIFO's state, so they skip checking for the ones that do
-        int passed = (entry.command >= 0x20 && entry.command < 0x50) ? count : takeCommand(entry.command, params, count);
-        if (worker) queueCommand(entry.command, params, passed);
-        else execute(entry.command, params);
 
         // On hardware, FIFO entries are moved into a pipe before being executed
         // The pipe can hold 4 entries, and is refilled when it runs half empty (2 entries)
@@ -673,9 +701,10 @@ void Gpu3D::runCommands() {
 
         // End a batch early if the engine halted or there aren't enough parameters
         cycles += 2;
-        if (state == GX_HALTED || size == 0 || size < paramCounts[entries[head].command])
+        if (halted || size == 0 || size < paramCounts[entries[head].command])
             break;
     }
+    queueEnd = end;
     fifo.head = head;
     fifo.count = size;
     pipeSize = pipe;
@@ -684,14 +713,15 @@ void Gpu3D::runCommands() {
     if (worker) publishQueue(false);
 
     // Update the FIFO status
-    gxStat = (gxStat & ~0x01FF0000) | ((fifo.size() - pipeSize) << 16); // FIFO entries
-    if (fifo.size() - pipeSize == 0) gxStat |= BIT(26); // FIFO empty
+    uint32_t waiting = size - pipe;
+    gxStat = (gxStat & ~0x01FF0000) | (waiting << 16); // FIFO entries
+    if (waiting == 0) gxStat |= BIT(26); // FIFO empty
     // The engine stays busy while it waits for a buffer swap, which games wait for to sync with V-blank
-    if (fifo.size() == 0 && state != GX_HALTED) gxStat &= ~BIT(27); // Commands not executing
+    if (size == 0 && !halted) gxStat &= ~BIT(27); // Commands not executing
 
     // If the FIFO becomes less than half full, trigger GXFIFO DMA transfers
     // If the FIFO is already less than half full when a DMA starts, it will automatically activate
-    if (fifo.size() - pipeSize < 128 && !(gxStat & BIT(25))) {
+    if (waiting < 128 && !(gxStat & BIT(25))) {
         gxStat |= BIT(25);
         core->dma[0].trigger(7);
         core->ndma[0].trigger(0xA);

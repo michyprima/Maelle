@@ -322,6 +322,7 @@ private:
 
     int stackSlot(uint8_t mode, uint8_t command, uint32_t param);
     int takeCommand(uint8_t command, uint32_t *params, int count);
+    __attribute__((noinline)) void runCommand(uint8_t command, size_t head, int count);
     void execute(uint8_t command, uint32_t *params);
 
     static uint32_t rgb5ToRgb6(uint16_t color);
