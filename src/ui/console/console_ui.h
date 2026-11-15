@@ -178,6 +178,7 @@ private:
 
     static const uint32_t *palette;
     static uint32_t uiWidth, uiHeight;
+    static uint32_t menuHeight, menuTop;
     static uint32_t lineHeight;
     static bool touchMode;
 

@@ -67,7 +67,7 @@ static uint32_t audioMarks = 0;
 #endif
 
 #define SCALEH(x, h) (((x) * (h)) / 720)
-#define SCALE(x) SCALEH(x, uiHeight)
+#define SCALE(x) SCALEH(x, menuHeight)
 
 extern uint8_t _binary_src_ui_console_images_file_dark_bmp_start;
 extern uint8_t _binary_src_ui_console_images_file_light_bmp_start;
@@ -83,6 +83,7 @@ void *ConsoleUI::fontTexture;
 
 const uint32_t *ConsoleUI::palette;
 uint32_t ConsoleUI::uiWidth, ConsoleUI::uiHeight;
+uint32_t ConsoleUI::menuHeight, ConsoleUI::menuTop;
 uint32_t ConsoleUI::lineHeight;
 bool ConsoleUI::touchMode;
 
@@ -202,7 +203,7 @@ void ConsoleUI::drawRectangle(float x, float y, float w, float h, uint32_t color
     // Draw a rectangle using a blank texture
     static uint32_t data = 0xFFFFFFFF;
     static void *texture = createTexture(&data, 1, 1);
-    drawTexture(texture, 0, 0, 1, 1, x, y, w, h, false, 0, color);
+    drawTexture(texture, 0, 0, 1, 1, x, y + menuTop, w, h, false, 0, color);
 }
 
 void ConsoleUI::drawString(std::string string, float x, float y, float size, uint32_t color, bool alignRight) {
@@ -214,7 +215,7 @@ void ConsoleUI::drawString(std::string string, float x, float y, float size, uin
         float x1 = x + offset * size / 48;
         float tx = 48.0f * (((uint8_t)string[i] - 32) % 10);
         float ty = 48.0f * (((uint8_t)string[i] - 32) / 10);
-        drawTexture(fontTexture, tx, ty, 47, 47, x1, y, size, size, true, 0, color);
+        drawTexture(fontTexture, tx, ty, 47, 47, x1, y + menuTop, size, size, true, 0, color);
         offset += charWidths[(uint8_t)string[i] - 32];
     }
 }
@@ -351,6 +352,10 @@ void ConsoleUI::initialize(int width, int height, std::string root, std::string 
     palette = &themeColors[menuTheme * 7];
     uiWidth = width;
     uiHeight = height;
+
+    // The menus are laid out for 16:9, so a narrower display shows them whole and centered, with bars above and below
+    menuHeight = std::min(height, width * 9 / 16);
+    menuTop = (height - menuHeight) / 2;
     lineHeight = height / 480;
     basePath = curPath = root;
     changed = true;
@@ -562,6 +567,11 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
             drawLastScreen = nullptr;
         }
 
+        // Text over the game is placed on the whole display, since only the menus are kept to 16:9
+        uint32_t savedHeight = menuHeight, savedTop = menuTop;
+        menuHeight = uiHeight;
+        menuTop = 0;
+
 #ifdef DRC_DEBUG
         {
             // Show what's known about the GamePad's display, a line at a time
@@ -698,6 +708,8 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
                 drawString(lines[i], SCALE(5), SCALE(48) + SCALE(30) * i, SCALE(30));
         }
 #endif
+        menuHeight = savedHeight;
+        menuTop = savedTop;
 
         HB_SET(HB_UI_STAGE, 5);
         HB_INC(HB_UI_FRAMES);
@@ -1382,7 +1394,7 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
             // Draw the current item's icon if it has one
             if (items[offset].iconSize > 0)
                 drawTexture(items[offset].iconTex, 0, 0, items[offset].iconSize,
-                    items[offset].iconSize, SCALE(105), SCALE(top + (rowHeight - 64) / 2 + i * rowHeight), SCALE(64), SCALE(64));
+                    items[offset].iconSize, SCALE(105), SCALE(top + (rowHeight - 64) / 2 + i * rowHeight) + menuTop, SCALE(64), SCALE(64));
 
             // Draw the current item's setting if it has one
             if (items[offset].setting != "")

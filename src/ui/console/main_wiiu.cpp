@@ -639,8 +639,17 @@ void ConsoleUI::drawTexture(void *texture, float tx, float ty, float tw, float t
     float y2 = -((y + h) / (tvHeight / 2) - 1.0f);
 
     // Copy positions for the gamepad, but ensure lines are at least one pixel thick
-    float x1a = x1, y1a = y1, x2a = x2;
-    float y2a = (y1 - y2 < 1.0f / 240) ? (y1 - 1.0f / 240) : y2;
+    // A 4:3 TV shows the menus smaller and centered, so the gamepad maps them back to its full size, where touches are
+    // Text over the game is placed on the whole TV, and keeps the same pixels on the gamepad
+    float x1a = x1, y1a = y1, x2a = x2, y2a = y2;
+    if (tvWidth * 9 / 16 < tvHeight) {
+        float scale = 480.0f / menuHeight;
+        x1a = x * scale / 427 - 1.0f;
+        y1a = -((y - menuTop) * scale / 240 - 1.0f);
+        x2a = (x + w) * scale / 427 - 1.0f;
+        y2a = -((y + h - menuTop) * scale / 240 - 1.0f);
+    }
+    if (y1a - y2a < 1.0f / 240) y2a = y1a - 1.0f / 240;
 
     // Detect and override gamepad screen layout positions
     if (running && tw >= 240) {
@@ -1291,7 +1300,8 @@ int runUi(int, void *) {
     switch (GX2GetSystemTVScanMode()) {
     case GX2_TV_SCAN_MODE_480I:
     case GX2_TV_SCAN_MODE_480P:
-        tvWidth = 854;
+        // WHBGfxInit gives a TV set to 4:3 a 640x480 buffer instead of a wide one
+        tvWidth = (GX2GetSystemTVAspectRatio() == GX2_ASPECT_RATIO_4_3) ? 640 : 854;
         tvHeight = 480;
         break;
 
