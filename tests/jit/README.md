@@ -78,6 +78,7 @@ program counters, then hashes of RAM and WRAM, and every way is compared with th
   twice as wide and tall
 - `threads` to run with the 2D threads drawing behind the emulator, as fast 2D does on the console; their timing varies, so
   runs with it aren't expected to match each other
+- `worker3d` to execute geometry commands on a worker thread, as the console does, instead of as they're taken from the FIFO
 - `vramstress` to run only a test of VRAM reads from another thread during VRAM bank changes, which ignores the frame count
   and exits as soon as it's done, or crashes if a read can follow a mapping that's only partly there. Planted bug 112 removes
   what stops that, so `--mutate 112` with this option should crash; `mutate.sh` doesn't run it, since it runs the cases above. Planted bug 113 breaks ADPCM sound for both the interpreter and generated code, so check it by comparing an `audio` run against one without it
@@ -139,6 +140,13 @@ file, there being no thread to load it into memory on, which doesn't change what
 
 What's still left to the console is the CPU itself: Unicorn's PowerPC 750 keeps its caches coherent and has no timing, so
 generated code that isn't flushed to the instruction cache, and anything to do with speed, still only show there.
+
+`GUEST_PROFILE=first:last:file` counts the PowerPC instructions run at each address from frame `first` to before `last`, the
+C++ included, and saves them to the file as lines of address and count, with generated code as one line at the codegen area's
+start; `powerpc-eabi-nm` on `guest.elf` in the build folder names the functions. Counting starts at the first frame, and
+makes those frames many times slower. `GUEST_CALLERS=address,...` also counts where calls to those function addresses came
+from, by their link register. They're instructions, not time: on the console, code that mostly moves data between buffers or
+threads can take the same time with fewer of them, so check a change there with the console's frame log.
 
 ### Comparing with a release
 

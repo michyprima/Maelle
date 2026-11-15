@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <string>
+#include <unordered_map>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
@@ -17,6 +18,61 @@
 static uc_engine *uc;
 static int exitCode = -1;
 static uint64_t hostCalls;
+
+// With GUEST_PROFILE=first:last:path, the PowerPC instructions run at each address from frame first to before last, as
+// counted by the frame lines the guest writes, go to path as lines of address and count, with generated code as one
+// line at the codegen area's start; each instruction is counted as it runs, from the first frame on only
+static int profileFirst = -1, profileLast = -1, frameNow = 0;
+static std::string profilePath;
+static std::vector<uint64_t> profileCounts;
+static uint64_t profileGenerated;
+static uc_hook profileHook;
+static bool profiling;
+
+// With GUEST_CALLERS=address,..., the profile also counts where calls to those function addresses came from, by the
+// link register at their first instruction, as lines of "caller address count" after a "callee" line for each
+static std::unordered_map<uint32_t, std::unordered_map<uint32_t, uint64_t>> profileCallers;
+
+static void hookInstruction(uc_engine*, uint64_t address, uint32_t, void*) {
+    uint64_t index = (address - GUEST_TEXT) >> 2;
+    if (index < profileCounts.size()) {
+        profileCounts[index]++;
+        if (!profileCallers.empty()) {
+            auto callee = profileCallers.find(address);
+            if (callee != profileCallers.end()) {
+                uint32_t lr = 0;
+                uc_reg_read(uc, UC_PPC_REG_LR, &lr);
+                callee->second[lr]++;
+            }
+        }
+    }
+    else if (address - GUEST_CODEGEN < GUEST_CODEGEN_SIZE) profileGenerated++;
+}
+
+static void writeProfile() {
+    if (profilePath.empty()) return;
+    FILE *file = fopen(profilePath.c_str(), "w");
+    if (!file) return;
+    for (size_t i = 0; i < profileCounts.size(); i++)
+        if (profileCounts[i]) fprintf(file, "%08X %llu\n", uint32_t(GUEST_TEXT + i * 4), (unsigned long long)profileCounts[i]);
+    fprintf(file, "%08X %llu\n", GUEST_CODEGEN, (unsigned long long)profileGenerated);
+    for (auto &callee: profileCallers) {
+        fprintf(file, "callee %08X\n", callee.first);
+        for (auto &caller: callee.second)
+            fprintf(file, "caller %08X %llu\n", caller.first, (unsigned long long)caller.second);
+    }
+    fclose(file);
+}
+
+static void updateProfile() {
+    // Translated code only calls hooks that were there when it was translated, so start over after a change
+    bool on = frameNow >= profileFirst && frameNow < profileLast;
+    if (on == profiling) return;
+    if (on) uc_hook_add(uc, &profileHook, UC_HOOK_CODE, (void*)hookInstruction, nullptr, 1, 0);
+    else uc_hook_del(uc, profileHook);
+    uc_ctl_flush_tb(uc);
+    profiling = on;
+}
 
 static void fatal(const char *format, ...) {
     va_list args;
@@ -48,6 +104,7 @@ static void hookCall(uc_engine*, uint64_t address, uint32_t, void*) {
     switch (call) {
         case GUEST_EXIT:
             exitCode = a;
+            writeProfile();
             if (a == 134) {
                 // An abort: the return addresses up the stack's back chain, for addr2line
                 fprintf(stderr, "stack:");
@@ -68,6 +125,11 @@ static void hookCall(uc_engine*, uint64_t address, uint32_t, void*) {
             buffer.resize(c);
             uc_mem_read(uc, b, buffer.data(), c);
             result = write(a, buffer.data(), c);
+            if (a == 1) {
+                for (uint32_t i = 0; i + 6 <= c; i++)
+                    if ((i == 0 || buffer[i - 1] == '\n') && !memcmp(&buffer[i], "frame ", 6)) frameNow++;
+                if (!profilePath.empty()) updateProfile();
+            }
             break;
         case GUEST_OPEN: {
             int flags = ((b & GUEST_O_WRONLY) ? O_WRONLY : (b & GUEST_O_RDWR) ? O_RDWR : O_RDONLY) |
@@ -198,6 +260,20 @@ int main(int argc, char **argv) {
     uc_hook calls, bad;
     uc_hook_add(uc, &calls, UC_HOOK_CODE, (void*)hookCall, nullptr, GUEST_HOST_CALLS, GUEST_HOST_CALLS + GUEST_CALLS * 4 - 1);
     uc_hook_add(uc, &bad, UC_HOOK_MEM_INVALID, (void*)hookBadMemory, nullptr, 1, 0);
+    if (const char *profile = getenv("GUEST_PROFILE")) {
+        char path[1024] = {};
+        if (sscanf(profile, "%d:%d:%1023s", &profileFirst, &profileLast, path) != 3) fatal("GUEST_PROFILE is first:last:path");
+        profilePath = path;
+        profileCounts.resize((end - GUEST_TEXT) / 4);
+        if (const char *callers = getenv("GUEST_CALLERS")) {
+            for (const char *p = callers; *p;) {
+                profileCallers[strtoul(p, nullptr, 16)];
+                p = strchr(p, ',');
+                if (!p) break;
+                p++;
+            }
+        }
+    }
     // The FPU starts off, as after a reset
     setReg(UC_PPC_REG_MSR, reg(UC_PPC_REG_MSR) | 0x2000);
     setReg(UC_PPC_REG_3, argc - 1);
