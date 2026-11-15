@@ -128,7 +128,9 @@ private:
     uint32_t batchEnd = SPU_BATCH * 512 * 2;
     uint32_t batchDone = 0;
     void syncSamples();
-    void mixSample();
+    void mixSamples(uint32_t due);
+    void mixChannels(uint32_t count);
+    template <int format> void mixChannel(int i, uint32_t count, int32_t **outs);
 
     // Each channel fetches the data it will play ahead of time, like the hardware's FIFOs, so software refilling a
     // buffer just behind the playing position doesn't change what's still to be played in a batch made late; a
@@ -142,6 +144,8 @@ private:
 
     static const int indexTable[8];
     static const int16_t adpcmTable[89];
+    static int32_t adpcmDiffs[89][16];
+    static uint8_t adpcmNext[89][8];
 
     int32_t adpcmValue[16] = {}, adpcmLoopValue[16] = {};
     int8_t adpcmIndex[16] = {}, adpcmLoopIndex[16] = {};

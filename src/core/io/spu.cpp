@@ -43,9 +43,25 @@ const int16_t Spu::adpcmTable[] = {
     0x5771, 0x602F, 0x69CE, 0x7462, 0x7FFF
 };
 
+int32_t Spu::adpcmDiffs[89][16];
+uint8_t Spu::adpcmNext[89][8];
+
 Spu::Spu(Core *core): core(core) {
     // Mark the buffer as not ready
     ready.store(false);
+
+    // Work out what each 4-bit ADPCM value does at each step index, the same for every core
+    for (int index = 0; index < 89; index++) {
+        for (int data = 0; data < 16; data++) {
+            // Calculate the sample difference, which is subtracted unless the sign bit is set
+            int32_t step = adpcmTable[index];
+            int32_t diff = (step >> 3) + ((data & 1) ? (step >> 2) : 0) + ((data & 2) ? (step >> 1) : 0) +
+                ((data & 4) ? step : 0);
+            adpcmDiffs[index][data] = (data & 8) ? diff : -diff;
+        }
+        for (int data = 0; data < 8; data++)
+            adpcmNext[index][data] = std::max(0, std::min(88, index + indexTable[data]));
+    }
 }
 
 Spu::~Spu() {
@@ -494,8 +510,7 @@ void Spu::runSamples() {
 #endif
     // Schedule the next batch of samples and finish this one
     core->schedule(NDS_SPU_SAMPLE, SPU_BATCH * 512 * 2);
-    for (; batchDone < SPU_BATCH; batchDone++)
-        mixSample();
+    mixSamples(SPU_BATCH);
     batchEnd = core->globalCycles + SPU_BATCH * 512 * 2;
     batchDone = 0;
     prefetch();
@@ -549,8 +564,7 @@ void Spu::syncSamples() {
     uint32_t now = arm7.halted ? core->globalCycles : arm7.cycles;
     if (now <= batchEnd - (SPU_BATCH - 1 - batchDone) * 512 * 2) return;
     uint32_t due = (now > batchEnd) ? SPU_BATCH : (SPU_BATCH - 1 - (batchEnd - now) / (512 * 2));
-    for (; batchDone < due; batchDone++)
-        mixSample();
+    mixSamples(due);
 }
 
 void Spu::resetCycles() {
@@ -558,37 +572,56 @@ void Spu::resetCycles() {
     batchEnd -= std::min(core->globalCycles, batchEnd);
 }
 
-void Spu::mixSample() {
-    // Push a dummy sample if disabled
-    if (!Settings::emulateAudio) return pushSample(0, 0);
+static inline int32_t scale128(int32_t value, int factor) {
+    // Work out value * factor / 128 rounded toward zero, for a factor up to 128, without the 64-bit product it can need:
+    // the low 7 bits of the value are multiplied apart from the rest, which keeps the result exact
+    uint32_t size = (value < 0) ? -value : value;
+    int32_t result = (size >> 7) * factor + (((size & 0x7F) * factor) >> 7);
+    return (value < 0) ? -result : result;
+}
 
-    // Mix the sound channels
-    // Samples are at most 16 bits, so channel values stay within 27 bits and the mix of 16 within 32;
-    // only the products for panning and master volume need 64 bits
-    int32_t mixerLeft = 0, mixerRight = 0;
-    int32_t channelsLeft[2] = {}, channelsRight[2] = {};
-    for (int i = 0; enabled >> i; i++) {
-        // Skip disabled channels
-        if (!(enabled & BIT(i))) continue;
-        uint32_t control = soundCnt[i];
-        uint8_t format = (control >> 29) & 0x3;
+void Spu::mixSamples(uint32_t due) {
+    // Mix the batch's samples up to the given one, a channel at a time over all of them so each channel's settings are
+    // worked out once; with capture on, a sample at a time instead, since capture writes memory that a channel can read
+    while (batchDone < due) {
+        uint32_t count = ((sndCapCnt[0] | sndCapCnt[1]) & BIT(7)) ? 1 : (due - batchDone);
+        mixChannels(count);
+        batchDone += count;
+    }
+}
+
+template <int format> void Spu::mixChannel(int i, uint32_t count, int32_t **outs) {
+    // Mix a channel into the given sums for each sample: the mixer's, then its own for channels 1 and 3, where present
+    int32_t *mixLeft = outs[0], *mixRight = outs[1], *keptLeft = outs[2], *keptRight = outs[3];
+    uint32_t control = soundCnt[i];
+    uint32_t loopStart = soundSad[i] + soundPnt[i] * 4;
+    uint32_t end = loopStart + soundLen[i] * 4;
+    bool loop = ((control & 0x18000000) >> 27 == 1);
+
+    // The volume divider leaves 4 fractional bits and the volume factor 11; (data << 7) * factor / 128 is exactly
+    // data * factor, so both are one multiplier
+    int divShift = (control & 0x00000300) >> 8;
+    if (divShift == 3) divShift++;
+    int mulFactor = (control & 0x0000007F);
+    if (mulFactor == 127) mulFactor++;
+    int32_t volume = mulFactor << (4 - divShift);
+    int panValue = (control & 0x007F0000) >> 16;
+    if (panValue == 127) panValue++;
+
+    for (uint32_t s = 0; s < count; s++) {
         int32_t data = 0;
 
         // Read the sample data
-        switch (format) {
-        case 0: // PCM8
+        if constexpr (format == 0) { // PCM8
             data = (int8_t)readData<uint8_t>(i, soundCurrent[i]) << 8;
-            break;
-
-        case 1: // PCM16
+        }
+        else if constexpr (format == 1) { // PCM16
             data = (int16_t)readData<uint16_t>(i, soundCurrent[i]);
-            break;
-
-        case 2: // ADPCM
+        }
+        else if constexpr (format == 2) { // ADPCM
             data = adpcmValue[i];
-            break;
-
-        case 3: // Pulse/Noise
+        }
+        else { // Pulse/Noise
             if (i >= 8 && i <= 13) { // Pulse waves
                 // Set the sample to low or high depending on the position in the duty cycle
                 uint8_t duty = 7 - ((control & 0x07000000) >> 24);
@@ -598,7 +631,6 @@ void Spu::mixSample() {
                 // Set the sample to low or high depending on the carry bit (saved as bit 15)
                 data = (noiseValues[i - 14] & BIT(15)) ? -0x7FFF : 0x7FFF;
             }
-            break;
         }
 
         // Increment the timer for the length of a sample
@@ -606,6 +638,7 @@ void Spu::mixSample() {
         // 16756991 / 32768 = ~512 cycles per sample
         soundTimers[i] += 512;
         bool overflow = (soundTimers[i] < 512);
+        bool ended = false;
 
         // Handle timer overflow
         while (overflow) {
@@ -613,15 +646,13 @@ void Spu::mixSample() {
             soundTimers[i] += soundTmr[i];
             overflow = (soundTimers[i] < soundTmr[i]);
 
-            switch (format) {
-            case 0: case 1: // PCM8/PCM16
+            if constexpr (format == 0 || format == 1) { // PCM8/PCM16
                 // Increment the data pointer by the size of one sample
                 soundCurrent[i] += 1 + format;
-                break;
-
-            case 2: { // ADPCM
+            }
+            else if constexpr (format == 2) { // ADPCM
                 // Save the ADPCM values at the loop position
-                if (soundCurrent[i] == soundSad[i] + soundPnt[i] * 4 && !adpcmToggle[i]) {
+                if (soundCurrent[i] == loopStart && !adpcmToggle[i]) {
                     adpcmLoopValue[i] = adpcmValue[i];
                     adpcmLoopIndex[i] = adpcmIndex[i];
                 }
@@ -630,31 +661,20 @@ void Spu::mixSample() {
                 uint8_t adpcmData = readData<uint8_t>(i, soundCurrent[i]);
                 adpcmData = adpcmToggle[i] ? ((adpcmData & 0xF0) >> 4) : (adpcmData & 0x0F);
 
-                // Calculate the sample difference, using masks since which bits are set can't be predicted
-                int32_t step = adpcmTable[adpcmIndex[i]];
-                int32_t diff = (step >> 3) + ((step >> 2) & -(adpcmData & 1)) + ((step >> 1) & -((adpcmData >> 1) & 1)) +
-                    (step & -((adpcmData >> 2) & 1));
-
-                // Apply the sample difference to the sample, adding it if the sign bit is set
-                int32_t negate = (adpcmData >> 3) - 1;
-                int32_t value = adpcmValue[i] + ((diff ^ negate) - negate);
+                // Apply the sample difference, clamping it to a 16-bit range
+                int32_t value = adpcmValue[i] + adpcmDiffs[adpcmIndex[i]][adpcmData];
                 if (value > 0x7FFF) value = 0x7FFF;
-                else if (value < -0x7FFF && negate) value = -0x7FFF;
+                else if (value < -0x7FFF && !(adpcmData & 0x8)) value = -0x7FFF;
                 adpcmValue[i] = value;
 
-                // Calculate the next index
-                adpcmIndex[i] += indexTable[adpcmData & 0x7];
-                if (adpcmIndex[i] < 0) adpcmIndex[i] = 0;
-                if (adpcmIndex[i] > 88) adpcmIndex[i] = 88;
+                // Move to the next index
+                adpcmIndex[i] = adpcmNext[adpcmIndex[i]][adpcmData & 0x7];
 
                 // Move to the next 4-bit ADPCM data
                 adpcmToggle[i] = !adpcmToggle[i];
                 if (!adpcmToggle[i]) soundCurrent[i]++;
-
-                break;
             }
-
-            case 3: // Pulse/Noise
+            else { // Pulse/Noise
                 if (i >= 8 && i <= 13) { // Pulse waves
                     // Increment the duty cycle counter
                     dutyCycles[i - 8] = (dutyCycles[i - 8] + 1) % 8;
@@ -669,16 +689,15 @@ void Spu::mixSample() {
                     else
                         noiseValues[i - 14] >>= 1;
                 }
-                break;
             }
 
             // Repeat or end the sound if the end of the data is reached
-            if (format != 3 && soundCurrent[i] >= soundSad[i] + (soundPnt[i] + soundLen[i]) * 4) {
-                if ((control & 0x18000000) >> 27 == 1) { // Loop infinite
+            if (format != 3 && soundCurrent[i] >= end) {
+                if (loop) { // Loop infinite
                     soundCurrent[i] = soundSad[i] + soundPnt[i] * 4;
 
                     // Restore the ADPCM values from the loop position
-                    if (format == 2) {
+                    if constexpr (format == 2) {
                         adpcmValue[i] = adpcmLoopValue[i];
                         adpcmIndex[i] = adpcmLoopIndex[i];
                         adpcmToggle[i] = false;
@@ -687,147 +706,172 @@ void Spu::mixSample() {
                 else { // One-shot
                     soundCnt[i] &= ~BIT(31);
                     enabled &= ~BIT(i);
+                    ended = true;
                     break;
                 }
             }
         }
 
-        // Apply the volume divider
-        // The sample now has 4 fractional bits
-        int divShift = (control & 0x00000300) >> 8;
-        if (divShift == 3) divShift++;
-        data <<= 4 - divShift;
 
-        // Apply the volume factor
-        // The sample now has 11 fractional bits; (data << 7) * factor / 128 is exactly data * factor
-        int mulFactor = (control & 0x0000007F);
-        if (mulFactor == 127) mulFactor++;
-        data *= mulFactor;
-
-        // Apply panning
+        // Apply the volume and panning
         // The samples are now rounded to 8 fractional bits
-        int panValue = (control & 0x007F0000) >> 16;
-        if (panValue == 127) panValue++;
-        int32_t dataLeft = (int64_t(data) * (128 - panValue) / 128) >> 3;
-        int32_t dataRight = (int64_t(data) * panValue / 128) >> 3;
+        data *= volume;
+        int32_t dataLeft = scale128(data, 128 - panValue) >> 3;
+        int32_t dataRight = scale128(data, panValue) >> 3;
+        if (keptLeft) {
+            keptLeft[s] = dataLeft;
+            keptRight[s] = dataRight;
+        }
+        if (mixLeft) {
+            mixLeft[s] += dataLeft;
+            mixRight[s] += dataRight;
+        }
 
-        // Redirect channels 1 and 3 if enabled
-        if (i == 1 || i == 3) {
-            channelsLeft[i >> 1] = dataLeft;
-            channelsRight[i >> 1] = dataRight;
-            if (mainSoundCnt & BIT(12 + (i >> 1)))
+        // A sound that ends still plays the sample it ended on, then nothing more
+        if (ended) break;
+    }
+}
+
+void Spu::mixChannels(uint32_t count) {
+    // Push dummy samples if disabled
+    if (!Settings::emulateAudio) {
+        for (uint32_t s = 0; s < count; s++)
+            pushSample(0, 0);
+        return;
+    }
+
+    // Mix the sound channels
+    // Samples are at most 16 bits, so channel values stay within 27 bits and the mix of 16 within 32
+    int32_t mixersLeft[SPU_BATCH] = {}, mixersRight[SPU_BATCH] = {};
+    int32_t channelsLeft[2][SPU_BATCH] = {}, channelsRight[2][SPU_BATCH] = {};
+    for (int i = 0; enabled >> i; i++) {
+        // Skip disabled channels
+        if (!(enabled & BIT(i))) continue;
+        uint8_t format = (soundCnt[i] >> 29) & 0x3;
+
+        // Channels 1 and 3 are kept for the output selection, and left out of the mixer if redirected
+        bool kept = (i == 1 || i == 3);
+        bool mixed = !kept || !(mainSoundCnt & BIT(12 + (i >> 1)));
+        int32_t *outs[4] = { mixed ? mixersLeft : nullptr, mixed ? mixersRight : nullptr,
+            kept ? channelsLeft[i >> 1] : nullptr, kept ? channelsRight[i >> 1] : nullptr };
+        switch (format) {
+            case 0: mixChannel<0>(i, count, outs); break;
+            case 1: mixChannel<1>(i, count, outs); break;
+            case 2: mixChannel<2>(i, count, outs); break;
+            case 3: mixChannel<3>(i, count, outs); break;
+        }
+    }
+
+    for (uint32_t s = 0; s < count; s++) {
+        int32_t mixerLeft = mixersLeft[s], mixerRight = mixersRight[s];
+        int32_t channelLeft[2] = { channelsLeft[0][s], channelsLeft[1][s] };
+        int32_t channelRight[2] = { channelsRight[0][s], channelsRight[1][s] };
+
+        // Capture sound
+        for (int i = 0; i < 2; i++) {
+            // Skip disabled capture channels
+            if (!(sndCapCnt[i] & BIT(7)))
                 continue;
-        }
 
-        // Add the channel to the mixer
-        mixerLeft += dataLeft;
-        mixerRight += dataRight;
-    }
+            // Increment the timer for the length of a sample
+            sndCapTimers[i] += 512;
+            bool overflow = (sndCapTimers[i] < 512);
 
-    // Capture sound
-    for (int i = 0; i < 2; i++) {
-        // Skip disabled capture channels
-        if (!(sndCapCnt[i] & BIT(7)))
-            continue;
+            // Handle timer overflow
+            while (overflow) {
+                // Reload the timer
+                sndCapTimers[i] += soundTmr[1 + (i << 1)];
+                overflow = (sndCapTimers[i] < soundTmr[1 + (i << 1)]);
 
-        // Increment the timer for the length of a sample
-        sndCapTimers[i] += 512;
-        bool overflow = (sndCapTimers[i] < 512);
+                // Get a sample from the mixer, clamped to be within range
+                int32_t sample = ((i == 0) ? mixerLeft : mixerRight);
+                if (sample > 0x7FFFFF) sample = 0x7FFFFF;
+                if (sample < -0x800000) sample = -0x800000;
 
-        // Handle timer overflow
-        while (overflow) {
-            // Reload the timer
-            sndCapTimers[i] += soundTmr[1 + (i << 1)];
-            overflow = (sndCapTimers[i] < soundTmr[1 + (i << 1)]);
-
-            // Get a sample from the mixer, clamped to be within range
-            int32_t sample = ((i == 0) ? mixerLeft : mixerRight);
-            if (sample > 0x7FFFFF) sample = 0x7FFFFF;
-            if (sample < -0x800000) sample = -0x800000;
-
-            // Write a sample to the buffer
-            if (sndCapCnt[i] & BIT(3)) { // PCM8
-                core->memory.write<uint8_t>(1, sndCapCurrent[i], sample >> 16);
-                sndCapCurrent[i]++;
-            }
-            else { // PCM16
-                core->memory.write<uint16_t>(1, sndCapCurrent[i], sample >> 8);
-                sndCapCurrent[i] += 2;
-            }
-
-            // Repeat or end the capture if the end of the buffer is reached
-            if (sndCapCurrent[i] >= sndCapDad[i] + sndCapLen[i] * 4) {
-                if (sndCapCnt[i] & BIT(2)) { // One-shot
-                    sndCapCnt[i] &= ~BIT(7);
-                    continue;
+                // Write a sample to the buffer
+                if (sndCapCnt[i] & BIT(3)) { // PCM8
+                    core->memory.write<uint8_t>(1, sndCapCurrent[i], sample >> 16);
+                    sndCapCurrent[i]++;
                 }
-                else { // Loop
-                    sndCapCurrent[i] = sndCapDad[i];
+                else { // PCM16
+                    core->memory.write<uint16_t>(1, sndCapCurrent[i], sample >> 8);
+                    sndCapCurrent[i] += 2;
+                }
+
+                // Repeat or end the capture if the end of the buffer is reached
+                if (sndCapCurrent[i] >= sndCapDad[i] + sndCapLen[i] * 4) {
+                    if (sndCapCnt[i] & BIT(2)) { // One-shot
+                        sndCapCnt[i] &= ~BIT(7);
+                        continue;
+                    }
+                    else { // Loop
+                        sndCapCurrent[i] = sndCapDad[i];
+                    }
                 }
             }
         }
-    }
 
-    // Get the left output sample
-    int64_t sampleLeft;
-    switch ((mainSoundCnt & 0x0300) >> 8) { // Left output selection
-        case 0: sampleLeft = mixerLeft; break; // Mixer
-        case 1: sampleLeft = channelsLeft[0]; break; // Channel 1
-        case 2: sampleLeft = channelsLeft[1]; break; // Channel 3
-        case 3: sampleLeft = channelsLeft[0] + channelsLeft[1]; break; // Channel 1 + 3
-    }
-
-    // Get the right output sample
-    int64_t sampleRight;
-    switch ((mainSoundCnt & 0x0C00) >> 10) { // Right output selection
-        case 0: sampleRight = mixerRight; break; // Mixer
-        case 1: sampleRight = channelsRight[0]; break; // Channel 1
-        case 2: sampleRight = channelsRight[1]; break; // Channel 3
-        case 3: sampleRight = channelsRight[0] + channelsRight[1]; break; // Channel 1 + 3
-    }
-
-    // Apply the master volume
-    // The samples are now rounded to no fractional bits
-    int masterVol = (mainSoundCnt & 0x007F);
-    if (masterVol == 127) masterVol++;
-    sampleLeft = (sampleLeft * masterVol / 128) >> 8;
-    sampleRight = (sampleRight * masterVol / 128) >> 8;
-
-    // Process samples depending on audio settings
-    if (Settings::audio16Bit) {
-        // Apply sound bias and clipping, and convert to signed 16-bit
-        sampleLeft = (std::max(0, std::min<int32_t>(0xFFFF, sampleLeft + (soundBias << 6))) - 0x8000);
-        sampleRight = (std::max(0, std::min<int32_t>(0xFFFF, sampleRight + (soundBias << 6))) - 0x8000);
-    }
-    else {
-        // Convert to 10-bit, apply sound bias and clipping, and expand to signed 16-bit
-        sampleLeft = (std::max(0, std::min<int32_t>(0x3FF, (sampleLeft >> 6) + soundBias)) - 0x200) << 6;
-        sampleRight = (std::max(0, std::min<int32_t>(0x3FF, (sampleRight >> 6) + soundBias)) - 0x200) << 6;
-    }
-
-    // On a DSi, the output is shared with the DSP in the ratio SNDEXCNT sets, and can be muted or turned off there
-    if (core->dsiMode) {
-        uint16_t sndExCnt = core->dsiMic.readSndExCnt();
-        int16_t dsp[2];
-        core->dsiDsp.takeSample(dsp);
-        int ratio = std::min(8, sndExCnt & 0xF);
-        if ((sndExCnt & 0xC000) != 0x8000) {
-            sampleLeft = sampleRight = 0;
-        }
-        else if (ratio != 8) {
-            sampleLeft = (sampleLeft * ratio + dsp[0] * (8 - ratio)) >> 3;
-            sampleRight = (sampleRight * ratio + dsp[1] * (8 - ratio)) >> 3;
+        // Get the left output sample
+        int64_t sampleLeft;
+        switch ((mainSoundCnt & 0x0300) >> 8) { // Left output selection
+            case 0: sampleLeft = mixerLeft; break; // Mixer
+            case 1: sampleLeft = channelLeft[0]; break; // Channel 1
+            case 2: sampleLeft = channelLeft[1]; break; // Channel 3
+            case 3: sampleLeft = channelLeft[0] + channelLeft[1]; break; // Channel 1 + 3
         }
 
-        // The amplifier after it follows the MCU's volume level, scaled evenly from silent at 0 to full at 31 as
-        // melonDS's volume sync does
-        int volume = core->i2c.volume();
-        if (volume != 0x1F) {
-            sampleLeft = sampleLeft * volume / 0x1F;
-            sampleRight = sampleRight * volume / 0x1F;
+        // Get the right output sample
+        int64_t sampleRight;
+        switch ((mainSoundCnt & 0x0C00) >> 10) { // Right output selection
+            case 0: sampleRight = mixerRight; break; // Mixer
+            case 1: sampleRight = channelRight[0]; break; // Channel 1
+            case 2: sampleRight = channelRight[1]; break; // Channel 3
+            case 3: sampleRight = channelRight[0] + channelRight[1]; break; // Channel 1 + 3
         }
+
+        // Apply the master volume
+        // The samples are now rounded to no fractional bits
+        int masterVol = (mainSoundCnt & 0x007F);
+        if (masterVol == 127) masterVol++;
+        sampleLeft = scale128(sampleLeft, masterVol) >> 8;
+        sampleRight = scale128(sampleRight, masterVol) >> 8;
+
+        // Process samples depending on audio settings
+        if (Settings::audio16Bit) {
+            // Apply sound bias and clipping, and convert to signed 16-bit
+            sampleLeft = (std::max(0, std::min<int32_t>(0xFFFF, sampleLeft + (soundBias << 6))) - 0x8000);
+            sampleRight = (std::max(0, std::min<int32_t>(0xFFFF, sampleRight + (soundBias << 6))) - 0x8000);
+        }
+        else {
+            // Convert to 10-bit, apply sound bias and clipping, and expand to signed 16-bit
+            sampleLeft = (std::max(0, std::min<int32_t>(0x3FF, (sampleLeft >> 6) + soundBias)) - 0x200) << 6;
+            sampleRight = (std::max(0, std::min<int32_t>(0x3FF, (sampleRight >> 6) + soundBias)) - 0x200) << 6;
+        }
+
+        // On a DSi, the output is shared with the DSP in the ratio SNDEXCNT sets, and can be muted or turned off there
+        if (core->dsiMode) {
+            uint16_t sndExCnt = core->dsiMic.readSndExCnt();
+            int16_t dsp[2];
+            core->dsiDsp.takeSample(dsp);
+            int ratio = std::min(8, sndExCnt & 0xF);
+            if ((sndExCnt & 0xC000) != 0x8000) {
+                sampleLeft = sampleRight = 0;
+            }
+            else if (ratio != 8) {
+                sampleLeft = (sampleLeft * ratio + dsp[0] * (8 - ratio)) >> 3;
+                sampleRight = (sampleRight * ratio + dsp[1] * (8 - ratio)) >> 3;
+            }
+
+            // The amplifier after it follows the MCU's volume level, scaled evenly from silent at 0 to full at 31 as
+            // melonDS's volume sync does
+            int volume = core->i2c.volume();
+            if (volume != 0x1F) {
+                sampleLeft = sampleLeft * volume / 0x1F;
+                sampleRight = sampleRight * volume / 0x1F;
+            }
+        }
+        pushSample(sampleLeft, sampleRight);
     }
-    pushSample(sampleLeft, sampleRight);
 }
 
 void Spu::pushSample(int16_t sampleLeft, int16_t sampleRight) {

@@ -236,7 +236,7 @@ INTERPRETER_MUTATIONS = [
 # Bugs only a game.sh option can see, numbered after those and left out of mutate.sh, which runs the cases above
 GAME_MUTATIONS = [
     ('memory/memory.cpp', '        if (uint8_t *mapping = *(uint8_t *volatile*)&mappings[m])\n            value |= readLsb<T>(&mapping[address]);', '        value |= readLsb<T>(&mappings[m][address]);'), # game 112: a VRAM read follows a missing pointer, for vramstress
-    ('io/spu.cpp', 'int32_t negate = (adpcmData >> 3) - 1;', 'int32_t negate = -int32_t(adpcmData >> 3);'), # game 113: ADPCM has its sign backwards, for audio; generated code and the interpreter share it, so compare with a run without it
+    ('io/spu.cpp', 'adpcmDiffs[index][data] = (data & 8) ? diff : -diff;', 'adpcmDiffs[index][data] = (data & 8) ? -diff : diff;'), # game 113: ADPCM has its sign backwards, for audio; generated code and the interpreter share it, so compare with a run without it
     ('io/spu.cpp', 'float fraction = ringPosition - index;', 'float fraction = 0;'), # game 114: the ring's output doesn't interpolate, for ring; compare with a run without it too
 ]
 if plant:
