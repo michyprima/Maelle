@@ -575,7 +575,8 @@ const char *stateLayout(const char *type) {
         { "6Vector", "4*3" },
         { "10SchedEvent", "4 4" },
         { "6Vertex", "4*4 2 2 4" },
-        { "8_Polygon", "4 4 2 2 1*6 2 1*11" }
+        { "8_Polygon", "4 4 2 2 1*6 2 1*11" },
+        { "N9DsiCamera6SensorE", "1 1 2*9 1*32768" }
     };
     for (auto &layout: layouts)
         if (!strcmp(layout.first, type)) return layout.second;
