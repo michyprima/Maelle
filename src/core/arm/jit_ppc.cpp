@@ -2662,11 +2662,15 @@ void *Jit::generate(JitBlock *block) {
     block->entries.clear();
     block->entriesBehind.clear();
     block->entriesCycles.clear();
+    block->entries.reserve(block->instrs.size());
+    block->entriesBehind.reserve(block->instrs.size());
+    block->entriesCycles.reserve(block->instrs.size());
     runCycles = 0;
     pcBehind = 0;
     thumbCode = block->thumb;
     fullSpeed = arm7 && (block->address < 0x10000 || (codeFullSpeed && !Interpreter::mainRam(block->address)));
     block->links.clear();
+    block->links.reserve(4);
     fetchPaths.clear();
     listCalls.clear();
     if (codePtr == codeStart) listStubs.clear(); // The area started over, so the routines are gone
@@ -2710,7 +2714,8 @@ void *Jit::generate(JitBlock *block) {
     // Link jumps between this block and others while the area is writable
     uint8_t *code = codePtr;
     size_t size = (uint8_t*)e.here() - code;
-    std::vector<uint32_t*> patched;
+    std::vector<uint32_t*> &patched = patchedSites;
+    patched.clear();
     if (ok) {
         block->code = code;
         JS_START(linkStart);
@@ -2771,7 +2776,8 @@ void Jit::linkEntry(JitBlock *block) {
         finishCode((uint8_t*)block->code, ENTRY_SIZE, std::vector<uint32_t*>());
         return;
     }
-    std::vector<uint32_t*> patched;
+    std::vector<uint32_t*> &patched = patchedSites;
+    patched.clear();
     linkBlock(block, patched);
     finishCode((uint8_t*)block->code, ENTRY_SIZE, patched);
 }

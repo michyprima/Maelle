@@ -296,10 +296,13 @@ JitBlock *Jit::compile(uint32_t address, bool thumb, uint8_t *host, int index) {
     // Otherwise decode instructions until one that ends the block, the end of the page, or the size limit
     // The page is the guest's, since host memory isn't page aligned and the next guest page can be somewhere else
     JS_START(decodeStart);
+    // They're decoded into a list here first, so the block's list is allocated once, at the right size
     uint8_t *pageEnd = host + (0x1000 - (address & 0xFFF));
     uint8_t *ptr = host;
-    while (!block->code && ptr < pageEnd && block->instrs.size() < MAX_INSTRS) {
-        JitInstr instr;
+    JitInstr decoded[MAX_INSTRS];
+    int count = 0;
+    while (!block->code && ptr < pageEnd && count < MAX_INSTRS) {
+        JitInstr &instr = decoded[count++];
         if (thumb) {
             instr.opcode = readLsb<uint16_t>(ptr);
             instr.thumb = Interpreter::thumbInstrs[(instr.opcode >> 6) & 0x3FF];
@@ -310,10 +313,12 @@ JitBlock *Jit::compile(uint32_t address, bool thumb, uint8_t *host, int index) {
             instr.arm = Interpreter::armInstrs[((instr.opcode >> 16) & 0xFF0) | ((instr.opcode >> 4) & 0xF)];
             ptr += 4;
         }
-        block->instrs.push_back(instr);
         if (endsBlock(instr.opcode, thumb)) break;
     }
-    if (!block->code) block->end = ptr;
+    if (!block->code) {
+        block->instrs.assign(decoded, decoded + count);
+        block->end = ptr;
+    }
     JS_ADD(JS_DECODE, decodeStart);
 
     // Replace any block already at this position
@@ -508,10 +513,19 @@ void Jit::protect(int page) {
             if (mem.writeMap9A[i] == host) mem.writeMap9A[i] = nullptr;
         return;
     }
+    // Main RAM is mapped at its offset within each mirror by the RAM mask, so only those pages can point to it, unless
+    // it's the GBA's, which mirrors less of it
     bool ram = uintptr_t(host - mem.ram) < mem.ramSize;
+    uint32_t first = 0, step = 1;
+    if (ram && !core->gbaMode) {
+        uint32_t offset = host - mem.ram, mask = mem.ramMask();
+        if (offset & ~mask) return;
+        first = offset >> 12;
+        step = (mask + 1) >> 12;
+    }
     for (int area = 0; area < ((ram && core->dsiMode) ? 2 : 1); area++) {
         uint32_t start = area ? 0x0C000 : ram ? 0x02000 : 0x03000;
-        for (uint32_t i = start; i < start + 0x1000; i++) {
+        for (uint32_t i = start + first; i < start + 0x1000; i += step) {
             if (mem.writeMap9A[i] == host) mem.unmapJit(mem.writeMap9A, i);
             if (mem.writeMap9B[i] == host) mem.unmapJit(mem.writeMap9B, i);
             if (mem.writeMap7[i] == host) mem.unmapJit(mem.writeMap7, i);

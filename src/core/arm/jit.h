@@ -226,6 +226,7 @@ private:
     void *codeFetch[2] = {}; // Fetching a line into the ARM9's code cache, with a second for when it might be there already
     std::vector<JitFetch> fetchPaths; // Fetches to generate after the code being generated
     std::vector<JitListCall> listCalls; // Calls to point at their routines after the code being generated
+    std::vector<uint32_t*> patchedSites; // Jumps patched when linking the code being generated, kept to save allocating
     std::unordered_map<uint32_t, void*> listStubs; // Routines for block loads and stores made since the area started over
     void *codeCond[7] = {}, *codeFlags[5] = {}, *codeMemory[6] = {}, *codeShift[4] = {}, *codeShiftCarry[4] = {}, *codeMultiplyCycles = nullptr, *codeMultiplyCyclesUnsigned = nullptr, *codeOverflowQ = nullptr, *codeMsr[2] = {}, *codeReturn = nullptr;
     int offPc = 0, offCpsr = 0, offSpsr = 0, offCycles = 0, offEventCycles = 0, offUsr = 0, offRegs = 0, offIe = 0, offIrf = 0;
