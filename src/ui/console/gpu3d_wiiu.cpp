@@ -176,6 +176,10 @@ private:
     std::condition_variable cond;
     Gpu3DRenderer *job = nullptr;
     std::atomic<bool> busy;
+#ifdef GPU_CRC
+    uint32_t jobFrame = 0; // The emulated frame a job was handed over in
+    std::vector<uint32_t> crcs; // Records of frame, hash, polygon count and 3D display control, to write to gpucrc.bin
+#endif
 
     static int threadEntry(int argc, void *argv);
     void run();
@@ -471,6 +475,9 @@ void Gpu3DWiiU::render(Gpu3DRenderer *renderer) {
     std::lock_guard<std::mutex> guard(mutex);
     busy.store(true);
     job = renderer;
+#ifdef GPU_CRC
+    jobFrame = renderer->getCore()->gpu.frameNumber;
+#endif
     cond.notify_one();
 }
 
@@ -1815,6 +1822,31 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
         renderer->hardwareDone(y);
     }
     HB_ADD_US(HB_GPU_CONVERT_US, hbConvert);
+
+#ifdef GPU_CRC
+    // Check builds hash every finished frame, all of its packed pixels at whatever resolution, to compare the GPU's
+    // output between builds frame by frame; the records are written out every 256 frames
+    {
+        uint32_t hash = 0x811C9DC5;
+        for (int y = 0; y < height; y++) {
+            const uint32_t *row = (uint32_t*)packedBuffer.surface.image + y * packedBuffer.surface.pitch;
+            for (int x = 0; x < width; x++)
+                hash = (hash ^ row[x]) * 0x01000193;
+        }
+        uint32_t record[] = { jobFrame, hash, uint32_t(polygonCount), disp3DCnt };
+        crcs.insert(crcs.end(), record, record + 4);
+        if (crcs.size() >= 256 * 4) {
+            static bool started = false;
+            std::lock_guard<FileLock> fileGuard(fileLock());
+            if (FILE *file = fopen((Settings::basePath + "/gpucrc.bin").c_str(), started ? "ab" : "wb")) {
+                fwrite(crcs.data(), 4, crcs.size(), file);
+                fclose(file);
+            }
+            started = true;
+            crcs.clear();
+        }
+    }
+#endif
 
     // Hand over the UI's copy once it's done too
     if (copy) {
