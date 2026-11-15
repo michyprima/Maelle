@@ -143,9 +143,15 @@ generated code that isn't flushed to the instruction cache, and anything to do w
 
 `GUEST_PROFILE=first:last:file` counts the PowerPC instructions run at each address from frame `first` to before `last`, the
 C++ included, and saves them to the file as lines of address and count, with generated code as one line at the codegen area's
-start; `powerpc-eabi-nm` on `guest.elf` in the build folder names the functions. Counting starts at the first frame, and
-makes those frames many times slower. `GUEST_CALLERS=address,...` also counts where calls to those function addresses came
-from, by their link register. They're instructions, not time: on the console, code that mostly moves data between buffers or
+start. Counting starts at the first frame, and makes those frames many times slower. `GUEST_CALLERS=address,...` also
+counts where calls to those function addresses came from, by their link register. `guest/profile.py` sums the file up by
+function, lists the callers, or shows a function's instructions and source lines with their counts:
+
+```
+tests/jit/guest/profile.py <guest.elf> <file> <frames counted> [functions [N] | callers | annotate <function or address>]
+```
+
+It needs the `guest.elf` that made the file, from the build folder, since building again moves the addresses. They're instructions, not time: on the console, code that mostly moves data between buffers or
 threads can take the same time with fewer of them, so check a change there with the console's frame log.
 
 ### Comparing with a release
