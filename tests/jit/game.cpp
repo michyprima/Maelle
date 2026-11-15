@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <unistd.h>
 #include <thread>
@@ -37,11 +38,40 @@ static void fatal(const char *format, ...) {
     _exit(3);
 }
 
+// A hash of the sound made, since the screens can't show anything wrong with it, and somewhere to save it: both builds
+// have the core's AUDIO_CAPTURE hook, which hands this each sample as it's made, left channel in the low half
+static uint64_t audioHash = 0, audioCount = 0;
+static FILE *audioFile = nullptr;
+namespace FrameLog {
+    void audioProduced(uint32_t sample) {
+        audioHash = (audioHash ^ sample) * 0x100000001B3ULL;
+        audioCount++;
+        if (!audioFile) return;
+        uint8_t bytes[4] = { uint8_t(sample), uint8_t(sample >> 8), uint8_t(sample >> 16), uint8_t(sample >> 24) };
+        fwrite(bytes, 1, 4, audioFile);
+    }
+}
+
+static void writeLittle(FILE *file, const uint32_t *words, int count) {
+    // Write words little-endian on either host, as WAV files have them
+    for (int i = 0; i < count; i++) {
+        uint8_t bytes[4] = { uint8_t(words[i]), uint8_t(words[i] >> 8), uint8_t(words[i] >> 16), uint8_t(words[i] >> 24) };
+        fwrite(bytes, 1, 4, file);
+    }
+}
+
+static void finishWav(FILE *file) {
+    // Fill in the header now that the length is known, for 32768 Hz 16-bit stereo
+    uint32_t bytes = ftell(file) - 44, rate = 32768, wide = 4 | (uint32_t(16) << 16);
+    uint32_t words[11] = { 0x46464952, bytes + 36, 0x45564157, 0x20746D66, 16, 0x00020001, rate, rate * 4, wide, 0x61746164, bytes };
+    fseek(file, 0, SEEK_SET);
+    writeLittle(file, words, 11);
+    fclose(file);
+}
+
 #ifdef JIT_GUEST
 // What patch.py adds to the core for the Mac, which this build has as it is
 void (*rigSetup)(Jit &jit) = nullptr;
-uint64_t rigAudioHash = 0;
-FILE *rigAudioFile = nullptr;
 int rigPoison = 0;
 uint64_t rigFlagStats[2];
 static uint64_t enters, calls, ppcOps[2];
@@ -50,8 +80,6 @@ static bool exactCount;
 #include <unicorn/unicorn.h>
 
 extern void (*rigSetup)(Jit &jit);
-extern uint64_t rigAudioHash;
-extern FILE *rigAudioFile;
 extern int rigPoison;
 extern uint64_t rigFlagStats[2];
 
@@ -586,7 +614,7 @@ const char *stateLayout(const char *type) {
 int main(int argc, char **argv) {
     if (argc < 5) {
         printf("Usage: game <system files folder> <rom, or - for none> <interp|portable|native|clear|set> <frames> [fast] [dsi] [firmware] [press=N] "
-            "[start=N] [touch=N] [trace=frame] [ppm=path] [shots=N] [sd=path] [dsplle] [mictone=Hz] [state=save:load] [statefile=path] [headphones=N] [results=path] [ram=path] [dump=address:size:path] [audio] [wav=path] [keys=frame:key,...] [taps=frame:x:y,...] [wifi] [realtime] [live] [window] [input] [exact] [highres] [worker3d] [romtest=path]\n");
+            "[start=N] [touch=N] [trace=frame] [ppm=path] [shots=N] [sd=path] [dsplle] [mictone=Hz] [state=save:load] [statefile=path] [headphones=N] [results=path] [ram=path] [dump=address:size:path] [audio] [wav=path] [ring] [ringwav=path] [late=frame:refreshes,...] [keys=frame:key,...] [taps=frame:x:y,...] [wifi] [realtime] [live] [window] [input] [exact] [highres] [worker3d] [romtest=path]\n");
         return 2;
     }
     std::string files = argv[1], mode = argv[3];
@@ -594,7 +622,9 @@ int main(int argc, char **argv) {
     int stateSave = -1, stateLoad = -1, micTone = 0;
     bool fast = false, dsi = false, firmware = false, window = false, wifi = false, realtime = false, input = false;
     bool threads = false, worker3D = false, stress = false, audio = false, highRes = false;
-    std::string ppm, results, ramFile, wav, sdImage, romtest, stateFile;
+    bool ring = false;
+    std::string ppm, results, ramFile, wav, ringWav, sdImage, romtest, stateFile;
+    std::map<int, int> late; // Frames the console would take longer than a refresh over, and how many refreshes they take
     struct Dump { uint32_t address, size; std::string path; };
     std::vector<Dump> dumps;
     std::vector<std::pair<int, int>> inputs; // Frame and key to press then, for 2 frames
@@ -639,6 +669,18 @@ int main(int argc, char **argv) {
         }
         else if (arg.rfind("romtest=", 0) == 0) romtest = arg.substr(8); // Where tests/rom's ROM saves its results
         else if (arg.rfind("wav=", 0) == 0) { wav = arg.substr(4); audio = true; }
+        else if (arg == "ring") ring = audio = true; // Play the sound through the ring as the console does, see playRefresh
+        else if (arg.rfind("ringwav=", 0) == 0) { ringWav = arg.substr(8); ring = audio = true; }
+        else if (arg.rfind("late=", 0) == 0) {
+            // Comma-separated frame:refreshes pairs, which turn on ring
+            for (size_t at = 5; at < arg.size();) {
+                size_t end = arg.find(',', at);
+                std::string pair = arg.substr(at, end == std::string::npos ? std::string::npos : end - at);
+                late[atoi(pair.c_str())] = atoi(pair.c_str() + pair.find(':') + 1);
+                at = (end == std::string::npos) ? arg.size() : end + 1;
+            }
+            ring = audio = true;
+        }
         else if (arg.rfind("keys=", 0) == 0) {
             // Comma-separated frame:key pairs, keys numbered as KEYINPUT bits, then 10 and 11 for X and Y
             for (size_t at = 5; at < arg.size();) {
@@ -691,12 +733,16 @@ int main(int argc, char **argv) {
     Settings::threaded2D = threads;
     Settings::threaded3D = worker3D ? 1 : 0;
     Settings::emulateAudio = audio;
-    if (!wav.empty()) {
+    FILE *ringFile = nullptr;
+    for (auto file: { std::make_pair(&audioFile, &wav), std::make_pair(&ringFile, &ringWav) }) {
         // Room for the WAV header, filled in at the end
-        if (!(rigAudioFile = fopen(wav.c_str(), "wb"))) fatal("couldn't write %s", wav.c_str());
-        fseek(rigAudioFile, 44, SEEK_SET);
+        if (file.second->empty()) continue;
+        if (!(*file.first = fopen(file.second->c_str(), "wb"))) fatal("couldn't write %s", file.second->c_str());
+        fseek(*file.first, 44, SEEK_SET);
     }
-    Settings::fpsLimiter = 0;
+    // With ring, the sound goes through the ring buffer the console reads when syncing to the display
+    Settings::fpsLimiter = ring ? 1 : 0;
+    Settings::syncToDisplay = ring;
     Settings::fast2D = threads;
     Settings::highRes3D = highRes;
     Settings::hardware3D = 0;
@@ -726,7 +772,7 @@ int main(int argc, char **argv) {
 #ifdef JIT_GUEST
     // Generated code runs directly, so only the modes that don't need the Mac's changes to the core are here
     if (mode == "clear" || mode == "set") fatal("mode %s needs the Mac's build", mode.c_str());
-    if (window || wifi || !wav.empty() || audio) fatal("the window, Wi-Fi and audio need the Mac's build");
+    if (window || wifi) fatal("the window and Wi-Fi need the Mac's build");
 #else
     // Native code runs in the emulator; the portable executor runs when there's no code area
     void *area;
@@ -775,6 +821,23 @@ int main(int argc, char **argv) {
         fclose(out);
     };
     uint64_t last = 0;
+
+    // With ring, a refresh of the console's display plays 1/59.94 of a second of sound, read from the ring 512 samples
+    // at a time as the console's audio callback asks for them, while the emulator waits for each refresh after a frame,
+    // unless frames that took longer saved up refreshes, at most 2, or left the ring low, as ConsoleUI::waitForDisplay
+    // does; late gives the frames that took longer, and every other frame is taken to be done within its refresh
+    uint64_t ringHash = 0, refreshes = 0, played = 0;
+    int ticks = 0;
+    auto playRefresh = [&]() {
+        refreshes++;
+        for (uint64_t due = refreshes * 32768 * 1001 / 60000; played + 512 <= due; played += 512) {
+            uint32_t *out = core->spu.getSamples(512);
+            for (int j = 0; j < 512; j++)
+                ringHash = (ringHash ^ out[j]) * 0x100000001B3ULL;
+            if (ringFile) writeLittle(ringFile, out, 512);
+            delete[] out;
+        }
+    };
     auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < frames; i++) {
         // Quitting from the menu bar ends the run early, and so does closing the window when it gives the input
@@ -843,6 +906,16 @@ int main(int argc, char **argv) {
             stateSwap = false;
         }
         do core->runCore(); while (!core->frameEnded.exchange(false));
+        if (ring) {
+            auto took = late.find(i);
+            for (int r = 0; took != late.end() && r < took->second; r++) {
+                playRefresh();
+                ticks = std::min(2, ticks + 1);
+            }
+            if (core->spu.ringLow()) ticks = 0;
+            else if (ticks) ticks--;
+            else playRefresh();
+        }
         if (realtime) std::this_thread::sleep_until(start + std::chrono::microseconds(int64_t(i + 1) * 1000000 / 60));
         if (core->gpu.getFrame(frame, false)) {
             last = hashWords(frame, 256 * 192 * 2);
@@ -867,22 +940,19 @@ int main(int argc, char **argv) {
         Interpreter &arm9 = core->interpreter[0], &arm7 = core->interpreter[1];
         printf("frame %d\tscreen %016llX\tcycles %u %u %u\tpc %08X %08X", i, (unsigned long long)last,
             core->globalCycles, arm9.cycles, arm7.cycles, arm9.registersUsr[15], arm7.registersUsr[15]);
-        if (audio) printf("\taudio %016llX", (unsigned long long)rigAudioHash);
+        // The count of samples made shows how far the sound is from the frames when it moves, and the ring's level how
+        // far behind the frames it's played, in samples and milliseconds
+        if (audio) printf("\taudio %016llX made %llu", (unsigned long long)audioHash, (unsigned long long)audioCount);
+        if (ring) printf("\tring %016llX dry %u level %u %.1f ms", (unsigned long long)ringHash, core->spu.ringDry,
+            core->spu.ringLevel(), core->spu.ringLevel() * 1000.0 / 32768);
         printf("\n");
 #ifdef JIT_GUEST
         // Each frame's line reaches the host as the frame ends, so it can tell frames apart for GUEST_PROFILE
         fflush(stdout);
 #endif
     }
-    if (rigAudioFile) {
-        // Fill in the header now that the length is known
-        uint32_t bytes = ftell(rigAudioFile) - 44, rate = 32768, wide = 4 | (uint32_t(16) << 16);
-        uint32_t words[11] = { 0x46464952, bytes + 36, 0x45564157, 0x20746D66, 16, 0x00020001, rate, rate * 4, wide, 0x61746164, bytes };
-        fseek(rigAudioFile, 0, SEEK_SET);
-        fwrite(words, 4, 11, rigAudioFile);
-        fclose(rigAudioFile);
-        rigAudioFile = nullptr;
-    }
+    if (FILE *file = audioFile) { audioFile = nullptr; finishWav(file); }
+    if (ringFile) finishWav(ringFile);
     core->cartridgeNds.writeSave();
     Memory &mem = core->memory;
     printf("ram %016llX\twram %016llX\n", (unsigned long long)hash(mem.ram, mem.ramSize),

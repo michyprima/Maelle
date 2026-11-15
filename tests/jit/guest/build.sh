@@ -16,13 +16,15 @@ if [ "$mutation" != 0 ]; then
     python3 -I "$here/../patch.py" "$out/new" "$mutation" plant
     rsync -rc --delete "$out/new/" "$out/src/"
     core="$out/src"
+    mkdir -p "$out/ui/console"; cp "$here/../../../src/ui/console/frame_log.h" "$out/ui/console/"
 fi
 
-# As in the Makefile, without wut, which only the network code uses, and with the harness's coreinit for the codegen area
+# As in the Makefile, without wut, which only the network code uses, and with the harness's coreinit for the codegen area;
+# FRAME_LOG and AUDIO_CAPTURE give game.cpp the sound, as in the console's debug builds
 machine="-DESPRESSO -mcpu=750 -meabi -mhard-float"
 dirs=$(cd "$core"; find . -type d -not -path './faad2*' -not -path './net/libslirp*' | sed "s|^\.|-I$core|")
 flags="-g -Ofast -fno-allow-store-data-races -flto -ffunction-sections $machine -DENDIAN_BIG -DNO_FDOPEN -DLOG_LEVEL=0
-    -DJIT_GUEST $JIT_TEST_CFLAGS -I$here -I$here/include $dirs -w"
+    -DJIT_GUEST -DFRAME_LOG -DAUDIO_CAPTURE $JIT_TEST_CFLAGS -I$here -I$here/include $dirs -w"
 faad="-g -O2 -w -ffunction-sections $machine -DHAVE_INTTYPES_H=1 -DHAVE_MEMCPY=1 -DHAVE_STRING_H=1 -DHAVE_STRINGS_H=1
     -DHAVE_SYS_STAT_H=1 -DHAVE_SYS_TYPES_H=1 -DHAVE_LRINTF=1 -DPACKAGE_VERSION=\"2.11.4\" -DAPPLY_DRC -DLC_ONLY_DECODER
     -DDISABLE_SBR -I$core/faad2"

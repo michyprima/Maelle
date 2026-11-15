@@ -110,14 +110,6 @@ if game:
         '        rigEnter(*this, limit, block->code);'),
         ('#include <algorithm>\n', '#include <algorithm>\nclass Jit;\nvoid rigEnter(Jit &jit, const uint32_t *limit, void *code);\n'))
 
-    # A hash of the sound made, since the screens can't show anything wrong with it, and somewhere to save it
-    edit('io/spu.cpp', ('void Spu::pushSample(int16_t sampleLeft, int16_t sampleRight) {\n', 'uint64_t rigAudioHash = 0;\nFILE *rigAudioFile = nullptr;\n'
-        'void Spu::pushSample(int16_t sampleLeft, int16_t sampleRight) {\n'
-        '    rigAudioHash = (rigAudioHash ^ uint16_t(sampleLeft) ^ (uint64_t(uint16_t(sampleRight)) << 16)) * 0x100000001B3ULL;\n'
-        '    if (rigAudioFile) { int16_t rigSample[2] = { sampleLeft, sampleRight }; fwrite(rigSample, 2, 2, rigAudioFile); }\n'))
-    spu = open(root + '/io/spu.cpp').read()
-    open(root + '/io/spu.cpp', 'w').write('#include <cstdio>\n' + spu)
-
     # The console's build sets a VRAM mapping's count before its pointer, which matters to a 2D thread reading it
     edit('memory/memory.cpp', ('    mappings[count++] = mapping;', '    uint8_t next = count;\n    *(volatile uint8_t*)&count = next + 1;\n'
         '    *(uint8_t *volatile*)&mappings[next] = mapping;'))
@@ -245,6 +237,7 @@ INTERPRETER_MUTATIONS = [
 GAME_MUTATIONS = [
     ('memory/memory.cpp', '        if (uint8_t *mapping = *(uint8_t *volatile*)&mappings[m])\n            value |= readLsb<T>(&mapping[address]);', '        value |= readLsb<T>(&mappings[m][address]);'), # game 112: a VRAM read follows a missing pointer, for vramstress
     ('io/spu.cpp', 'int32_t negate = (adpcmData >> 3) - 1;', 'int32_t negate = -int32_t(adpcmData >> 3);'), # game 113: ADPCM has its sign backwards, for audio; generated code and the interpreter share it, so compare with a run without it
+    ('io/spu.cpp', 'float fraction = ringPosition - index;', 'float fraction = 0;'), # game 114: the ring's output doesn't interpolate, for ring; compare with a run without it too
 ]
 if plant:
     text = open(path).read()

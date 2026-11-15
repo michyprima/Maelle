@@ -71,8 +71,19 @@ program counters, then hashes of RAM and WRAM, and every way is compared with th
 - `press=N`, `start=N` and `touch=N` to press A, press START or touch the middle of the bottom screen every N frames
 - `keys=frame:key,...` to press keys at given frames, numbered like KEYINPUT's bits, then 10 and 11 for X and Y
 - `taps=frame:x:y,...` to touch the bottom screen at given frames and positions, for 8 frames each
-- `audio` to mix the sound as well, which is left out otherwise for speed, and add a running hash of it to every frame's line, so comparing runs shows the first frame it differs on
+- `audio` to mix the sound as well, which is left out otherwise for speed, and add a running hash of it to every frame's
+  line, so comparing runs shows the first frame it differs on, with how many samples have been made by then, which shows
+  the sound moving against the frames as a count
 - `wav=file` to also save the sound as a WAV file, at 32768 Hz in 16-bit stereo, which turns on `audio`
+- `ring` to also play the sound the way the console does when syncing to the display: samples go through the ring buffer,
+  and after each frame a refresh's worth, 1/59.94 of a second, is read back 512 at a time as the console's audio callback
+  reads it, unless saved-up refreshes or a low ring let the emulator go on without waiting, as `ConsoleUI::waitForDisplay`
+  does. Every frame's line then also has a running hash of what was played, how many samples the ring ran dry for, which
+  repeat the last one, and how many are in the ring, in samples and milliseconds, which is how far behind the frames the
+  sound is played. It turns on `audio`
+- `late=frame:refreshes,...` to have those frames take that many refreshes, as a slow frame would on the console, so the
+  ring runs low or dry and the emulator catches up, which turns on `ring`; every other frame is taken to fit in its refresh
+- `ringwav=file` to save what `ring` played as a WAV file too, like `wav`
 - `realtime` to run at most 60 frames a second, to watch a run in its window or give a network real time to answer
 - `highres` to draw 3D at twice the resolution, as high-res 3D does with the software renderer; saved screens are then
   twice as wide and tall
@@ -81,7 +92,8 @@ program counters, then hashes of RAM and WRAM, and every way is compared with th
 - `worker3d` to execute geometry commands on a worker thread, as the console does, instead of as they're taken from the FIFO
 - `vramstress` to run only a test of VRAM reads from another thread during VRAM bank changes, which ignores the frame count
   and exits as soon as it's done, or crashes if a read can follow a mapping that's only partly there. Planted bug 112 removes
-  what stops that, so `--mutate 112` with this option should crash; `mutate.sh` doesn't run it, since it runs the cases above. Planted bug 113 breaks ADPCM sound for both the interpreter and generated code, so check it by comparing an `audio` run against one without it
+  what stops that, so `--mutate 112` with this option should crash; `mutate.sh` doesn't run it, since it runs the cases above. Planted bug 113 breaks ADPCM sound for both the interpreter and generated code, so check it by comparing an `audio` run against one without it, and planted bug 114 stops the ring's output from
+  interpolating, which only `ring`'s hash shows, the same way
 - `romtest=file` to run `tests/rom`'s ROM, saving its results there and stopping when it's done; it needs the registers the
   ROM talks to, so build with `JIT_TEST_CFLAGS=-DROM_TEST`. The frames differ from run to run, since the ROM times itself
   with the real clock, so compare the `C` and `S` lines of the files instead
@@ -126,7 +138,8 @@ It builds in `$TMPDIR/noodsu-jit-test-game`, and leaves each run's output in a `
 ### As the console builds it
 
 The other ways build the core with the Mac's compiler, and only generated code runs as PowerPC. The `gcc-` modes build
-`src/core` as it is, with devkitPPC's GCC and the Makefile's flags, link-time optimisation included, together with
+`src/core` as it is, with devkitPPC's GCC and the Makefile's flags, link-time optimisation included, plus the frame log's
+sound hooks that both builds have for `audio` and `ring` (`AUDIO_CAPTURE` and `FRAME_LOG`, which only change `spu.cpp`), together with
 `game.cpp` and a small runtime in `guest/`, into one PowerPC program that runs whole in Unicorn: the interpreter, the
 JIT compiling, generated code calling the core's C++ directly, all of it as the console's build does it. That covers what
 the Mac's build can't: code GCC makes differently from Clang, undefined behaviour each takes its own way, and the core on a
@@ -134,8 +147,8 @@ big-endian host. A `gcc-` run should match `interp` exactly, and `--mutate` plan
 
 `guest/host.cpp` loads the program and serves its files, clock and time zone from the Mac. Its threads, like the ROM's
 prefetching, take turns, only switching when one waits, so a run goes the same way every time. It reads the ROM from its
-file, there being no thread to load it into memory on, which doesn't change what the game sees. The window, Wi-Fi and
-`audio` need the Mac's build, as do `clear` and `set`, which need its changes to the core. It needs devkitPPC, and builds in
+file, there being no thread to load it into memory on, which doesn't change what the game sees. The window and Wi-Fi
+need the Mac's build, as do `clear` and `set`, which need its changes to the core. It needs devkitPPC, and builds in
 `$TMPDIR/noodsu-jit-test-gcc`, or `JIT_TEST_GCC_BUILD`.
 
 What's still left to the console is the CPU itself: Unicorn's PowerPC 750 keeps its caches coherent and has no timing, so
