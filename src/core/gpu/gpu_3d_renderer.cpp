@@ -851,14 +851,15 @@ void Gpu3DRenderer::decodeTexture(_Polygon *polygon, uint32_t *out, int pitch) {
         uint32_t blockAddr = 0x20000 + (polygon->textureAddr % 0x20000) / 2 + ((polygon->textureAddr / 0x20000 == 2) ? 0x10000 : 0);
         uint8_t *blocks = getTexture(blockAddr);
         int tilesS = polygon->sizeS / 4;
-        for (int tile = 0; tile < tilesS * (polygon->sizeT / 4); tile++) {
-            uint32_t colors[4] = {};
-            uint8_t *palette = nullptr;
-            uint16_t palBase = 0;
-            if (data && blocks) {
-                palBase = U8TO16(blocks, tile * 2);
-                palette = getPalette(polygon->paletteAddr + (palBase & 0x3FFF) * 4);
-            }
+
+        // Rows are claimed in the cache a block of 8 texels at a time before 2 tiles fill it, so writing them doesn't read
+        // the old contents from memory first
+        bool claim = !((uintptr_t)out & 31) && !(pitch & 7);
+
+        // Neighboring tiles often pick the same palette, so its colors are only worked out again when that changes
+        // They're the colors readTexture gives for a tile's 4 indices
+        auto writeColors = [&](uint32_t (&colors)[4], uint8_t *palette, uint16_t palBase) {
+            for (int i = 0; i < 4; i++) colors[i] = 0;
             if (palette) {
                 uint32_t mode = (palBase & 0xC000) >> 14;
                 for (int i = 0; i < 4; i++)
@@ -878,7 +879,18 @@ void Gpu3DRenderer::decodeTexture(_Polygon *polygon, uint32_t *out, int pitch) {
             }
             for (int i = 0; i < 4; i++)
                 colors[i] = expand(colors[i]);
+        };
+        uint32_t colors[4] = {};
+        int lastBase = -1;
+        for (int tile = 0; tile < tilesS * (polygon->sizeT / 4); tile++) {
             uint32_t *block = &out[(tile / tilesS) * 4 * pitch + (tile % tilesS) * 4];
+            if (claim && !(tile & 1))
+                for (int r = 0; r < 4; r++) claimBlock(&block[r * pitch]);
+            uint16_t palBase = (data && blocks) ? U8TO16(blocks, tile * 2) : 0;
+            if (palBase != lastBase) {
+                lastBase = palBase;
+                writeColors(colors, (data && blocks) ? getPalette(polygon->paletteAddr + (palBase & 0x3FFF) * 4) : nullptr, palBase);
+            }
             for (int r = 0; r < 4; r++) {
                 uint8_t byte = data ? data[tile * 4 + r] : 0;
                 for (int k = 0; k < 4; k++)
