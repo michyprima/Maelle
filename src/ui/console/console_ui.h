@@ -119,6 +119,8 @@ public:
     static int micInput; // Whether games hear the GamePad's microphone
     static int stickPointer; // Whether the right stick moves a pointer on the touch screen, and when it hides
     static int keyBinds[INPUT_MAX];
+    static int keyCombos[INPUT_SUN_DOWN - INPUT_MENU + 1]; // Two buttons held together for each hotkey, if any
+    static int keyLayout; // The default layout the bindings were last moved to
 
     // Data that is defined per-platform
     static uint32_t defaultKeys[INPUT_MAX];
@@ -221,6 +223,9 @@ private:
 #ifdef ROM_TEST
     static void romTest();
 #endif
+    static bool isHotkey(int input) { return input >= INPUT_MENU && input <= INPUT_SUN_DOWN; }
+    static bool hotkeyHeld(int input, uint32_t held);
+    static bool hotkeyPressed(int input, uint32_t pressed, uint32_t held);
     static void settingsMenu();
     static void aboutMenu();
     static void pauseMenu();

@@ -179,6 +179,8 @@ void *ConsoleUI::frameTextures[2];
 ScreenFrame::LightPatch ConsoleUI::lightPatches[ScreenFrame::LIGHT_COUNT];
 int ConsoleUI::lightsShown[3] = { -1, -1, -1 };
 int ConsoleUI::keyBinds[] = {};
+int ConsoleUI::keyCombos[] = {};
+int ConsoleUI::keyLayout = 0;
 
 const uint32_t ConsoleUI::themeColors[] = {
     0xFF2D2D2D, 0xFFFFFFFF, 0xFF4B4B4B, 0xFF232323, 0xFFE1B955, 0xFFC8FF00, 0xFFA2A2A2, // Dark
@@ -325,6 +327,15 @@ void ConsoleUI::initialize(int width, int height, std::string root, std::string 
         Setting("keyPointerTouch", &keyBinds[INPUT_POINTER_TOUCH], false),
         Setting("keySunUp", &keyBinds[INPUT_SUN_UP], false),
         Setting("keySunDown", &keyBinds[INPUT_SUN_DOWN], false),
+        Setting("keyMenuCombo", &keyCombos[INPUT_MENU - INPUT_MENU], false),
+        Setting("keyFastHoldCombo", &keyCombos[INPUT_FAST_HOLD - INPUT_MENU], false),
+        Setting("keyFastToggleCombo", &keyCombos[INPUT_FAST_TOGG - INPUT_MENU], false),
+        Setting("keyScreenSwapCombo", &keyCombos[INPUT_SCRN_SWAP - INPUT_MENU], false),
+        Setting("keyMicBlowCombo", &keyCombos[INPUT_MIC_BLOW - INPUT_MENU], false),
+        Setting("keyPointerTouchCombo", &keyCombos[INPUT_POINTER_TOUCH - INPUT_MENU], false),
+        Setting("keySunUpCombo", &keyCombos[INPUT_SUN_UP - INPUT_MENU], false),
+        Setting("keySunDownCombo", &keyCombos[INPUT_SUN_DOWN - INPUT_MENU], false),
+        Setting("keyLayout", &keyLayout, false),
         Setting("keyGuitarGreen", &keyBinds[INPUT_GUITAR_GREEN], false),
         Setting("keyGuitarRed", &keyBinds[INPUT_GUITAR_RED], false),
         Setting("keyGuitarYellow", &keyBinds[INPUT_GUITAR_YELLOW], false),
@@ -340,6 +351,20 @@ void ConsoleUI::initialize(int width, int height, std::string root, std::string 
     // Load settings or set additional defaults
     if (!Settings::load(prefix)) {
         ScreenLayout::screenArrangement = 4;
+        keyLayout = 1;
+        Settings::save();
+    }
+
+    // Move bindings left as they were by default, with L and R opening the menu and ZL and ZR as the DS's L and R,
+    // to the new defaults that swap them
+    if (keyLayout < 1) {
+        if (keyBinds[INPUT_MENU] == int(defaultKeys[INPUT_L] | defaultKeys[INPUT_R]) &&
+                (keyBinds[INPUT_L] | keyBinds[INPUT_R]) == int(defaultKeys[INPUT_MENU])) {
+            keyBinds[INPUT_MENU] = defaultKeys[INPUT_MENU];
+            keyBinds[INPUT_L] = defaultKeys[INPUT_L];
+            keyBinds[INPUT_R] = defaultKeys[INPUT_R];
+        }
+        keyLayout = 1;
         Settings::save();
     }
 
@@ -729,7 +754,7 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
             held &= ~(pointerKeys | keyBinds[INPUT_POINTER_TOUCH]);
         }
 #ifdef AUDIO_CAPTURE
-        // Mark the audio capture when L, R and Y are pressed, which are ZL, ZR and Y on the GamePad by default
+        // Mark the audio capture when L, R and Y are pressed
         uint32_t markCombo = keyBinds[INPUT_L] | keyBinds[INPUT_R] | keyBinds[INPUT_Y];
         static bool markHeld = false;
         if ((held & markCombo) == markCombo && !markHeld) {
@@ -740,7 +765,7 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
 #endif
 
 #ifdef FRAME_CAPTURE
-        // Start capturing frames when L, R and Y are held, which are ZL, ZR and Y on the GamePad by default
+        // Start capturing frames when L, R and Y are held
         uint32_t combo = keyBinds[INPUT_L] | keyBinds[INPUT_R] | keyBinds[INPUT_Y];
         if ((held & combo) == combo && FrameCapture::state.load() != 1 && FrameCapture::state.load() != 2) {
             delete[] FrameCapture::frames;
@@ -785,7 +810,7 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
         }
 
         // Send microphone input to the core, which hears noise instead while blowing is held
-        core->spi.setMicBlow(held & keyBinds[INPUT_MIC_BLOW]);
+        core->spi.setMicBlow(hotkeyHeld(INPUT_MIC_BLOW, held));
         if (micInput) {
             int16_t samples[1024];
             while (size_t count = getMicSamples(samples, 1024))
@@ -803,8 +828,8 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
         HB_ADD_US(HB_UI_END_US, hbEnd);
 
         // Restore the FPS limiter when pausing or releasing fast-forward hold
-        if ((fpsLimiterBackup && (pressed & keyBinds[INPUT_MENU])) ||
-            (uint32_t(fpsLimiterBackup - 1) < 0x100 && !(held & keyBinds[INPUT_FAST_HOLD]))) {
+        if ((fpsLimiterBackup && hotkeyPressed(INPUT_MENU, pressed, held)) ||
+            (uint32_t(fpsLimiterBackup - 1) < 0x100 && !hotkeyHeld(INPUT_FAST_HOLD, held))) {
             Settings::fpsLimiter = fpsLimiterBackup & 0xFF;
             fpsLimiterBackup = 0;
         }
@@ -817,18 +842,18 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
         }
 
         // Handle pressing special hotkeys
-        if (pressed & keyBinds[INPUT_MENU]) {
+        if (hotkeyPressed(INPUT_MENU, pressed, held)) {
             // Open the pause menu
             pauseMenu();
         }
-        else if (pressed & keyBinds[INPUT_FAST_HOLD]) {
+        else if (hotkeyPressed(INPUT_FAST_HOLD, pressed, held)) {
             // Disable the FPS limiter
             if (Settings::fpsLimiter != 0) {
                 fpsLimiterBackup = Settings::fpsLimiter;
                 Settings::fpsLimiter = 0;
             }
         }
-        else if (pressed & keyBinds[INPUT_FAST_TOGG]) {
+        else if (hotkeyPressed(INPUT_FAST_TOGG, pressed, held)) {
             // Toggle between disabling and restoring the FPS limiter
             if (Settings::fpsLimiter != 0) {
                 fpsLimiterBackup = Settings::fpsLimiter | 0x100;
@@ -839,7 +864,7 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
                 fpsLimiterBackup = 0;
             }
         }
-        else if (pressed & keyBinds[INPUT_SCRN_SWAP]) {
+        else if (hotkeyPressed(INPUT_SCRN_SWAP, pressed, held)) {
             // Toggle between favoring the top or bottom screen
             ScreenLayout::screenSizing = (ScreenLayout::screenSizing == 1) ? 2 : 1;
             changed = true;
@@ -861,10 +886,22 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
     lastFrame = nullptr;
 }
 
+bool ConsoleUI::hotkeyHeld(int input, uint32_t held) {
+    // Hold a hotkey with any of its buttons, or with both buttons of its combo
+    uint32_t combo = keyCombos[input - INPUT_MENU];
+    return (held & keyBinds[input]) || (combo && (held & combo) == combo);
+}
+
+bool ConsoleUI::hotkeyPressed(int input, uint32_t pressed, uint32_t held) {
+    // Press a hotkey with any of its buttons, or with its combo when the second button goes down
+    uint32_t combo = keyCombos[input - INPUT_MENU];
+    return (pressed & keyBinds[input]) || (combo && (pressed & combo) && (held & combo) == combo);
+}
+
 void ConsoleUI::updateSlot2(uint32_t &pressed, uint32_t &held) {
     // Change the sunlight Boktai carts see with its hotkeys
-    if (pressed & keyBinds[INPUT_SUN_UP]) Settings::sunlight = std::min(10, Settings::sunlight + 1);
-    if (pressed & keyBinds[INPUT_SUN_DOWN]) Settings::sunlight = std::max(0, Settings::sunlight - 1);
+    if (hotkeyPressed(INPUT_SUN_UP, pressed, held)) Settings::sunlight = std::min(10, Settings::sunlight + 1);
+    if (hotkeyPressed(INPUT_SUN_DOWN, pressed, held)) Settings::sunlight = std::max(0, Settings::sunlight - 1);
 
     // Rumble while the Rumble Pak or a GBA cart's motor does
     setRumble(core->slot2.takeRumble());
@@ -930,7 +967,7 @@ bool ConsoleUI::updatePointer(uint32_t held, ScreenLayout *gamepad) {
 
     // Touch for as long as the touch key is held, which drags if the pointer moves meanwhile
     // Show the pointer while it's used, and hide it once it's left alone for long enough unless it's always shown
-    bool touching = held & keyBinds[INPUT_POINTER_TOUCH];
+    bool touching = hotkeyHeld(INPUT_POINTER_TOUCH, held);
     if (length > 0.15f || touching)
         pointerHide = now + std::chrono::seconds(stickPointer == 1 ? 15 : 30);
     if (stickPointer != 3 && now >= pointerHide)
@@ -1420,6 +1457,7 @@ uint32_t ConsoleUI::message(std::string title, std::string text, int type) {
     bool touchStarted = false;
     bool touchScroll = false;
     MenuTouch touchStart(false, 0, 0);
+    uint32_t input = 0;
 
     while (true) {
         // Draw the borders
@@ -1440,8 +1478,13 @@ uint32_t ConsoleUI::message(std::string title, std::string text, int type) {
         uint32_t pressed = getInputPress();
 
         // Dismiss the message and return the result if an action is pressed
-        if (pressed && type == 2) // Input
-            return pressed;
+        // Input records up to two buttons pressed together, and returns them once they're all released
+        if (type == 2) {
+            for (int i = 0; i < 32; i++)
+                if ((pressed & BIT(i)) && !(input & (input - 1))) input |= BIT(i);
+            if (input && !(getInputHeld() & input))
+                return input;
+        }
         else if (pressed & defaultKeys[INPUT_A]) // Default
             return 1;
         else if ((pressed & defaultKeys[INPUT_B]) && type == 1) // Cancel
@@ -1794,12 +1837,18 @@ void ConsoleUI::settingsMenu() {
                     continue;
                 }
 
-                // Add the input names with commas (up to 8 entries), or the word none
+                // Add the input names with commas (up to 8 entries) and a hotkey's combo, or the word none
                 std::string binding;
                 for (int j = 0, k = -1; j < 32 && k < 8; j++) {
                     if (!(keyBinds[inputRows[r]] & (1 << j))) continue;
                     if (binding != "") binding += ", ";
                     binding += (++k < 8) ? keyNames[j] : "...";
+                }
+                if (isHotkey(inputRows[r]) && keyCombos[inputRows[r] - INPUT_MENU]) {
+                    uint32_t combo = keyCombos[inputRows[r] - INPUT_MENU];
+                    if (binding != "") binding += ", ";
+                    binding += std::string(keyNames[__builtin_ctz(combo)]) + " + " +
+                        keyNames[31 - __builtin_clz(combo)];
                 }
                 settings.push_back(MenuItem(inputNames[inputRows[r]], binding == "" ? "None" : binding));
                 values.push_back({ nullptr, 0 });
@@ -1831,9 +1880,14 @@ void ConsoleUI::settingsMenu() {
                 *value = (*value + 1) % values[index].second;
             }
             else if (input >= 0) {
-                // Show a binding message and bind the pressed input
-                keyBinds[input] |= message(std::string("Remap ") + inputNames[input],
+                // Show a binding message and bind the pressed input, or two pressed together as a hotkey's combo
+                uint32_t keys = message(std::string("Remap ") + inputNames[input], isHotkey(input) ?
+                    "Press an input to add it as a binding,\nor two together to set them as a combo." :
                     "Press an input to add it as a binding.", 2);
+                if (isHotkey(input) && (keys & (keys - 1)))
+                    keyCombos[input - INPUT_MENU] = keys;
+                else
+                    keyBinds[input] |= keys;
             }
             else if (index == nicknameIndex) {
                 // Edit the nickname with the system keyboard, following the Mii name if left empty or matching it
@@ -1873,6 +1927,7 @@ void ConsoleUI::settingsMenu() {
         else if ((pressed & defaultKeys[INPUT_X]) && input >= 0) {
             // Clear an input binding
             keyBinds[input] = 0;
+            if (isHotkey(input)) keyCombos[input - INPUT_MENU] = 0;
         }
     }
 }

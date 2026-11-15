@@ -71,6 +71,8 @@ It's licensed under the GPL version 3, like NooDS.
 
 #### Interface
 - Simpler settings menu, split into tabs switched with L and R
+- L and R are the DS's L and R, and ZL or ZR opens the menu; a hotkey can also take a combo of two buttons, set by
+  pressing both together when remapping it
 - File browser: set a default folder (Y), and open a ROM's launch options (−) to run it with a chosen save type
 - Pause menu rearranged, and Restart asks for confirmation
 - Optional Screen Frame setting: the space around the screens looks like a DSi, in any of its eight colours, with
