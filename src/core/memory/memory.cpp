@@ -417,6 +417,21 @@ void Memory::updateMap9(uint32_t start, uint32_t end, bool tcm) {
     core->interpreter[0].getOpcode16();
 }
 
+void Memory::remapVram9(uint32_t address, uint8_t *data) {
+    // Point a 16KB VRAM slot's pages in both ARM9 maps at the bank data mapped there alone, or at nothing, which is what
+    // updateMap9 would do with less work; games change VRAM banks every frame, and each slot repeats up to 128 times
+    // A page under TCM is remapped as usual so the TCM stays on top, and the JIT and its write protection don't
+    // need to know about VRAM, since code never runs from there
+    for (int i = 0; i < 4; i++, address += 0x1000) {
+        uint8_t *page = data ? &data[i << 12] : nullptr;
+        readMap9B[address >> 12] = writeMap9B[address >> 12] = page;
+        if (address < core->cp15.itcmSize || address - core->cp15.dtcmAddr < core->cp15.dtcmSize)
+            updateMap9(address, address + 0x1000, true);
+        else
+            readMap9A[address >> 12] = writeMap9A[address >> 12] = page;
+    }
+}
+
 void Memory::updateMap7(uint32_t start, uint32_t end) {
     // Update the ARM7 read and write memory maps in the given range
     core->jit7.mapChanged(start);
@@ -836,7 +851,8 @@ void Memory::updateVram(bool all) {
         updateMap7(0x6000000, 0x7000000);
     }
     else {
-        // Each area's slots repeat over its address range
+        // Each area's slots repeat over its address range; the ARM9's pages are pointed at their slot's bank directly
+        bool changed9 = false;
         const uint32_t bases9[] = { 0x6000000, 0x6200000, 0x6400000, 0x6600000, 0x6800000 };
         const uint32_t sizes9[] = { 0x200000, 0x200000, 0x200000, 0x200000, 0x800000 };
         for (int i = 0, n = 0; i < 5; i++) {
@@ -845,9 +861,11 @@ void Memory::updateVram(bool all) {
                 uint8_t *after = (slots9[i][j].count == 1) ? slots9[i][j].mappings[0] : nullptr;
                 if (after == before9[n]) continue;
                 for (uint32_t mirror = 0; mirror < sizes9[i]; mirror += period)
-                    updateMap9(bases9[i] + mirror + j * 0x4000, bases9[i] + mirror + (j + 1) * 0x4000);
+                    remapVram9(bases9[i] + mirror + j * 0x4000, after);
+                changed9 = true;
             }
         }
+        if (changed9) core->interpreter[0].getOpcode16();
         for (int i = 0; i < 2 && !core->gbaMode; i++) {
             uint8_t *after = (vram7[i].count == 1) ? vram7[i].mappings[0] : nullptr;
             if (after == before7[i]) continue;

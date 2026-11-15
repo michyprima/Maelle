@@ -216,6 +216,7 @@ private:
     template <typename T> void writeFallback(bool arm7, uint32_t address, T value, bool tcm);
     template <typename T> bool writeJit(bool arm7, uint32_t address, T value, bool tcm);
     void protectJit(uint8_t **writeMap, uint32_t start, uint32_t end);
+    void remapVram9(uint32_t address, uint8_t *data);
     void unmapJit(uint8_t **writeMap, uint32_t index);
     uint8_t **jitPages(uint8_t **writeMap);
     static int jitSlot(uint32_t index);
