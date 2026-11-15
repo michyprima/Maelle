@@ -668,6 +668,9 @@ void Gpu3DRenderer::finishScanline(int line) {
     }
 }
 
+// Compressed textures' palette bases found while hashing their block data, which only the hardware renderer's thread does
+static uint32_t basesSeen[0x10000 / 32];
+
 uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon, bool palette, std::vector<uint16_t> &bases) {
     // Hash the data a polygon's texture is decoded from, so a hardware renderer can tell if a decoded copy is current
     // This is either the texel data, or the palette; the two are hashed apart, since games that animate palettes change
@@ -713,11 +716,18 @@ uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon, bool palette, std::vector
             // Compressed textures have 2 bytes per 4x4 block in slot 1, each choosing a palette of up to 4 colors
             uint32_t blockAddr = 0x20000 + (polygon->textureAddr % 0x20000) / 2 + ((polygon->textureAddr / 0x20000 == 2) ? 0x10000 : 0);
             addTexture(blockAddr, texels / 16 * 2);
-            for (uint32_t i = 0; i < texels / 16; i++)
-                if (uint8_t *block = getTexture(blockAddr + i * 2))
-                    bases.push_back(U8TO16(block, 0));
+            // Each base is listed once, marked in a table, which is cleared again for only the bases found
+            for (uint32_t i = 0; i < texels / 16; i++) {
+                if (uint8_t *block = getTexture(blockAddr + i * 2)) {
+                    uint16_t base = U8TO16(block, 0);
+                    if (basesSeen[base >> 5] & BIT(base & 0x1F)) continue;
+                    basesSeen[base >> 5] |= BIT(base & 0x1F);
+                    bases.push_back(base);
+                }
+            }
+            for (uint16_t base : bases)
+                basesSeen[base >> 5] &= ~BIT(base & 0x1F);
             std::sort(bases.begin(), bases.end());
-            bases.erase(std::unique(bases.begin(), bases.end()), bases.end());
         }
         return hash;
     }
@@ -881,20 +891,22 @@ void Gpu3DRenderer::decodeTexture(_Polygon *polygon, uint32_t *out, int pitch) {
                 colors[i] = expand(colors[i]);
         };
         uint32_t colors[4] = {};
-        int lastBase = -1;
-        for (int tile = 0; tile < tilesS * (polygon->sizeT / 4); tile++) {
-            uint32_t *block = &out[(tile / tilesS) * 4 * pitch + (tile % tilesS) * 4];
-            if (claim && !(tile & 1))
-                for (int r = 0; r < 4; r++) claimBlock(&block[r * pitch]);
-            uint16_t palBase = (data && blocks) ? U8TO16(blocks, tile * 2) : 0;
-            if (palBase != lastBase) {
-                lastBase = palBase;
-                writeColors(colors, (data && blocks) ? getPalette(polygon->paletteAddr + (palBase & 0x3FFF) * 4) : nullptr, palBase);
-            }
-            for (int r = 0; r < 4; r++) {
-                uint8_t byte = data ? data[tile * 4 + r] : 0;
-                for (int k = 0; k < 4; k++)
-                    block[r * pitch + k] = colors[(byte >> (k * 2)) & 0x03];
+        int lastBase = -1, tile = 0;
+        for (int tileT = 0; tileT < polygon->sizeT / 4; tileT++) {
+            uint32_t *block = &out[tileT * 4 * pitch];
+            for (int tileS = 0; tileS < tilesS; tileS++, tile++, block += 4) {
+                if (claim && !(tileS & 1))
+                    for (int r = 0; r < 4; r++) claimBlock(&block[r * pitch]);
+                uint16_t palBase = (data && blocks) ? U8TO16(blocks, tile * 2) : 0;
+                if (palBase != lastBase) {
+                    lastBase = palBase;
+                    writeColors(colors, (data && blocks) ? getPalette(polygon->paletteAddr + (palBase & 0x3FFF) * 4) : nullptr, palBase);
+                }
+                for (int r = 0; r < 4; r++) {
+                    uint8_t byte = data ? data[tile * 4 + r] : 0;
+                    for (int k = 0; k < 4; k++)
+                        block[r * pitch + k] = colors[(byte >> (k * 2)) & 0x03];
+                }
             }
         }
         return;
