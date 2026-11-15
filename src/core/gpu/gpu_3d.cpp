@@ -424,11 +424,15 @@ void Gpu3D::queueCommand(uint8_t command, uint32_t *params, int count) {
 void Gpu3D::publishQueue(bool force) {
     // Let the worker see newly queued commands, waking it if it's sleeping
     // A sleeping worker is only woken once enough commands build up, unless something needs their results
-    // The sleeping flag is checked again after publishing, since the worker might have just gone to sleep
+    // The sleeping flag is checked again after publishing, since the worker might have just gone to sleep; the fence
+    // between the two pairs with the worker's own sequentially consistent store and load, so one of them sees the other,
+    // and it's the only full one, since each costs the PowerPC a wait for every earlier store to finish
     uint32_t tail = queueTail.load(std::memory_order_relaxed);
-    if (tail == queueEnd || (!force && queueEnd - tail < 0x800 && workerSleeping.load())) return;
-    queueTail.store(queueEnd);
-    if (workerSleeping.load()) {
+    if (tail == queueEnd || (!force && queueEnd - tail < 0x800 && workerSleeping.load(std::memory_order_relaxed)))
+        return;
+    queueTail.store(queueEnd, std::memory_order_release);
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    if (workerSleeping.load(std::memory_order_relaxed)) {
         std::lock_guard<std::mutex> guard(workerMutex);
         workerCond.notify_one();
     }
