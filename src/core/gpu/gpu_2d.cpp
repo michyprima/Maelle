@@ -1005,26 +1005,38 @@ void Gpu2D::drawLarge(int bg, int line) {
     internalY[bg - 2] += bgPD[bg - 2];
 }
 
+// Object widths and heights by shape and size
+static const uint8_t objSizes[] = {
+    8, 8, 16, 16, 32, 32, 64, 64, // Square
+    16, 8, 32, 8, 32, 16, 64, 32, // Horizontal
+    8, 16, 8, 32, 16, 32, 32, 64, // Vertical
+    0, 0, 0, 0, 0, 0, 0, 0 // Prohibited
+};
+
 template <bool gbaMode> void Gpu2D::drawObjects(int line, bool window) {
     // Loop through and draw the 128 sprites in OAM
     for (int i = 0; i < 128; i++) {
-        // Skip objects that are disabled or are/aren't window type
-        uint8_t byte = oam[i * 8 + 1];
-        uint8_t type = (byte >> 2) & 0x3;
-        if ((byte & 0x3) == 2 || (type == 2) != window)
+        // Skip objects that are disabled, are/aren't window type, or aren't on the line, by what their first 2 attributes
+        // gave when they last changed, as worked out below
+        uint32_t attrs = U8TO32(oam, i * 8);
+        if (attrs != objAttrs[i]) {
+            uint8_t byte = attrs >> 8;
+            objAttrs[i] = attrs;
+            objPass[i] = ((byte & 0x3) == 2) ? 0 : (((byte >> 2) & 0x3) == 2) ? 1 : 2;
+            int top = attrs & 0xFF;
+            objTop[i] = (top >= 192) ? (top - 256) : top;
+            objHeight[i] = objSizes[((attrs >> 11) & 0x18) | ((attrs >> 29) & 0x6) | 1] << ((attrs & 0x300) == 0x300);
+        }
+        if (objPass[i] != (window ? 1 : 2) ||
+                uint32_t(((attrs & BIT(12)) ? (line - (line % (((mosaic >> 12) & 0xF) + 1))) : line) - objTop[i]) >= objHeight[i])
             continue;
 
         // Get an object's 6 attribute bytes (the unused 2 bytes are for rotscale)
         uint16_t object[3] = { U8TO16(oam, i * 8 + 0), U8TO16(oam, i * 8 + 2), U8TO16(oam, i * 8 + 4) };
 
         // Get the object's dimensions based on its shape and size
-        static const uint8_t sizes[] = {
-            8, 8, 16, 16, 32, 32, 64, 64, // Square
-            16, 8, 32, 8, 32, 16, 64, 32, // Horizontal
-            8, 16, 8, 32, 16, 32, 32, 64, // Vertical
-            0, 0, 0, 0, 0, 0, 0, 0 // Prohibited
-        };
-        const uint8_t *size = &sizes[((object[0] >> 11) & 0x18) | ((object[1] >> 13) & 0x6)];
+        uint8_t type = (object[0] >> 10) & 0x3;
+        const uint8_t *size = &objSizes[((object[0] >> 11) & 0x18) | ((object[1] >> 13) & 0x6)];
         const uint8_t width = size[0];
         const uint8_t height = size[1];
 
