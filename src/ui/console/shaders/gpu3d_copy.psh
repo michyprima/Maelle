@@ -12,12 +12,12 @@
 
 ; Copying to the DS's resolution: R0 has this pixel's coordinates in a frame twice as big, which land between 4 of its
 ; pixels. Half of one of those pixels is taken off, so each pixel copies the top-left one, which is the one the 2D
-; engine reads from high-res frames. Each instruction group has a single instruction, since groups can't read the same
-; channel of different registers at once, which the assembler doesn't check.
-00 ALU: ADDR(32) CNT(4)
+; engine reads from high-res frames. Instructions are packed into groups
+; by the rules in README.md, which the assembler doesn't check.
+00 ALU: ADDR(32) CNT(3)
     0  x: ADD R0.x, R0.x, (0xBA800000, -0.0009765625f).x
-    1  y: ADD R0.y, R0.y, (0xBAAAAAAB, -0.0013020834f).x
+       y: ADD R0.y, R0.y, (0xBAAAAAAB, -0.0013020834f).y
 01 TEX: ADDR(48) CNT(1) VALID_PIX
-    2  SAMPLE R1, R0.xy00, t0, s0
+    1  SAMPLE R1, R0.xy00, t0, s0
 02 EXP_DONE: PIX0, R1
 END_OF_PROGRAM

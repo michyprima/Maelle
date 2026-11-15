@@ -40,63 +40,63 @@
 ; and R3 the lowest and highest texels.
 ; R0.zw and R2.y have the distances to the polygon's outer edges from the pixel center; the nearest one gives how much
 ; of the pixel the polygon covers, for anti-aliasing. How much isn't covered goes in the fraction of the ID and flags
-; attribute, which is whole otherwise, scaled to stay below 1. Each instruction group has a single instruction, since
-; groups can't read the same channel of different registers at once, which the assembler doesn't check.
+; attribute, which is whole otherwise, scaled to stay below 1. Instructions are packed into groups
+; by the rules in README.md, which the assembler doesn't check.
 ; The attributes are then encoded by C2 and C3, which leave them as they are for full-precision attributes, or fit
 ; them in 16 bits each: the ID and flags times C2.x plus C2.y, and the depth times C2.z, or with C3.x set, its log
 ; times C2.w.
 00 ALU: ADDR(32) CNT(29)
     0  x: MIN R5.x, R0.z, R0.w
+       y: ADD R0.y, R0.y, (0x3B000000, 0.001953125f).x
     1  x: MIN R5.x, R5.x, R2.y
+       y: FLOOR R0.y, R0.y
     2  x: ADD R5.x, R5.x, 0.5f
+       y: MAX R0.y, R0.y, R3.y
     3  x: MAX R5.x, R5.x, 0.0f
+       y: MIN R0.y, R0.y, R3.w
     4  x: MIN R5.x, R5.x, 1.0f
+       y: ADD R0.y, R0.y, 0.5f
     5  x: ADD R5.x, -R5.x, 1.0f
+       y: MUL R0.y, R0.y, C0.y
     6  x: ADD R0.x, R0.x, (0x3B000000, 0.001953125f).x
-    7  y: ADD R0.y, R0.y, (0x3B000000, 0.001953125f).x
-    8  x: FLOOR R0.x, R0.x
-    9  y: FLOOR R0.y, R0.y
-   10  x: MAX R0.x, R0.x, R3.x
-   11  y: MAX R0.y, R0.y, R3.y
-   12  x: MIN R0.x, R0.x, R3.z
-   13  y: MIN R0.y, R0.y, R3.w
-   14  x: ADD R0.x, R0.x, 0.5f
-   15  y: ADD R0.y, R0.y, 0.5f
-   16  x: MUL R0.x, R0.x, C0.x
-   17  y: MUL R0.y, R0.y, C0.y
-   18  x: MUL R6.x, R1.x, (0x41FC0000, 31.5f).x
-   19  x: ADD R6.x, R6.x, (0x3A83126F, 0.001f).x
-   20  x: FLOOR R6.x, R6.x
-   21  x: ADD R6.x, R6.x, 0.5f
-   22  x: MUL R6.x, R6.x, (0x3D000000, 0.03125f).x
-   23  y: MOV R6.y, 0.5f
+       y: MOV R6.y, 0.5f
+    7  x: FLOOR R0.x, R0.x
+    8  x: MAX R0.x, R0.x, R3.x
+    9  x: MIN R0.x, R0.x, R3.z
+   10  x: ADD R0.x, R0.x, 0.5f
+   11  x: MUL R0.x, R0.x, C0.x
+   12  x: MUL R6.x, R1.x, (0x41FC0000, 31.5f).x
+   13  x: ADD R6.x, R6.x, (0x3A83126F, 0.001f).x
+   14  x: FLOOR R6.x, R6.x
+   15  x: ADD R6.x, R6.x, 0.5f
+   16  x: MUL R6.x, R6.x, (0x3D000000, 0.03125f).x
 01 TEX: ADDR(96) CNT(2) VALID_PIX
-   24  SAMPLE R0, R0.xy00, t0, s0
-   25  SAMPLE R7, R6.xy00, t1, s1
+   17  SAMPLE R0, R0.xy00, t0, s0
+   18  SAMPLE R7, R6.xy00, t1, s1
 02 ALU: ADDR(61) CNT(24)
-   26  x: MUL R8.x, R1.x, C1.x
-   27  y: MUL R8.y, R1.y, C1.x
-   28  z: MUL R8.z, R1.z, C1.x
-   29  x: MULADD R8.x, R7.x, C1.y, R8.x
-   30  y: MULADD R8.y, R7.y, C1.y, R8.y
-   31  z: MULADD R8.z, R7.z, C1.y, R8.z
-   32  x: MUL R0.x, R0.x, R8.x
-   33  y: MUL R0.y, R0.y, R8.y
-   34  z: MUL R0.z, R0.z, R8.z
-   35  x: MULADD R0.x, R7.x, C1.x, R0.x
-   36  y: MULADD R0.y, R7.y, C1.x, R0.y
-   37  z: MULADD R0.z, R7.z, C1.x, R0.z
-   38  w: MUL R0.w, R0.w, R1.w
-   39  t: RECIP_IEEE R4.x, R2.z
-   40  y: MUL R2.y, R2.w, R4.x
-   41  x: ADD R2.x, R2.x, 0.5f
-   42  x: FLOOR R2.x, R2.x
-   43  x: MULADD R2.x, R5.x, (0x3F7C0000, 0.984375f).x, R2.x
-   44  x: MULADD R2.x, R2.x, C2.x, C2.y
-   45  t: LOG_IEEE R4.y, R2.y
-   46  y: MUL R4.y, R4.y, C2.w
-   47  z: MUL R4.z, R2.y, C2.z
-   48  y: CNDE R2.y, C3.x, R4.z, R4.y
+   19  x: MUL R8.x, R1.x, C1.x
+       y: MUL R8.y, R1.y, C1.x
+       z: MUL R8.z, R1.z, C1.x
+       w: MUL R0.w, R0.w, R1.w
+   20  x: MULADD R8.x, R7.x, C1.y, R8.x
+       y: MULADD R8.y, R7.y, C1.y, R8.y
+       z: MULADD R8.z, R7.z, C1.y, R8.z
+   21  x: MUL R0.x, R0.x, R8.x
+       y: MUL R0.y, R0.y, R8.y
+       z: MUL R0.z, R0.z, R8.z
+   22  x: MULADD R0.x, R7.x, C1.x, R0.x
+       y: MULADD R0.y, R7.y, C1.x, R0.y
+       z: MULADD R0.z, R7.z, C1.x, R0.z
+   23  t: RECIP_IEEE R4.x, R2.z
+   24  x: ADD R2.x, R2.x, 0.5f
+       y: MUL R2.y, R2.w, R4.x
+   25  x: FLOOR R2.x, R2.x
+       z: MUL R4.z, R2.y, C2.z
+   26  x: MULADD R2.x, R5.x, (0x3F7C0000, 0.984375f).x, R2.x
+   27  x: MULADD R2.x, R2.x, C2.x, C2.y
+   28  t: LOG_IEEE R4.y, R2.y
+   29  y: MUL R4.y, R4.y, C2.w
+   30  y: CNDE R2.y, C3.x, R4.z, R4.y
 03 EXP: PIX0, R0
 04 EXP_DONE: PIX1, R2
 END_OF_PROGRAM

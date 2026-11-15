@@ -28,8 +28,8 @@
 ; otherwise. So is one between solid neighbors up and down that are much nearer, where what's behind a gap was drawn:
 ; its depth is above the farther neighbor's times C0.y plus C0.z, with depths left encoded since they're only compared.
 ; Cracks take the color and attributes of the neighbor up, or of the one left if they're not across it
-; that way. Each instruction group has a single instruction, since groups can't read the same channel of different
-; registers at once, which the assembler doesn't check.
+; that way. Instructions are packed into groups
+; by the rules in README.md, which the assembler doesn't check.
 00 TEX: ADDR(80) CNT(7) VALID_PIX
     0  SAMPLE R3, R0.xy00, t0, s0
     1  SAMPLE R4, R1.xy00, t0, s0
@@ -40,42 +40,42 @@
     6  SAMPLE R9, R2.zw00, t1, s1
 01 ALU: ADDR(32) CNT(38)
     7  x: MUL R12.x, R3.x, C0.x
+       y: MAX R17.y, R6.y, R7.y
     8  x: FLOOR R12.x, R12.x
+       y: MULADD R17.y, R17.y, C0.y, C0.z
     9  x: MUL R12.x, R12.x, 0.5f
+       z: SETGT R17.z, R3.y, R17.y
    10  x: FRACT R12.x, R12.x
    11  x: SETE R17.x, R12.x, 0.0f
    12  x: MUL R13.x, R4.x, C0.x
+       z: MAX R17.z, R17.z, R17.x
    13  x: FLOOR R13.x, R13.x
    14  x: MUL R13.x, R13.x, 0.5f
    15  x: FRACT R13.x, R13.x
    16  y: MUL R13.y, R5.x, C0.x
    17  y: FLOOR R13.y, R13.y
+       z: MUL R13.z, R6.x, C0.x
    18  y: MUL R13.y, R13.y, 0.5f
+       z: FLOOR R13.z, R13.z
+       w: MUL R13.w, R7.x, C0.x
    19  y: FRACT R13.y, R13.y
-   20  z: MUL R13.z, R6.x, C0.x
-   21  z: FLOOR R13.z, R13.z
-   22  z: MUL R13.z, R13.z, 0.5f
-   23  z: FRACT R13.z, R13.z
-   24  w: MUL R13.w, R7.x, C0.x
-   25  w: FLOOR R13.w, R13.w
-   26  w: MUL R13.w, R13.w, 0.5f
-   27  w: FRACT R13.w, R13.w
-   28  y: MAX R17.y, R6.y, R7.y
-   29  y: MULADD R17.y, R17.y, C0.y, C0.z
-   30  z: SETGT R17.z, R3.y, R17.y
-   31  z: MAX R17.z, R17.z, R17.x
-   32  x: MUL R14.x, R13.x, R13.y
-   33  x: MUL R14.x, R14.x, R17.x
-   34  y: MUL R14.y, R13.z, R13.w
-   35  y: MUL R14.y, R14.y, R17.z
-   36  z: MAX R14.z, R14.x, R14.y
-   37  x: KILLGT ____, (0x3E000000, 0.125f).x, R14.z
-   38  x: CNDGT R15.x, R14.y, R7.x, R5.x
-   39  y: CNDGT R15.y, R14.y, R7.y, R5.y
-   40  x: CNDGT R16.x, R14.y, R9.x, R8.x
-   41  y: CNDGT R16.y, R14.y, R9.y, R8.y
-   42  z: CNDGT R16.z, R14.y, R9.z, R8.z
-   43  w: CNDGT R16.w, R14.y, R9.w, R8.w
+       z: MUL R13.z, R13.z, 0.5f
+       w: FLOOR R13.w, R13.w
+   20  x: MUL R14.x, R13.x, R13.y
+       z: FRACT R13.z, R13.z
+       w: MUL R13.w, R13.w, 0.5f
+   21  x: MUL R14.x, R14.x, R17.x
+       w: FRACT R13.w, R13.w
+   22  y: MUL R14.y, R13.z, R13.w
+   23  y: MUL R14.y, R14.y, R17.z
+   24  x: CNDGT R15.x, R14.y, R7.x, R5.x
+       z: MAX R14.z, R14.x, R14.y
+       w: CNDGT R16.w, R14.y, R9.w, R8.w
+   25  x: KILLGT ____, (0x3E000000, 0.125f).x, R14.z
+   26  x: CNDGT R16.x, R14.y, R9.x, R8.x
+       y: CNDGT R15.y, R14.y, R7.y, R5.y
+       z: CNDGT R16.z, R14.y, R9.z, R8.z
+   27  y: CNDGT R16.y, R14.y, R9.y, R8.y
 02 EXP: PIX0, R16
 03 EXP_DONE: PIX1, R15
 END_OF_PROGRAM

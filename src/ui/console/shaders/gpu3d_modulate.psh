@@ -35,42 +35,42 @@
 ; The attributes are then encoded by C2 and C3, which leave them as they are for full-precision attributes, or fit
 ; them in 16 bits each: the ID and flags times C2.x plus C2.y, and the depth times C2.z, or with C3.x set, its log
 ; times C2.w.
-00 ALU: ADDR(32) CNT(19)
+00 ALU: ADDR(32) CNT(20)
     0  x: MIN R5.x, R0.z, R0.w
-    1  x: MIN R5.x, R5.x, R2.y
-    2  x: ADD R5.x, R5.x, 0.5f
-    3  x: MAX R5.x, R5.x, 0.0f
-    4  x: MIN R5.x, R5.x, 1.0f
-    5  x: ADD R5.x, -R5.x, 1.0f
-    6  x: ADD R0.x, R0.x, (0x3B000000, 0.001953125f).x
        y: ADD R0.y, R0.y, (0x3B000000, 0.001953125f).x
-    7  x: FLOOR R0.x, R0.x
+    1  x: MIN R5.x, R5.x, R2.y
        y: FLOOR R0.y, R0.y
-    8  x: MAX R0.x, R0.x, R3.x
-    9  y: MAX R0.y, R0.y, R3.y
-   10  x: MIN R0.x, R0.x, R3.z
-   11  y: MIN R0.y, R0.y, R3.w
-   12  x: ADD R0.x, R0.x, 0.5f
+    2  x: ADD R5.x, R5.x, 0.5f
+       y: MAX R0.y, R0.y, R3.y
+    3  x: MAX R5.x, R5.x, 0.0f
+       y: MIN R0.y, R0.y, R3.w
+    4  x: MIN R5.x, R5.x, 1.0f
        y: ADD R0.y, R0.y, 0.5f
-   13  x: MUL R0.x, R0.x, C0.x
+    5  x: ADD R5.x, -R5.x, 1.0f
        y: MUL R0.y, R0.y, C0.y
+    6  x: ADD R0.x, R0.x, (0x3B000000, 0.001953125f).x
+    7  x: FLOOR R0.x, R0.x
+    8  x: MAX R0.x, R0.x, R3.x
+    9  x: MIN R0.x, R0.x, R3.z
+   10  x: ADD R0.x, R0.x, 0.5f
+   11  x: MUL R0.x, R0.x, C0.x
 01 TEX: ADDR(80) CNT(1) VALID_PIX
-   14  SAMPLE R0, R0.xy00, t0, s0
-02 ALU: ADDR(51) CNT(15)
-   15  x: MUL R0.x, R0.x, R1.x
+   12  SAMPLE R0, R0.xy00, t0, s0
+02 ALU: ADDR(52) CNT(15)
+   13  x: MUL R0.x, R0.x, R1.x
        y: MUL R0.y, R0.y, R1.y
        z: MUL R0.z, R0.z, R1.z
        w: MUL R0.w, R0.w, R1.w
-   16  t: RECIP_IEEE R4.x, R2.z
-   17  y: MUL R2.y, R2.w, R4.x
-   18  x: ADD R2.x, R2.x, 0.5f
-   19  x: FLOOR R2.x, R2.x
-   20  x: MULADD R2.x, R5.x, (0x3F7C0000, 0.984375f).x, R2.x
-   21  x: MULADD R2.x, R2.x, C2.x, C2.y
-   22  t: LOG_IEEE R4.y, R2.y
-   23  y: MUL R4.y, R4.y, C2.w
-   24  z: MUL R4.z, R2.y, C2.z
-   25  y: CNDE R2.y, C3.x, R4.z, R4.y
+   14  t: RECIP_IEEE R4.x, R2.z
+   15  x: ADD R2.x, R2.x, 0.5f
+       y: MUL R2.y, R2.w, R4.x
+   16  x: FLOOR R2.x, R2.x
+       z: MUL R4.z, R2.y, C2.z
+   17  x: MULADD R2.x, R5.x, (0x3F7C0000, 0.984375f).x, R2.x
+   18  x: MULADD R2.x, R2.x, C2.x, C2.y
+   19  t: LOG_IEEE R4.y, R2.y
+   20  y: MUL R4.y, R4.y, C2.w
+   21  y: CNDE R2.y, C3.x, R4.z, R4.y
 03 EXP: PIX0, R0
 04 EXP_DONE: PIX1, R2
 END_OF_PROGRAM

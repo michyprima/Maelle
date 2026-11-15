@@ -29,15 +29,15 @@
     4  x: MIN R5.x, R5.x, 1.0f
     5  x: ADD R5.x, -R5.x, 1.0f
     6  t: RECIP_IEEE R4.x, R2.z
-    7  y: MUL R2.y, R2.w, R4.x
-    8  x: ADD R2.x, R2.x, 0.5f
-    9  x: FLOOR R2.x, R2.x
-   10  x: MULADD R2.x, R5.x, (0x3F7C0000, 0.984375f).x, R2.x
-   11  x: MULADD R2.x, R2.x, C2.x, C2.y
-   12  t: LOG_IEEE R4.y, R2.y
-   13  y: MUL R4.y, R4.y, C2.w
-   14  z: MUL R4.z, R2.y, C2.z
-   15  y: CNDE R2.y, C3.x, R4.z, R4.y
+    7  x: ADD R2.x, R2.x, 0.5f
+       y: MUL R2.y, R2.w, R4.x
+    8  x: FLOOR R2.x, R2.x
+       z: MUL R4.z, R2.y, C2.z
+    9  x: MULADD R2.x, R5.x, (0x3F7C0000, 0.984375f).x, R2.x
+   10  x: MULADD R2.x, R2.x, C2.x, C2.y
+   11  t: LOG_IEEE R4.y, R2.y
+   12  y: MUL R4.y, R4.y, C2.w
+   13  y: CNDE R2.y, C3.x, R4.z, R4.y
 01 EXP: PIX0, R1
 02 EXP_DONE: PIX1, R2
 END_OF_PROGRAM

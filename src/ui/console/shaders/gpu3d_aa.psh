@@ -30,10 +30,9 @@
 ; own depth times C0.x plus C0.y, like edge marking; if that color is transparent, only the alpha is set to the
 ; coverage, like on the DS. Other pixels keep their color, since this writes every pixel to a new buffer. Like the
 ; packing shader, it writes each color as the 2D engine's 3D pixel, saving a pass over the screen; colors are first
-; rounded to 8 bits, like the color buffer would. Each
-; instruction group has a single instruction, since groups can't read the same channel of different registers at
-; once, which the assembler doesn't check.
-00 TEX: ADDR(144) CNT(10) VALID_PIX
+; rounded to 8 bits, like the color buffer would. Instructions are packed into groups
+; by the rules in README.md, which the assembler doesn't check.
+00 TEX: ADDR(128) CNT(10) VALID_PIX
     0  SAMPLE R3, R0.xy00, t0, s0
     1  SAMPLE R4, R1.xy00, t0, s0
     2  SAMPLE R5, R1.zw00, t0, s0
@@ -44,84 +43,84 @@
     7  SAMPLE R10, R2.xy00, t1, s1
     8  SAMPLE R11, R2.zw00, t1, s1
     9  SAMPLE R12, R0.xy00, t1, s1
-01 ALU: ADDR(32) CNT(103)
+01 ALU: ADDR(32) CNT(94)
    10  x: MUL R18.x, R3.x, C1.x
+       y: ADD R14.y, R5.y, -R4.y
    11  x: FRACT R18.x, R18.x
+       y: CNDGT R13.y, R14.y, R9.y, R8.y
+       z: CNDGT R13.z, R14.y, R9.z, R8.z
+       w: CNDGT R13.w, R14.y, R9.w, R8.w
    12  x: MULADD R18.x, R18.x, (0xBF820821, -1.015873f).x, 1.0f
-   13  y: ADD R14.y, R5.y, -R4.y
-   14  x: CNDGT R13.x, R14.y, R9.x, R8.x
-   15  y: CNDGT R13.y, R14.y, R9.y, R8.y
-   16  z: CNDGT R13.z, R14.y, R9.z, R8.z
-   17  w: CNDGT R13.w, R14.y, R9.w, R8.w
-   18  x: MAX R14.x, R4.y, R5.y
-   19  y: ADD R14.y, R7.y, -R6.y
-   20  x: CNDGT R15.x, R14.y, R11.x, R10.x
-   21  y: CNDGT R15.y, R14.y, R11.y, R10.y
-   22  z: CNDGT R15.z, R14.y, R11.z, R10.z
-   23  w: CNDGT R15.w, R14.y, R11.w, R10.w
-   24  z: MAX R14.z, R6.y, R7.y
-   25  y: ADD R14.y, R14.z, -R14.x
-   26  x: CNDGT R13.x, R14.y, R15.x, R13.x
-   27  y: CNDGT R13.y, R14.y, R15.y, R13.y
-   28  z: CNDGT R13.z, R14.y, R15.z, R13.z
-   29  w: CNDGT R13.w, R14.y, R15.w, R13.w
-   30  x: MAX R14.x, R14.x, R14.z
-   31  w: MULADD R14.w, R3.y, C0.x, C0.y
-   32  x: SETGT R17.x, R14.x, R14.w
-   33  y: SETGT R17.y, 1.0f, R18.x
-   34  x: MUL R17.x, R17.x, R17.y
-   35  x: ADD R16.x, R12.x, -R13.x
-   36  y: ADD R16.y, R12.y, -R13.y
-   37  z: ADD R16.z, R12.z, -R13.z
-   38  x: MULADD R16.x, R16.x, R18.x, R13.x
-   39  y: MULADD R16.y, R16.y, R18.x, R13.y
-   40  z: MULADD R16.z, R16.z, R18.x, R13.z
-   41  w: MAX R16.w, R12.w, R13.w
-   42  x: CNDE R16.x, R13.w, R12.x, R16.x
-   43  y: CNDE R16.y, R13.w, R12.y, R16.y
-   44  z: CNDE R16.z, R13.w, R12.z, R16.z
-   45  w: CNDE R16.w, R13.w, R18.x, R16.w
-   46  x: CNDE R16.x, R17.x, R12.x, R16.x
-   47  y: CNDE R16.y, R17.x, R12.y, R16.y
-   48  z: CNDE R16.z, R17.x, R12.z, R16.z
-   49  w: CNDE R16.w, R17.x, R12.w, R16.w
-   50  x: MUL R19.x, R16.x, (0x437F0000, 255.0f).x
-   51  x: ADD R19.x, R19.x, 0.5f
-   52  x: FLOOR R19.x, R19.x
-   53  x: MUL R19.x, R19.x, 0.25f
-   54  x: ADD R19.x, R19.x, (0x3A83126F, 0.001f).x
-   55  y: MUL R19.y, R16.y, (0x437F0000, 255.0f).x
-   56  y: ADD R19.y, R19.y, 0.5f
-   57  y: FLOOR R19.y, R19.y
-   58  y: MUL R19.y, R19.y, 0.25f
-   59  y: ADD R19.y, R19.y, (0x3A83126F, 0.001f).x
-   60  z: MUL R19.z, R16.z, (0x437F0000, 255.0f).x
-   61  z: ADD R19.z, R19.z, 0.5f
-   62  z: FLOOR R19.z, R19.z
-   63  z: MUL R19.z, R19.z, 0.25f
-   64  z: ADD R19.z, R19.z, (0x3A83126F, 0.001f).x
-   65  w: MUL R19.w, R16.w, (0x437F0000, 255.0f).x
-   66  w: ADD R19.w, R19.w, 0.5f
-   67  w: FLOOR R19.w, R19.w
-   68  w: MUL R19.w, R19.w, 0.25f
-   69  w: ADD R19.w, R19.w, (0x3A83126F, 0.001f).x
-   70  x: FLOOR R19.x, R19.x
-   71  y: FLOOR R19.y, R19.y
-   72  z: FLOOR R19.z, R19.z
-   73  w: FLOOR R19.w, R19.w
-   74  y: MUL R20.y, R19.y, 0.25f
-   75  y: FLOOR R20.y, R20.y
-   76  x: MULADD R20.x, R20.y, (0xC0800000, -4.0f).x, R19.y
-   77  z: MUL R20.z, R19.z, (0x3D800000, 0.0625f).x
-   78  z: FLOOR R20.z, R20.z
-   79  w: MULADD R20.w, R20.z, (0xC1800000, -16.0f).x, R19.z
-   80  w: MULADD R21.w, R20.x, (0x42800000, 64.0f).x, R19.x
-   81  z: MULADD R21.z, R20.w, (0x41800000, 16.0f).x, R20.y
-   82  y: MULADD R21.y, R19.w, (0x40800000, 4.0f).x, R20.z
-   83  x: MOV R21.x, (0x40800000, 4.0f).x
-   84  x: MUL R21.x, R21.x, (0x3B808081, 0.003921569f).x
-   85  y: MUL R21.y, R21.y, (0x3B808081, 0.003921569f).x
-   86  z: MUL R21.z, R21.z, (0x3B808081, 0.003921569f).x
-   87  w: MUL R21.w, R21.w, (0x3B808081, 0.003921569f).x
+       z: MAX R14.z, R6.y, R7.y
+   13  x: CNDGT R13.x, R14.y, R9.x, R8.x
+   14  x: MAX R14.x, R4.y, R5.y
+       y: SETGT R17.y, 1.0f, R18.x
+   15  x: MOV R21.x, (0x40800000, 4.0f).x
+       y: ADD R14.y, R7.y, -R6.y
+   16  x: CNDGT R15.x, R14.y, R11.x, R10.x
+       y: CNDGT R15.y, R14.y, R11.y, R10.y
+       z: CNDGT R15.z, R14.y, R11.z, R10.z
+       w: CNDGT R15.w, R14.y, R11.w, R10.w
+   17  x: MAX R14.x, R14.x, R14.z
+       y: ADD R14.y, R14.z, -R14.x
+       w: MULADD R14.w, R3.y, C0.x, C0.y
+   18  x: CNDGT R13.x, R14.y, R15.x, R13.x
+       y: CNDGT R13.y, R14.y, R15.y, R13.y
+       z: CNDGT R13.z, R14.y, R15.z, R13.z
+       w: CNDGT R13.w, R14.y, R15.w, R13.w
+   19  x: SETGT R17.x, R14.x, R14.w
+       y: ADD R16.y, R12.y, -R13.y
+       z: ADD R16.z, R12.z, -R13.z
+   20  x: MUL R17.x, R17.x, R17.y
+       y: MULADD R16.y, R16.y, R18.x, R13.y
+       z: MULADD R16.z, R16.z, R18.x, R13.z
+       w: MAX R16.w, R12.w, R13.w
+   21  x: ADD R16.x, R12.x, -R13.x
+       y: CNDE R16.y, R13.w, R12.y, R16.y
+       z: CNDE R16.z, R13.w, R12.z, R16.z
+   22  x: MULADD R16.x, R16.x, R18.x, R13.x
+       w: CNDE R16.w, R13.w, R18.x, R16.w
+   23  x: CNDE R16.x, R13.w, R12.x, R16.x
+       y: CNDE R16.y, R17.x, R12.y, R16.y
+       z: CNDE R16.z, R17.x, R12.z, R16.z
+       w: CNDE R16.w, R17.x, R12.w, R16.w
+   24  x: CNDE R16.x, R17.x, R12.x, R16.x
+       y: MUL R19.y, R16.y, (0x437F0000, 255.0f).x
+       z: MUL R19.z, R16.z, (0x437F0000, 255.0f).y
+       w: MUL R19.w, R16.w, (0x437F0000, 255.0f).z
+   25  x: MUL R19.x, R16.x, (0x437F0000, 255.0f).x
+       y: ADD R19.y, R19.y, 0.5f
+       z: ADD R19.z, R19.z, 0.5f
+       w: ADD R19.w, R19.w, 0.5f
+   26  x: ADD R19.x, R19.x, 0.5f
+       y: FLOOR R19.y, R19.y
+       z: FLOOR R19.z, R19.z
+       w: FLOOR R19.w, R19.w
+   27  x: FLOOR R19.x, R19.x
+       y: MUL R19.y, R19.y, (0x3E800000, 0.25f).x
+       z: MUL R19.z, R19.z, (0x3E800000, 0.25f).y
+       w: MUL R19.w, R19.w, (0x3E800000, 0.25f).z
+   28  x: MUL R19.x, R19.x, (0x3E800000, 0.25f).x
+       y: ADD R19.y, R19.y, (0x3A83126F, 0.001f).y
+       z: ADD R19.z, R19.z, (0x3A83126F, 0.001f).z
+       w: ADD R19.w, R19.w, (0x3A83126F, 0.001f).w
+   29  x: ADD R19.x, R19.x, (0x3A83126F, 0.001f).x
+       y: FLOOR R19.y, R19.y
+       z: FLOOR R19.z, R19.z
+       w: FLOOR R19.w, R19.w
+   30  x: FLOOR R19.x, R19.x
+       y: MUL R20.y, R19.y, (0x3E800000, 0.25f).x
+       z: MUL R20.z, R19.z, (0x3D800000, 0.0625f).y
+   31  x: MUL R21.x, R21.x, (0x3B808081, 0.003921569f).x
+       y: FLOOR R20.y, R20.y
+       z: FLOOR R20.z, R20.z
+   32  x: MULADD R20.x, R20.y, (0xC0800000, -4.0f).x, R19.y
+       w: MULADD R20.w, R20.z, (0xC1800000, -16.0f).y, R19.z
+   33  z: MULADD R21.z, R20.w, (0x41800000, 16.0f).x, R20.y
+       w: MULADD R21.w, R20.x, (0x42800000, 64.0f).y, R19.x
+   34  y: MULADD R21.y, R19.w, (0x40800000, 4.0f).x, R20.z
+       z: MUL R21.z, R21.z, (0x3B808081, 0.003921569f).y
+   35  y: MUL R21.y, R21.y, (0x3B808081, 0.003921569f).x
+       w: MUL R21.w, R21.w, (0x3B808081, 0.003921569f).y
 02 EXP_DONE: PIX0, R21
 END_OF_PROGRAM

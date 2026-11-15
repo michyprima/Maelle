@@ -42,33 +42,33 @@
 ; every 256 pixels. The color image has each pixel's color and alpha, and the depth image has the DS depth and the fog
 ; flag. The attributes are the clear polygon ID times 4 in C1.z plus the fog flag, encoded by C2 and C3 like the
 ; polygons' are, with the depth limited to at least 1 for the log. The depth buffer gets the depth times C4.x, or with
-; C1.w set for W-buffering, C4.y over it. Each instruction group has a single instruction, since groups can't read the
-; same channel of different registers at once, which the assembler doesn't check.
-00 ALU: ADDR(32) CNT(10)
+; C1.w set for W-buffering, C4.y over it. Instructions are packed into groups
+; by the rules in README.md, which the assembler doesn't check.
+00 ALU: ADDR(32) CNT(9)
     0  x: MULADD R4.x, R0.x, C0.x, C0.z
-    1  y: MULADD R4.y, R0.y, C0.y, C0.w
-    2  x: FLOOR R4.x, R4.x
-    3  y: FLOOR R4.y, R4.y
-    4  x: ADD R4.x, R4.x, C1.x
-    5  y: ADD R4.y, R4.y, C1.y
-    6  x: MUL R4.x, R4.x, (0x3B800000, 0.00390625f).x
-    7  y: MUL R4.y, R4.y, (0x3B800000, 0.00390625f).x
+       y: MULADD R4.y, R0.y, C0.y, C0.w
+    1  x: FLOOR R4.x, R4.x
+       y: FLOOR R4.y, R4.y
+    2  x: ADD R4.x, R4.x, C1.x
+       y: ADD R4.y, R4.y, C1.y
+    3  x: MUL R4.x, R4.x, (0x3B800000, 0.00390625f).x
+       y: MUL R4.y, R4.y, (0x3B800000, 0.00390625f).y
 01 TEX: ADDR(64) CNT(2) VALID_PIX
-    8  SAMPLE R5, R4.xy00, t0, s0
-    9  SAMPLE R6, R4.xy00, t1, s1
-02 ALU: ADDR(42) CNT(13)
-   10  x: MULADD R7.x, R6.y, 2.0f, C1.z
-   11  x: MULADD R7.x, R7.x, C2.x, C2.y
-   12  x: MAX R8.x, R6.x, 1.0f
-   13  t: LOG_IEEE R8.y, R8.x
-   14  y: MUL R8.y, R8.y, C2.w
-   15  z: MUL R8.z, R6.x, C2.z
-   16  y: CNDE R7.y, C3.x, R8.z, R8.y
-   17  t: RECIP_IEEE R9.x, R8.x
-   18  x: MUL R9.x, R9.x, C4.y
-   19  z: MUL R9.z, R6.x, C4.x
-   20  x: CNDE R10.x, C1.w, R9.z, R9.x
-   21  x: MIN R10.x, R10.x, 1.0f
+    4  SAMPLE R5, R4.xy00, t0, s0
+    5  SAMPLE R6, R4.xy00, t1, s1
+02 ALU: ADDR(41) CNT(13)
+    6  x: MULADD R7.x, R6.y, (0x40000000, 2.0f).x, C1.z
+       z: MUL R8.z, R6.x, C2.z
+    7  x: MULADD R7.x, R7.x, C2.x, C2.y
+    8  x: MAX R8.x, R6.x, 1.0f
+       z: MUL R9.z, R6.x, C4.x
+    9  t: LOG_IEEE R8.y, R8.x
+   10  y: MUL R8.y, R8.y, C2.w
+   11  y: CNDE R7.y, C3.x, R8.z, R8.y
+   12  t: RECIP_IEEE R9.x, R8.x
+   13  x: MUL R9.x, R9.x, C4.y
+   14  x: CNDE R10.x, C1.w, R9.z, R9.x
+   15  x: MIN R10.x, R10.x, 1.0f
 03 EXP: PIX0, R5
 04 EXP: PIX1, R7
 05 EXP_DONE: PIX61, R10
