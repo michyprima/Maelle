@@ -116,6 +116,7 @@ struct JitBlock {
     std::vector<std::pair<JitBlock*, uint32_t*>> incoming; // Linked jumps to this block, and their blocks
     int linkedPos = -1; // Position in the list of blocks with linked jumps, or -1 if it's not there
     uint8_t afterFetch = 0; // Offset in the code past a check that the code cache holds only the first line, or 0
+    bool exact = false; // Whether it checks whether to stop after every instruction, even with fast timing
 
     static void *operator new(size_t size);
     static void operator delete(void *block);
@@ -176,7 +177,7 @@ private:
     // Blocks are looked up by the host address of their first halfword
     // The ARM9 compiles code from main RAM, ITCM and its BIOS; the ARM7 from main RAM, both WRAMs and its BIOS
     // Pages of the writable regions are tracked, which is 4MB of main RAM or 16MB in DSi mode, then the rest
-    JitRegion regions[4] = {};
+    JitRegion regions[6] = {};
     int regionCount = 0;
     uint32_t tableSize = 0;
     std::vector<JitBlock*> table;
@@ -220,7 +221,7 @@ private:
     std::vector<uint8_t> liveFlags; // Which of N, Z, C and V are read after each instruction of the block being generated
     uint8_t flagsLive = 0xF; // The same for the instruction being generated, as bits 28 to 31 of the CPSR
     bool thumbCode = false; // Whether the block being generated is THUMB
-    bool fullSpeed = false; // Whether it's the ARM7's from outside main RAM in DSi mode, where its cycles aren't doubled
+    bool fullSpeed = false; // Whether it's the ARM7's BIOS, or DSi code outside main RAM, whose cycles aren't doubled
     void *codePost[3][2] = {}, *codeSlowPost[2] = {}; // Indexed by how cycles are halved, then storing the PC
     void *codeFetch[2] = {}; // Fetching a line into the ARM9's code cache, with a second for when it might be there already
     std::vector<JitFetch> fetchPaths; // Fetches to generate after the code being generated

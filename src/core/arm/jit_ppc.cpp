@@ -446,8 +446,8 @@ void Jit::emitStubs(PpcEmitter &e) {
     // ARM9 at 133MHz, then continue if nothing else needs to run first, which includes code having changed, since
     // refreshing sets when to stop to now for that. The ARM9 gets versions for both of its speeds, the faster one for
     // the DSi at 133MHz and for code in the instruction TCM of a game that needs it, and a cheaper one of that for fast
-    // timing; the DSi's ARM7 gets a second version that doesn't double, for code outside main RAM
-    for (int half = 0; half < (!arm7 ? 3 : core->dsiMode ? 2 : 1); half++) {
+    // timing; the ARM7 gets a second version that doesn't double, for its BIOS and the DSi's code outside main RAM
+    for (int half = 0; half < (!arm7 ? 3 : 2); half++) {
         for (int store = 0; store < 2; store++) {
             codePost[half][store] = e.here();
             if (arm7 && !half) e.add(3, 3, 3);
@@ -2393,7 +2393,7 @@ bool Jit::batched(JitBlock *block, size_t i) {
     // Check if an instruction is in a run whose cycles are checked together, which is only done with fast timing
     // Runs are native ALU instructions and loads; stores always check, since they can halt the CPU, change code
     // or schedule something that has to happen straight away, and jumps end runs since they leave the block
-    if (!codeFast || testing || i >= block->instrs.size()) return false;
+    if (!codeFast || testing || block->exact || i >= block->instrs.size()) return false;
     uint32_t op = armOpcode(block, i);
     int kind = nativeKind(op, arm7);
     if (kind == NK_ALU || kind == NK_MULTIPLY || kind == NK_MISC) return true;
@@ -2665,7 +2665,7 @@ void *Jit::generate(JitBlock *block) {
     runCycles = 0;
     pcBehind = 0;
     thumbCode = block->thumb;
-    fullSpeed = arm7 && codeFullSpeed && !Interpreter::mainRam(block->address);
+    fullSpeed = arm7 && (block->address < 0x10000 || (codeFullSpeed && !Interpreter::mainRam(block->address)));
     block->links.clear();
     fetchPaths.clear();
     listCalls.clear();

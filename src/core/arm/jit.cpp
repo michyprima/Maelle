@@ -101,7 +101,7 @@ void Jit::enable(bool value) {
     halfCycles = nextHalfCycles = core->memory.fastArm9() && !arm7;
 
     // Set up the memory that code is compiled from, with the writable parts first so their pages are numbered first
-    // Main RAM and the ARM7 BIOS are bigger in DSi mode
+    // Main RAM and the ARM7 BIOS are bigger in DSi mode, which also has the DS BIOSes to switch to for DS titles
     Memory &mem = core->memory;
     regionCount = 0;
     regions[regionCount++] = { mem.ram, mem.ramSize, true };
@@ -109,10 +109,12 @@ void Jit::enable(bool value) {
         regions[regionCount++] = { mem.wram, 0x8000, true };
         regions[regionCount++] = { mem.wram7, 0x10000, true };
         regions[regionCount++] = { mem.bios7, core->dsiMode ? 0x10000U : 0x4000U, false };
+        regions[regionCount++] = { mem.ndsBios7, 0x4000, false };
     }
     else {
         regions[regionCount++] = { mem.instrTcm, 0x8000, true };
         regions[regionCount++] = { mem.bios9, 0x10000, false };
+        regions[regionCount++] = { mem.ndsBios9, 0x8000, false };
     }
     tableSize = 0;
     uint32_t pageCount = 0;
@@ -267,6 +269,9 @@ JitBlock *Jit::compile(uint32_t address, bool thumb, uint8_t *host, int index) {
     block->thumb = thumb;
     block->start = host;
     block->index = index;
+    // Code the interpreter ran until compiled code could count its time, the ARM7's BIOS and the DS ARM9 BIOS on a DSi,
+    // checks after every instruction like the interpreter does, so its time and what it sees stay the same
+    block->exact = arm7 ? address < 0x10000 : uintptr_t(host - core->memory.ndsBios9) < 0x8000;
 
     // If this starts in the middle of a block with generated code, reuse that block's code from there
     // Its instructions are the same, so only a small entry point is needed instead of another copy
@@ -553,9 +558,10 @@ bool Jit::run(const uint32_t *limit) {
     uint32_t &noCode = noCodePages[(address >> 12) & (NO_CODE_SIZE - 1)];
     if (noCode == (address >> 12) + 1) return false;
 
-    // The ARM7's BIOS is left to the interpreter, which times it at full speed unlike the rest of the ARM7's code;
-    // it's only a few hundred instructions a frame, mostly delays and waiting for interrupts
-    if (arm7 && address < 0x10000) return false;
+    // The ARM7's BIOS is timed at full speed, unlike the rest of the ARM7's code; the interpreter counts by where the
+    // program counter reads, so the last instructions of the DSi's, which compiled code would count by where its block
+    // starts, are left to it
+    if (arm7 && address >= 0xFE00 && address < 0x10000) return false;
 
     // Put back unlinked jumps and delete blocks that were invalidated, now that none are running
     if (!unlinks.empty()) applyUnlinks();
