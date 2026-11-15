@@ -968,6 +968,11 @@ void CartridgeNds::directBoot() {
 
         // The system has uploaded that firmware to the chip by now, which titles count on and can't do themselves
         core->dsiWifi.setFirmwareLoaded();
+
+        // Put the touchscreen controller in DS mode for DSi titles whose header asks for it (flags bit 0 at 1BFh clear),
+        // like Korg DS-10+, which read it the DS way
+        if (!(rom[0x1BF] & BIT(0)))
+            core->spi.setTscDsMode();
     }
     else if (core->dsiMode) {
         // Leave only the DS features, as the system does for a DS title, and put the touchscreen controller in DS mode,
