@@ -112,6 +112,7 @@ public:
     static void *drawLastScreen; // The last frame's screen to average with the next one, if any
 
     static int showFpsCounter;
+    static int selectLastRom;
     static int menuTheme;
     static int frameColor; // The screen frame's color, or 0 for none
     static int gameLanguage; // The language games see, or 0 for the system's
@@ -185,7 +186,7 @@ private:
     static bool touchMode;
 
     static std::string ndsPath, gbaPath;
-    static std::string basePath, curPath, defaultFolder;
+    static std::string basePath, curPath, defaultFolder, lastRom;
     static bool changed;
     static void *frameTextures[2]; // The screen frame for the TV and the gamepad
     static ScreenFrame::LightPatch lightPatches[ScreenFrame::LIGHT_COUNT]; // The TV frame's lights, lit and unlit

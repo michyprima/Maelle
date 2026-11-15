@@ -90,7 +90,7 @@ bool ConsoleUI::touchMode;
 Core *ConsoleUI::core;
 bool ConsoleUI::running;
 std::string ConsoleUI::ndsPath, ConsoleUI::gbaPath;
-std::string ConsoleUI::basePath, ConsoleUI::curPath, ConsoleUI::defaultFolder;
+std::string ConsoleUI::basePath, ConsoleUI::curPath, ConsoleUI::defaultFolder, ConsoleUI::lastRom;
 
 alignas(4096) uint32_t ConsoleUI::framebuffer[256 * 192 * 8];
 ScreenLayout ConsoleUI::layout;
@@ -167,6 +167,7 @@ static void debugFrameEnd(Core *core) {
 }
 #endif
 int ConsoleUI::showFpsCounter = 0;
+int ConsoleUI::selectLastRom = 1;
 int ConsoleUI::menuTheme = 0;
 int ConsoleUI::frameColor = 1;
 int ConsoleUI::gameLanguage = 0;
@@ -300,6 +301,7 @@ void ConsoleUI::initialize(int width, int height, std::string root, std::string 
     // Define the platform settings
     std::vector<Setting> platformSettings = {
         Setting("showFpsCounter", &showFpsCounter, false),
+        Setting("selectLastRom", &selectLastRom, false),
         Setting("menuTheme", &menuTheme, false),
         Setting("screenFrame", &frameColor, false),
         Setting("gameLanguage", &gameLanguage, false),
@@ -307,6 +309,7 @@ void ConsoleUI::initialize(int width, int height, std::string root, std::string 
         Setting("micInput", &micInput, false),
         Setting("stickPointer", &stickPointer, false),
         Setting("defaultFolder", &defaultFolder, true),
+        Setting("lastRom", &lastRom, true),
         Setting("keyA", &keyBinds[INPUT_A], false),
         Setting("keyB", &keyBinds[INPUT_B], false),
         Setting("keySelect", &keyBinds[INPUT_SELECT], false),
@@ -1527,7 +1530,11 @@ uint32_t ConsoleUI::message(std::string title, std::string text, int type) {
 
 bool ConsoleUI::fileBrowser() {
     // Return whether the browser was closed for good, or false if going back to a paused game's menu
+    // At startup, the last ROM started is selected if it's in the start folder
+    static bool startup = true;
     int index = 0;
+    bool selectLast = startup && selectLastRom;
+    startup = false;
     while (true) {
         // Open the current directory to list files from, keeping other file access out until the list is built, like
         // a ROM still loading in the background
@@ -1564,6 +1571,11 @@ bool ConsoleUI::fileBrowser() {
         sort(files.begin(), files.end());
         if (dir) closedir(dir);
         listLock.unlock();
+        if (selectLast) {
+            for (int i = 0; i < (int)files.size(); i++)
+                if (curPath + "/" + files[i].name == lastRom) index = i;
+            selectLast = false;
+        }
 
         // Create the file browser menu
         uint32_t pressed = menu("NooDS U", files, index, "Settings", "Exit", true,
@@ -1602,7 +1614,9 @@ bool ConsoleUI::fileBrowser() {
                 continue;
 
             case 2: // ROM loaded
-                // Save the previous directory and close the file browser
+                // Remember the ROM, save the previous directory, and close the file browser
+                lastRom = curPath;
+                Settings::save();
                 curPath = curPath.substr(0, curPath.rfind("/"));
                 return true;
             }
@@ -1859,6 +1873,7 @@ void ConsoleUI::settingsMenu() {
         case TAB_NOODSU:
             add("Menu Theme", menuTheme, theme);
             add("Show FPS Counter", showFpsCounter, toggle);
+            add("Select Last ROM", selectLastRom, toggle);
             aboutIndex = settings.size();
             settings.push_back(MenuItem("About NooDS U"));
             values.push_back({ nullptr, 0 });
