@@ -18,6 +18,7 @@
     along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -667,10 +668,11 @@ void Gpu3DRenderer::finishScanline(int line) {
     }
 }
 
-uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon, bool palette) {
+uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon, bool palette, std::vector<uint16_t> &bases) {
     // Hash the data a polygon's texture is decoded from, so a hardware renderer can tell if a decoded copy is current
-    // This is either the texel data, or the palette, which for compressed textures includes their block data and the
-    // block palettes it picks; the two are hashed apart, since games that animate palettes change only those
+    // This is either the texel data, or the palette; the two are hashed apart, since games that animate palettes change
+    // only those. Compressed textures' block data, which picks each block's palette, counts as texel data, and hashing
+    // it lists the palette bases it picks in bases, so the palette is hashed from those alone, once each
     static const uint8_t texelBits[] = { 0, 8, 2, 4, 8, 2, 8, 16 };
     static const uint16_t paletteSizes[] = { 0, 64, 8, 32, 512, 0, 16, 0 };
     uint64_t hash = 14695981039346656037ULL;
@@ -706,16 +708,22 @@ uint64_t Gpu3DRenderer::hashTexture(_Polygon *polygon, bool palette) {
     uint32_t texels = polygon->sizeS * polygon->sizeT;
     if (!palette) {
         addTexture(polygon->textureAddr, texels * texelBits[polygon->textureFmt] / 8);
+        bases.clear();
+        if (polygon->textureFmt == 5) {
+            // Compressed textures have 2 bytes per 4x4 block in slot 1, each choosing a palette of up to 4 colors
+            uint32_t blockAddr = 0x20000 + (polygon->textureAddr % 0x20000) / 2 + ((polygon->textureAddr / 0x20000 == 2) ? 0x10000 : 0);
+            addTexture(blockAddr, texels / 16 * 2);
+            for (uint32_t i = 0; i < texels / 16; i++)
+                if (uint8_t *block = getTexture(blockAddr + i * 2))
+                    bases.push_back(U8TO16(block, 0));
+            std::sort(bases.begin(), bases.end());
+            bases.erase(std::unique(bases.begin(), bases.end()), bases.end());
+        }
         return hash;
     }
     addPalette(polygon->paletteAddr, paletteSizes[polygon->textureFmt]);
     if (polygon->textureFmt == 5) {
-        // Compressed textures have 2 bytes per 4x4 block in slot 1, each choosing a palette of up to 4 colors
-        uint32_t blockAddr = 0x20000 + (polygon->textureAddr % 0x20000) / 2 + ((polygon->textureAddr / 0x20000 == 2) ? 0x10000 : 0);
-        for (uint32_t i = 0; i < texels / 16; i++) {
-            uint8_t *block = getTexture(blockAddr + i * 2);
-            if (!block) continue;
-            uint16_t palBase = U8TO16(block, 0);
+        for (uint16_t palBase : bases) {
             hash = (hash ^ palBase) * 1099511628211ULL;
             addPalette(polygon->paletteAddr + (palBase & 0x3FFF) * 4, 8);
         }

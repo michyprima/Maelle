@@ -84,7 +84,7 @@ public:
     uint16_t getFogOffset() { return fogOffset; }
     uint8_t getFogTable(int index) { return fogTable[index]; }
     uint8_t getAlphaTestRef() { return alphaTestRef; }
-    uint64_t hashTexture(_Polygon *polygon, bool palette);
+    uint64_t hashTexture(_Polygon *polygon, bool palette, std::vector<uint16_t> &bases);
     bool textureBounds(_Polygon *polygon, int shift, int32_t bounds[4]);
     void getSpan(int line, int polygonIndex, Span &span);
     void decodeTexture(_Polygon *polygon, uint32_t *out, int pitch);

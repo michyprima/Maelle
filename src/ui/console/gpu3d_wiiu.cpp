@@ -73,7 +73,7 @@ namespace {
 // The vertex layout the shaders read: clip-space position, texture coordinates and color
 const GX2ChannelMask NO_CHANNELS = (GX2ChannelMask)0;
 
-struct GpuVertex {
+struct alignas(32) GpuVertex {
     float pos[4];
     float tex[4]; // Texture coordinates, then the distances to 2 of the triangle's edges for anti-aliasing
     float color[4];
@@ -85,6 +85,25 @@ struct GpuVertex {
 
 // Vertices fill 3 whole cache blocks in the 64-byte aligned vertex buffer, so they can be claimed before being written
 static_assert(sizeof(GpuVertex) == 96, "GpuVertex must fill 3 cache blocks");
+
+// Copy a vertex 8 bytes at a time with floating-point loads and stores, which move the bits unchanged; assigning one
+// calls memcpy, which copies a word at a time
+FORCE_INLINE void copyVertex(GpuVertex &out, const GpuVertex &in) {
+    typedef double __attribute__((__may_alias__)) Pair;
+    const Pair *from = (const Pair*)&in;
+    Pair *to = (Pair*)&out;
+    to[0] = from[0]; to[1] = from[1]; to[2] = from[2]; to[3] = from[3]; to[4] = from[4]; to[5] = from[5];
+    to[6] = from[6]; to[7] = from[7]; to[8] = from[8]; to[9] = from[9]; to[10] = from[10]; to[11] = from[11];
+}
+
+// Color levels as the shaders take them, looked up since converting an integer to a float goes through memory
+struct ColorLevels {
+    float levels[64];
+    constexpr ColorLevels(): levels() {
+        for (int i = 0; i < 64; i++) levels[i] = float(i) * (1.0f / 63.0f);
+    }
+};
+constexpr ColorLevels COLOR_LEVELS;
 
 // A run of triangles drawn with the same state
 struct GpuDraw {
@@ -156,6 +175,7 @@ private:
         uint64_t texelHash, paletteHash;
         uint32_t frame;
         uint32_t texelChanges, paletteChanges; // Texture and palette mapping changes when its data was last checked
+        std::vector<uint16_t> bases; // The palette bases a compressed texture's blocks pick
     };
     std::unordered_map<uint64_t, CachedTexture> textures;
 
@@ -164,6 +184,7 @@ private:
         uint64_t hash;
         uint32_t frame;
         uint32_t texelChanges; // Texture mapping changes when the data was hashed
+        std::vector<uint16_t> bases;
     };
     std::unordered_map<uint64_t, TexelHash> texelHashes;
     std::vector<GX2Texture*> updated;
@@ -559,13 +580,14 @@ GX2Texture *Gpu3DWiiU::lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon,
         uint64_t texelKey = key & ~(uint64_t(0x1FFFF) << 19) & ~(uint64_t(1) << 45);
         TexelHash &shared = texelHashes[texelKey];
         if (shared.frame == 0 || shared.texelChanges != texelChanges) {
-            shared.hash = renderer->hashTexture(polygon, false);
+            shared.hash = renderer->hashTexture(polygon, false, shared.bases);
             shared.texelChanges = texelChanges;
         }
         shared.frame = frameCount;
         texelHash = shared.hash;
+        cached.bases = shared.bases;
     }
-    uint64_t paletteHash = renderer->hashTexture(polygon, true);
+    uint64_t paletteHash = renderer->hashTexture(polygon, true, cached.bases);
     if (cached.texture && cached.texelHash == texelHash && cached.paletteHash == paletteHash) return cached.texture;
     cached.texelHash = texelHash;
     cached.paletteHash = paletteHash;
@@ -1236,9 +1258,9 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 place(out, float(v.x), float(v.y), float(v.z), w);
                 out.tex[0] = v.s / 16.0f - shiftS;
                 out.tex[1] = v.t / 16.0f - shiftT;
-                out.color[0] = ((v.color >> 0) & 0x3F) / 63.0f;
-                out.color[1] = ((v.color >> 6) & 0x3F) / 63.0f;
-                out.color[2] = ((v.color >> 12) & 0x3F) / 63.0f;
+                out.color[0] = COLOR_LEVELS.levels[(v.color >> 0) & 0x3F];
+                out.color[1] = COLOR_LEVELS.levels[(v.color >> 6) & 0x3F];
+                out.color[2] = COLOR_LEVELS.levels[(v.color >> 12) & 0x3F];
                 out.color[3] = alpha;
                 out.attrib[0] = polygon->id * 4 + 1 + (polygon->fog ? 2 : 0);
                 out.attrib[1] = 0.0f;
@@ -1263,7 +1285,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             for (int k = 0; wireframe && k < polygon->size; k++) {
                 for (int c = 0; c < 2; c++) {
                     GpuVertex &out = vertices[count++];
-                    out = converted[(k + c) % polygon->size];
+                    copyVertex(out, converted[(k + c) % polygon->size]);
                     out.tex[2] = out.tex[3] = out.attrib[1] = 1000.0f;
                 }
             }
@@ -1303,7 +1325,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                     claimBlock(&out);
                     claimBlock(&out.color);
                     claimBlock(&out.bounds);
-                    out = converted[tri[c]];
+                    copyVertex(out, converted[tri[c]]);
                     out.tex[2] = dist[c][0];
                     out.tex[3] = dist[c][1];
                     out.attrib[1] = dist[c][2];
@@ -1359,7 +1381,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                             float x = (c & 1) ? to : from, y = line + (c >> 1);
                             float at = x - EDGE_BIAS; // Where the DS samples for the GPU pixel centers
                             GpuVertex &out = corners[c];
-                            out = converted[0];
+                            copyVertex(out, converted[0]);
                             place(out, x, y, value(span.ze, at), w);
                             out.tex[0] = value(span.se, at) / 16 - margin;
                             out.tex[1] = value(span.te, at) / 16 - margin;
@@ -1377,7 +1399,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                             claimBlock(&out);
                             claimBlock(&out.color);
                             claimBlock(&out.bounds);
-                            out = corners[order[c]];
+                            copyVertex(out, corners[order[c]]);
                         }
                     };
 
