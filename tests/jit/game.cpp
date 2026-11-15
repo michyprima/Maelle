@@ -617,7 +617,7 @@ const char *stateLayout(const char *type) {
 
 int main(int argc, char **argv) {
     if (argc < 5) {
-        printf("Usage: game <system files folder> <rom, or - for none> <interp|portable|native|clear|set> <frames> [fast] [dsi] [firmware] [press=N] "
+        printf("Usage: game <system files folder> <NDS or GBA ROM, or - for none> <interp|portable|native|clear|set> <frames> [fast] [dsi] [firmware] [press=N] "
             "[start=N] [touch=N] [trace=frame] [ppm=path] [shots=N] [sd=path] [dsplle] [mictone=Hz] [state=save:load] [statefile=path] [headphones=N] [results=path] [ram=path] [dump=address:size:path] [audio] [wav=path] [ring] [ringwav=path] [late=frame:refreshes,...] [keys=frame:key,...] [taps=frame:x:y,...] [wifi] [realtime] [live] [window] [input] [exact] [highres] [worker3d] [romtest=path]\n");
         return 2;
     }
@@ -767,7 +767,15 @@ int main(int argc, char **argv) {
     if (!romtest.empty()) fatal("romtest needs JIT_TEST_CFLAGS=-DROM_TEST");
 #endif
     try {
-        core = new Core(std::string(argv[2]) == "-" ? "" : argv[2]);
+        // A GBA ROM starts GBA mode directly, with the GBA BIOS from the system files
+        std::string rom = std::string(argv[2]) == "-" ? "" : argv[2];
+        if (rom.size() > 4 && rom.compare(rom.size() - 4, 4, ".gba") == 0) {
+            Settings::gbaBiosPath = files + "/gba_bios.bin";
+            core = new Core("", rom);
+        }
+        else {
+            core = new Core(rom);
+        }
     }
     catch (CoreError error) {
         fatal("couldn't start the core: %d", int(error));

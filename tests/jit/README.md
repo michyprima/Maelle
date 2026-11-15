@@ -61,11 +61,13 @@ tests/jit/game.sh <ROM, or - for none> <folder with the system files> <frames> [
 ```
 
 The folder needs `bios9.bin`, `bios7.bin` and `firmware.bin`, plus `bios9i.bin`, `bios7i.bin`, `firmwarei.bin` and `nand.bin`
-for DSi mode. Each way of running is given by `--modes`: `interp` without the JIT, `portable` with the JIT's portable executor,
-and `native` with generated code, and `clear` and `set` with generated code that has the flags the JIT leaves out forced to 0
-or to 1, as the `liveness` suite does. `gcc-interp`, `gcc-native` and `gcc-portable` are those ways with the core as the
-console's compiler builds it, see below. Each prints a line per frame with a hash of the screens, the cycle counts and both CPUs'
-program counters, then hashes of RAM and WRAM, and every way is compared with the first. Options are:
+for DSi mode. A `.gba` ROM starts in GBA mode directly, with `gba_bios.bin` from the same folder; GBA mode doesn't use the JIT,
+so its runs only check the rest of the core, as when comparing two builds. Each way of running is given by `--modes`: `interp`
+without the JIT, `portable` with the JIT's portable executor, and `native` with generated code, and `clear` and `set` with
+generated code that has the flags the JIT leaves out forced to 0 or to 1, as the `liveness` suite does. `gcc-interp`,
+`gcc-native` and `gcc-portable` are those ways with the core as the console's compiler builds it, see below. Each prints a line
+per frame with a hash of the screens, the cycle counts and both CPUs' program counters, then hashes of RAM and WRAM, and every
+way is compared with the first. Options are:
 
 - `fast` for fast timing, `dsi` for DSi mode, and `firmware` to start a ROM from the firmware's menu instead of directly
 - `press=N`, `start=N` and `touch=N` to press A, press START or touch the middle of the bottom screen every N frames
