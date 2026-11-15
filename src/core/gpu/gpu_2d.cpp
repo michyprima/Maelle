@@ -337,31 +337,17 @@ void Gpu2D::drawScanline(int line, uint32_t capCnt) {
     }
     }
 
-    // Apply master brightness (DS-only, 18-bit)
-    switch ((masterBright >> 14) & 0x3) { // Mode
-    case 1: // Increase
+    // Apply master brightness (DS-only, 18-bit), through a table of what each 6-bit level becomes
+    uint32_t mode = (masterBright >> 14) & 0x3;
+    if (mode == 1 || mode == 2) {
         if (uint8_t factor = std::min(masterBright & 0x1F, 16)) {
-            for (int i = 0; i < 256; i++) {
-                uint32_t *pixel = &framebuffer[line * 256 + i];
-                uint8_t r = (*pixel >> 0) & 0x3F; r += (63 - r) * factor / 16;
-                uint8_t g = (*pixel >> 6) & 0x3F; g += (63 - g) * factor / 16;
-                uint8_t b = (*pixel >> 12) & 0x3F; b += (63 - b) * factor / 16;
-                *pixel = (b << 12) | (g << 6) | r;
-            }
+            uint8_t levels[64];
+            for (int i = 0; i < 64; i++)
+                levels[i] = (mode == 1) ? (i + (63 - i) * factor / 16) : (i - i * factor / 16); // Increase or decrease
+            uint32_t *pixel = &framebuffer[line * 256];
+            for (int i = 0; i < 256; i++)
+                pixel[i] = (levels[(pixel[i] >> 12) & 0x3F] << 12) | (levels[(pixel[i] >> 6) & 0x3F] << 6) | levels[pixel[i] & 0x3F];
         }
-        break;
-
-    case 2: // Decrease
-        if (uint8_t factor = std::min(masterBright & 0x1F, 16)) {
-            for (int i = 0; i < 256; i++) {
-                uint32_t *pixel = &framebuffer[line * 256 + i];
-                uint8_t r = (*pixel >> 0) & 0x3F; r -= r * factor / 16;
-                uint8_t g = (*pixel >> 6) & 0x3F; g -= g * factor / 16;
-                uint8_t b = (*pixel >> 12) & 0x3F; b -= b * factor / 16;
-                *pixel = (b << 12) | (g << 6) | r;
-            }
-        }
-        break;
     }
     EP_ADD_EMU(EP_2D_OUT, out);
 }
