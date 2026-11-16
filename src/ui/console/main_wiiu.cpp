@@ -111,6 +111,13 @@ std::condition_variable procCond;
 std::atomic<bool> releaseRequested;
 bool uiParked, uiDone;
 
+// Exiting from the menus shuts down what the UI started, so the system doesn't wait on it when powering off later:
+// background threads stop and the controllers and audio close while the app has the foreground, and graphics and
+// the SD card once the system has taken it to exit
+std::atomic<bool> appClosing;
+bool exitRequested, uiClosed;
+OSThread *vsyncThread, *hangThread;
+
 // Whether the UI holds GX2, from starting a frame until it's finished; menus can start a frame and return without
 // finishing it, so it's only locked once, since the mutex counts recursive locks
 bool uiHoldsGx2;
@@ -342,7 +349,7 @@ FILE *openHangReport(const char *reason) {
 
 int reportVsyncs(int, void *) {
     // Tell the UI each time the display refreshes, so the emulator can run one frame per refresh
-    while (true) {
+    while (!appClosing.load()) {
         GX2WaitForVsync();
         ConsoleUI::displayTick();
     }
@@ -355,7 +362,7 @@ int watchHangs(int, void *) {
     uint32_t last = 0;
     OSTime since = OSGetSystemTime();
     bool reported = false;
-    while (true) {
+    while (!appClosing.load()) {
         OSSleepTicks(OSMillisecondsToTicks(500));
         OSTime now = OSGetSystemTime();
         if (uiFrames != last || uiParked || uiDone || releaseRequested.load()) {
@@ -1514,7 +1521,7 @@ int runUi(int, void *) {
 #endif
 
     // Report display refreshes from core 2, above the other threads there so the emulator isn't held back
-    WorkerThread::createThread(reportVsyncs, nullptr, 0x4000, 11, OS_THREAD_ATTRIB_AFFINITY_CPU2);
+    vsyncThread = WorkerThread::createThread(reportVsyncs, nullptr, 0x4000, 11, OS_THREAD_ATTRIB_AFFINITY_CPU2);
 
     // Initialize audio output
     SDL_Init(SDL_INIT_AUDIO);
@@ -1543,7 +1550,21 @@ int runUi(int, void *) {
     ConsoleUI::closeMic();
     closeCamera();
     ConsoleUI::closeCore();
+
+    // Close the audio, end the threads that report display refreshes and watch for hangs, and close the controllers
+    SDL_CloseAudioDevice(id);
+    SDL_Quit();
+    appClosing = true;
+    if (vsyncThread) OSJoinThread(vsyncThread, nullptr);
+    if (hangThread) OSJoinThread(hangThread, nullptr);
+    KPADShutdown();
     return 0;
+}
+
+void closeGraphics() {
+    // Shut down graphics and unmount the SD card after the UI has finished, once the system has taken the foreground
+    WHBGfxShutdown();
+    WHBUnmountSdCard();
 }
 
 #ifdef THREAD_PROBE
@@ -1849,11 +1870,19 @@ int main() {
     WorkerThread::createThread(probeThreads, nullptr, 0x10000, 1, OS_THREAD_ATTRIB_AFFINITY_CPU2);
 #endif
     // Watch for hangs on core 2, where writing the report is safe, above the other threads so it still runs
-    WorkerThread::createThread(watchHangs, nullptr, 0x10000, 10, OS_THREAD_ATTRIB_AFFINITY_CPU2);
+    hangThread = WorkerThread::createThread(watchHangs, nullptr, 0x10000, 10, OS_THREAD_ATTRIB_AFFINITY_CPU2);
     WorkerThread::Entry entry = [](int argc, void *argv) -> int {
         runUi(argc, argv);
-        std::lock_guard<std::mutex> guard(procMutex);
+        std::unique_lock<std::mutex> lock(procMutex);
         uiDone = true;
+        procCond.notify_all();
+
+        // Shut down graphics on this core, where they were set up, once the app is exiting
+        procCond.wait(lock, [] { return exitRequested; });
+        lock.unlock();
+        closeGraphics();
+        lock.lock();
+        uiClosed = true;
         procCond.notify_all();
         return 0;
     };
@@ -1868,6 +1897,15 @@ int main() {
                 // Exit, leaving the UI stopped if it's still running; save data was written when it stopped
                 // The network is stopped first, since the system waits on its thread and sockets otherwise
                 ConsoleUI::stopNetwork();
+                {
+                    // Let a UI that finished shut down graphics first
+                    std::unique_lock<std::mutex> lock(procMutex);
+                    if (uiDone) {
+                        exitRequested = true;
+                        procCond.notify_all();
+                        procCond.wait(lock, [] { return uiClosed; });
+                    }
+                }
                 ProcUIShutdown();
                 return 0;
 
@@ -1911,6 +1949,7 @@ int main() {
     while (true) {
         switch (ProcUIProcessMessages(true)) {
         case PROCUI_STATUS_EXITING:
+            closeGraphics();
             ProcUIShutdown();
             return 0;
 

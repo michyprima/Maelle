@@ -207,10 +207,13 @@ void NetSlirp::run() {
     // block for a while, so check if the game was closed in the meantime
     OSSetThreadName(OSGetCurrentThread(), "NooDS U Network");
     ACInitialize();
+    // Connections made here are closed when the thread ends, since the system waits on ones left open when powering off
     BOOL connected = FALSE;
+    bool opened = false;
     if (NNResult_IsFailure(ACIsApplicationConnected(&connected)) || !connected)
-        ACConnect();
+        opened = NNResult_IsSuccess(ACConnect());
     if (!running.load()) {
+        if (opened) ACClose();
         ACFinalize();
         return;
     }
@@ -302,6 +305,7 @@ void NetSlirp::run() {
     for (Timer *timer : timers) delete timer;
     timers.clear();
 #ifdef __WIIU__
+    if (opened) ACClose();
     ACFinalize();
 #endif
 }
