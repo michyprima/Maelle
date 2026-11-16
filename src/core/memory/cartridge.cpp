@@ -1917,7 +1917,12 @@ bool CartridgeGba::loadRom() {
     }
 
     // Detect if the cart has an RTC by searching for the relevant string
-    if (findString("SIIRTC_V"))
+    // Pokemon hacks of the gen 3 games often add an RTC without the plain string, so enable it for those too (any region)
+    // Goomba Color builds (GMBC) also use the RTC for MBC3 clocks, and only if it reads back as present
+    std::string code = (romSize > 0xB0) ? std::string((char*)&rom[0xAC], 4) : "";
+    std::string game = code.substr(0, 3);
+    if (findString("SIIRTC_V") || game == "AXV" || game == "AXP" || game == "BPE" || game == "BPR" ||
+        game == "BPG" || code == "GMBC")
         core->rtc.enableGpRtc();
 
     // Update the memory maps at the GBA ROM locations
