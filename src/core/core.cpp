@@ -535,7 +535,7 @@ void Core::enterGbaMode() {
     // Reset the system for GBA mode
     memory.updateMap7(0x00000000, 0xFFFFFFFF);
     interpreter[1].init();
-    rtc.reset();
+    rtc.enterGbaMode();
 
     // Set VRAM blocks A and B to plain access mode
     // This is used by the GPU to access the VRAM borders

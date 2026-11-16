@@ -140,9 +140,9 @@ void Rtc::updateDateTime(uint8_t *out) {
     out[5] = ((time->tm_min / 10) << 4) | (time->tm_min % 10);
     out[6] = ((time->tm_sec / 10) << 4) | (time->tm_sec % 10);
 
-    // Set the AM/PM bit
+    // Set the AM/PM bit, which is bit 7 on the GBA and bit 6 on the DS, and is set in 24-hour mode too
     if (pm)
-        out[4] |= BIT(6 << core->gbaMode);
+        out[4] |= BIT(core->gbaMode ? 7 : 6);
 }
 
 void Rtc::applyDateTime() {
@@ -287,6 +287,13 @@ void Rtc::reset() {
     dateOffset = 0;
     dayShift = 0;
     irqFlag = 0;
+}
+
+void Rtc::enterGbaMode() {
+    // Start a GBA cart's RTC in 24-hour mode, as the battery keeps it once a game has set it, and as mGBA has it
+    // GB emulators like MiGoomba read the hours as 24-hour without setting the mode; its reset command still clears it
+    reset();
+    control = BIT(6);
 }
 
 bool Rtc::readRegister(uint8_t index) {

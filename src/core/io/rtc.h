@@ -37,6 +37,7 @@ public:
 
     void enableGpRtc() { gpRtc = true; }
     void reset();
+    void enterGbaMode();
     void tick();
 
     uint8_t readRtc();
