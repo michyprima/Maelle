@@ -58,8 +58,8 @@ void Slot2::loadState(FILE *file) {
 }
 
 void Slot2::init() {
-    // There's no GBA slot on a DSi
-    if (core->dsiMode) return;
+    // There's no GBA slot on a DSi, but a GBA ROM started in GBA mode is still in one, whatever the DSi setting
+    if (core->dsiMode && !core->gbaMode) return;
 
     if (core->cartridgeGba.getRomSize() > 0) {
         // A GBA ROM fills the slot; check its game code for a solar sensor or a rumble motor on the GPIO pins
