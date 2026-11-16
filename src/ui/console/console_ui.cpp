@@ -1125,6 +1125,13 @@ void ConsoleUI::updateFrames(ScreenLayout *gamepad) {
 #endif
 }
 
+static bool isGbRom(std::string name) {
+    // Check for a Game Boy ROM, which runs in GBA mode in MiGoomba, built into the app
+    std::string ext = name.substr(std::min(name.rfind('.'), name.size()));
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    return ext == ".gb" || ext == ".gbc";
+}
+
 int ConsoleUI::setPath(std::string path) {
     // Set the ROM path if the extension matches
     if (path.find(".nds", path.length() - 4) != std::string::npos) { // NDS ROM
@@ -1160,9 +1167,12 @@ int ConsoleUI::setPath(std::string path) {
         ndsPath = "";
         return 1;
     }
-    else if (path.find(".gba", path.length() - 4) != std::string::npos) { // GBA ROM
-        // If an NDS path is set, allow clearing it
-        if (ndsPath != "") {
+    else if (path.find(".gba", path.length() - 4) != std::string::npos || isGbRom(path)) { // GBA or GB ROM
+        // If an NDS path is set, allow clearing it; a GB ROM only runs in GBA mode, so it always clears it
+        if (isGbRom(path)) {
+            ndsPath = "";
+        }
+        else if (ndsPath != "") {
             if (!message("Loading GBA ROM", "Load the previous NDS ROM alongside this ROM?", 1))
                 ndsPath = "";
         }
@@ -1573,8 +1583,8 @@ bool ConsoleUI::fileBrowser() {
                 void *texture = createTexture(NdsIcon(subpath).getIcon(), 32, 32);
                 files.push_back(MenuItem(name, "", texture, 32));
             }
-            else if (name.find(".gba", name.length() - 4) != std::string::npos) {
-                // Add a GBA ROM with a generic icon to the list
+            else if (name.find(".gba", name.length() - 4) != std::string::npos || isGbRom(name)) {
+                // Add a GBA or GB ROM with a generic icon to the list
                 files.push_back(MenuItem(name, "", fileTextures[menuTheme], 64));
             }
         }

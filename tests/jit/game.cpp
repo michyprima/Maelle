@@ -3,6 +3,7 @@
 // With JIT_GUEST it's built by devkitPPC instead, with the core as it is, and run whole in Unicorn by guest/host.cpp, so
 // generated code runs directly as on the console; game.sh's gcc- modes
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -768,8 +769,24 @@ int main(int argc, char **argv) {
 #endif
     try {
         // A GBA ROM starts GBA mode directly, with the GBA BIOS from the system files
+        // A GB ROM does too, in MiGoomba as the app runs it, built by make in its submodule
         std::string rom = std::string(argv[2]) == "-" ? "" : argv[2];
-        if (rom.size() > 4 && rom.compare(rom.size() - 4, 4, ".gba") == 0) {
+        std::string ext = rom.substr(std::min(rom.rfind('.'), rom.size()));
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        static std::vector<uint8_t> migoomba;
+        if (ext == ".gb" || ext == ".gbc") {
+            std::string here = __FILE__;
+            std::string path = here.substr(0, here.rfind('/')) + "/../../src/ui/console/migoomba/migoomba_noodsu.gba";
+            FILE *file = fopen(path.c_str(), "rb");
+            if (!file) fatal("no %s; build NooDS U first", path.c_str());
+            fseek(file, 0, SEEK_END);
+            migoomba.resize(ftell(file));
+            fseek(file, 0, SEEK_SET);
+            fread(migoomba.data(), 1, migoomba.size(), file);
+            fclose(file);
+            CartridgeGba::setGbEmulator(migoomba.data(), migoomba.size());
+        }
+        if (ext == ".gba" || ext == ".gb" || ext == ".gbc") {
             Settings::gbaBiosPath = files + "/gba_bios.bin";
             core = new Core("", rom);
         }
@@ -966,6 +983,7 @@ int main(int argc, char **argv) {
     if (FILE *file = audioFile) { audioFile = nullptr; finishWav(file); }
     if (ringFile) finishWav(ringFile);
     core->cartridgeNds.writeSave();
+    core->cartridgeGba.writeSave();
     Memory &mem = core->memory;
     printf("ram %016llX\twram %016llX\n", (unsigned long long)hash(mem.ram, mem.ramSize),
         (unsigned long long)hash(mem.wram7, sizeof(mem.wram7), hash(mem.wram, sizeof(mem.wram))));

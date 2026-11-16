@@ -68,6 +68,7 @@ public:
     void resizeSave(int newSize, bool dirty = true);
 
     int getRomSize() { return romSize; }
+    std::string getRomPath() { return romPath; }
     std::string getSavePath() { return savePath; }
     int getSaveSize() { return saveSize; }
 
@@ -78,6 +79,7 @@ protected:
     uint8_t *rom = nullptr, *save = nullptr;
     int romSize = 0, saveSize = -1;
     bool saveDirty = false;
+    size_t romBufSize = 0;
     std::mutex mutex;
 
     // Saves too big to rewrite whenever they change are written to their file in 2KB pages, tracked with one bit each
@@ -94,6 +96,7 @@ protected:
     void setRomLoaded() { romLoaded.store(true, std::memory_order_release); }
     bool takeKeptRom();
     bool startRomLoad();
+    void readRomFile(FILE *file, uint8_t *data, size_t offset, size_t size);
     void waitRomLoad();
     void ensureLoaded(size_t offset, size_t size);
 
@@ -137,7 +140,6 @@ private:
     uint32_t prefetchWant[2] = { uint32_t(-1), uint32_t(-1) }; // The chunk last read from and the one after it
     int prefetchStart = 0; // The block after the last one read, where loading ahead in its chunk starts
     bool stopPrefetch = false;
-    size_t romBufSize = 0;
     std::mutex chunkMutex;
     std::condition_variable chunkCond;
     WorkerThread *prefetchThread = nullptr;
@@ -157,7 +159,6 @@ private:
 #endif
 
     void writeSavePages();
-    void readRomFile(FILE *file, uint8_t *data, size_t offset, size_t size);
     void loadRomBlocks(size_t first, size_t count);
     void runRomLoad();
     void runFullLoad();
@@ -255,6 +256,9 @@ private:
 
 class CartridgeGba: public Cartridge {
 public:
+    // Set the GBA program that Game Boy ROMs (.gb, .gbc) run in, which is loaded ahead of them; none if not set
+    static void setGbEmulator(const uint8_t *data, size_t size) { gbEmulator = data; gbEmulatorSize = size; }
+
     CartridgeGba(Core *core): Cartridge(core) {}
     void saveState(FILE *file);
     void loadState(FILE *file);
@@ -278,7 +282,12 @@ private:
     bool bankSwap = false;
     bool flashErase = false;
 
+    static const uint8_t *gbEmulator;
+    static size_t gbEmulatorSize;
+    bool gbRom = false; // A Game Boy ROM running in the GB emulator, which gets plain SRAM
+
     bool findString(std::string string);
+    bool loadGbRom();
     virtual bool loadRom();
 };
 

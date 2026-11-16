@@ -15,6 +15,7 @@ SRCS := src src/core src/core/arm src/core/gpu src/core/hle src/core/io src/core
 SLIRP := src/core/net/libslirp
 SLIRPSRCS := $(SLIRP)/src $(SLIRP)/glib
 FAAD := src/core/faad2
+MIGOOMBA := src/ui/console/migoomba
 DATA := src/ui/console/images src/ui/console/shaders
 LIBS := -lwut -lSDL2
 INCS := $(PORTLIBS) $(WUT_ROOT)
@@ -35,6 +36,10 @@ FAADFLAGS := -g -O2 -w -ffunction-sections $(MACHDEP) -DHAVE_INTTYPES_H=1 -DHAVE
     -DHAVE_STRINGS_H=1 -DHAVE_SYS_STAT_H=1 -DHAVE_SYS_TYPES_H=1 -DHAVE_LRINTF=1 '-DPACKAGE_VERSION="2.11.4"' \
     -DAPPLY_DRC -DLC_ONLY_DECODER -DDISABLE_SBR
 
+# MiGoomba, the GB emulator for GBA that Game Boy ROMs run in, is a submodule built with devkitARM and built into the app
+# Its NooDS U build drives GPIO pin 3 for GB rumble carts, as GBA rumble carts do
+DEVKITARM ?= $(DEVKITPRO)/devkitARM
+
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 # The tag of this commit if it has one, otherwise its short hash; with uncommitted changes to tracked files, it's the
@@ -54,6 +59,7 @@ export DEPSDIR := $(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(INCS),-L$(dir)/lib)
 export VPATH := $(foreach dir,$(SRCS) $(SLIRPSRCS) $(FAAD),$(CURDIR)/$(dir)) $(foreach dir,$(DATA),$(CURDIR)/$(dir))
 export FAADINCLUDE := -I$(CURDIR)/$(FAAD)
+export MIGOOMBAGBA := $(CURDIR)/$(MIGOOMBA)/migoomba_noodsu.gba
 export SLIRPINCLUDE := -I$(CURDIR)/$(SLIRP)/src -I$(CURDIR)/$(SLIRP)/glib -I$(CURDIR)/$(SLIRP)/wiiu
 export INCLUDE := $(foreach dir,$(SRCS),-I$(CURDIR)/$(dir)) $(foreach dir,$(INCS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
 
@@ -62,12 +68,17 @@ CFILES := $(foreach dir,$(SLIRPSRCS),$(notdir $(wildcard $(dir)/*.c)))
 export FAADOFILES := $(patsubst %.c,%.o,$(notdir $(wildcard $(FAAD)/*.c)))
 BMPFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.bmp)))
 GSHFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.gsh)))
-export OFILES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(FAADOFILES) $(BMPFILES:.bmp=.o) $(addsuffix .o,$(GSHFILES))
+export OFILES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(FAADOFILES) $(BMPFILES:.bmp=.o) $(addsuffix .o,$(GSHFILES)) \
+    migoomba_noodsu.gba.o
 
-.PHONY: $(BUILD)
+.PHONY: $(BUILD) migoomba
 all: $(BUILD)
 
-$(BUILD):
+migoomba:
+	@[ -f $(MIGOOMBA)/Makefile ] || { echo "MiGoomba is missing: run git submodule update --init"; exit 1; }
+	$(MAKE) -C $(MIGOOMBA) DEVKITARM=$(DEVKITARM) VARIANT=noodsu
+
+$(BUILD): migoomba
 	mkdir -p $@
 	@printf '#define NOODSU_VERSION "%s"\n#define NOODSU_BUILT "%s"\n#define NOODSU_DEV %s\n' '$(VERSION)' '$(BUILT)' \
 		'$(DEV)' > $@/version.tmp
@@ -79,6 +90,7 @@ build-shader:
 
 clean:
 	rm -rf $(BUILD) $(NAME).wuhb $(NAME).rpx $(NAME).elf
+	[ ! -f $(MIGOOMBA)/Makefile ] || $(MAKE) -C $(MIGOOMBA) DEVKITARM=$(DEVKITARM) VARIANT=noodsu clean
 
 else
 
@@ -96,6 +108,10 @@ $(FAADOFILES): %.o: %.c
 	@cd ..; $(PREFIX)ld -r -b binary -o $(BUILD)/$@ src/ui/console/images/$*.bmp
 
 %.gsh.o: %.gsh
+	@echo $(notdir $<)
+	@$(bin2o)
+
+migoomba_noodsu.gba.o: $(MIGOOMBAGBA)
 	@echo $(notdir $<)
 	@$(bin2o)
 

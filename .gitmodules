@@ -1,0 +1,3 @@
+[submodule "src/ui/console/migoomba"]
+	path = src/ui/console/migoomba
+	url = https://github.com/michyprima/migoomba

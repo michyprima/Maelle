@@ -12,6 +12,11 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Install the GBA library and tools
+      # The image has devkitARM already; MiGoomba also needs libgba, and gbafix from gba-tools
+      run: dkp-pacman -Sy --noconfirm --needed libgba gba-tools
     - name: Compile
       run: make -j$(nproc) VERSION=$(echo $GITHUB_SHA | cut -c1-7)
     - name: Upload

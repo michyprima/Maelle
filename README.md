@@ -1,7 +1,7 @@
 <p align="center"><img src="icon/icon-wiiu-framed.png" width="256" alt="NooDS U icon"></p>
 
 # NooDS U
-A DS, DSi and GBA emulator for the Wii U.
+A DS, DSi and GBA emulator for the Wii U, which also runs Game Boy and Game Boy Color games.
 
 ### Overview
 NooDS U is a Wii U-only fork of [NooDS](https://github.com/Hydr8gon/NooDS) by Hydr8gon, focused on running well on real
@@ -108,8 +108,11 @@ When reporting a bug, include the game's name and the ROM's hash (SHA-1 or MD5),
 ### Usage
 Put `noodsu.wuhb` in `sd:/wiiu/apps/` on your SD card. Settings, states and cheats are kept in `sd:/wiiu/apps/noodsu/`, and saves next to the ROM.
 
-NooDS U should be able to run most DS and GBA games without any setup. System files go in `sd:/wiiu/apps/noodsu/bios/`,
-and their paths can be changed in the `noodsu.ini` file:
+NooDS U should be able to run most DS and GBA games without any setup. Game Boy and Game Boy Color ROMs (`.gb`, `.gbc`)
+run in GBA mode in [MiGoomba](https://github.com/michyprima/migoomba), a Goomba Color fork built into the app; their saves
+are in Goomba's packed format, which MiGoomba's `tools/goombasave.py` converts.
+
+System files go in `sd:/wiiu/apps/noodsu/bios/`, and their paths can be changed in the `noodsu.ini` file:
 - DS BIOS and firmware (`bios9.bin`, `bios7.bin`, `firmware.bin`) are needed to boot the system menu, and can be dumped
   from a DS with [DSBF Dumper](https://archive.org/details/dsbf-dumper). The firmware must come from an original DS; DSi
   and 3DS dumps don't contain any boot code.
@@ -122,8 +125,9 @@ and their paths can be changed in the `noodsu.ini` file:
 and it has issues with saving, the save type can be changed in the pause menu.
 
 ### Building
-Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) and its `wiiu-dev` package. Run `make -j$(nproc)` in the
-project root directory to start building. `./build-wiiu-debug.sh` builds variants for debugging and measuring.
+Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) and its `wiiu-dev` and `gba-dev` packages, the latter
+for MiGoomba. Clone with `--recursive`, or run `git submodule update --init` after cloning, then run `make -j$(nproc)` in
+the project root directory to start building. `./build-wiiu-debug.sh` builds variants for debugging and measuring.
 
 ### References
 * [GBATEK](https://problemkaputt.de/gbatek.htm) - The main information source for all things DS and GBA

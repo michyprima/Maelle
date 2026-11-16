@@ -79,6 +79,7 @@
 extern const uint8_t shader_wiiu_gsh[];
 extern const uint8_t screen_wiiu_gsh[];
 extern const uint8_t screen_blend_wiiu_gsh[];
+extern const uint8_t migoomba_noodsu_gba[], migoomba_noodsu_gba_end[];
 
 ScreenLayout gpLayout;
 GX2Texture *gpTexture, *gpLastTexture;
@@ -1852,6 +1853,9 @@ int main() {
         [](OSContext *context) { return showCrash(context, "program"); });
     OSSetExceptionCallbackEx(OS_EXCEPTION_MODE_GLOBAL_ALL_CORES, OS_EXCEPTION_TYPE_ALIGNMENT,
         [](OSContext *context) { return showCrash(context, "alignment"); });
+
+    // Run Game Boy ROMs in MiGoomba, the GB emulator for GBA built into the app, as built for it
+    CartridgeGba::setGbEmulator(migoomba_noodsu_gba, migoomba_noodsu_gba_end - migoomba_noodsu_gba);
 
     // Run the UI on core 2 so it doesn't compete with the JIT's emulator thread, which has to use core 1
     // The main thread can't be moved there, since running threads can't change cores

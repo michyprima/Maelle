@@ -64,9 +64,10 @@ void Slot2::init() {
     if (core->cartridgeGba.getRomSize() > 0) {
         // A GBA ROM fills the slot; check its game code for a solar sensor or a rumble motor on the GPIO pins
         // Boktai 1, 2 and 3 (and a sample of 1) have the solar sensor; WarioWare: Twisted and Drill Dozer have rumble
+        // MiGoomba (GMBC) as NooDS U builds it in drives pin 3 the same way for GB rumble carts
         uint8_t *code = core->cartridgeGba.getRom(0x80000AC);
         static const char *solarCodes[] = { "U3I", "U32", "U33", "A3I" };
-        static const char *rumbleCodes[] = { "RZW", "V49" };
+        static const char *rumbleCodes[] = { "RZW", "V49", "GMB" };
         for (const char *prefix : solarCodes)
             if (code && !memcmp(code, prefix, 3)) solar = true;
         for (const char *prefix : rumbleCodes)

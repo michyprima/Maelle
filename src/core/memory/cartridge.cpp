@@ -37,6 +37,8 @@ std::atomic<bool> Cartridge::cancelLoad{false};
 Cartridge::KeptRom Cartridge::keptRoms[2];
 std::string Cartridge::launchSavePath;
 int Cartridge::launchSaveSize = -1;
+const uint8_t *CartridgeGba::gbEmulator = nullptr;
+size_t CartridgeGba::gbEmulatorSize = 0;
 
 static uint8_t *allocRom(size_t size) {
     // Reading from file into memory that's aligned for it is much faster on Wii U
@@ -1885,6 +1887,35 @@ bool CartridgeGba::findString(std::string string) {
     return false;
 }
 
+bool CartridgeGba::loadGbRom() {
+    // Check the header for the start of the Nintendo logo and a ROM size the GB emulator knows
+    uint8_t header[0x150];
+    readRomFile(romFile, header, 0, sizeof(header));
+    if (header[0x104] != 0xCE || header[0x105] != 0xED || header[0x106] != 0x66 || header[0x107] != 0x66 ||
+        header[0x148] > 8)
+        return false;
+
+    // The GB emulator finds the game right after itself, at the size its header gives, so pad or cut it to that
+    size_t fileSize = romSize, gameSize = 0x8000 << header[0x148];
+    romSize = gbEmulatorSize + gameSize;
+
+    // It has no save type string to detect, so give it 64KB of SRAM, as on flash carts, where MiGoomba saves 32KB cart
+    // RAM (Pokemon's) as the game writes it; with only 32KB, that's saved when its menu opens
+    gbRom = true;
+    if (saveSize == -1) resizeSave(0x10000, false);
+    if (takeKeptRom()) return true;
+    free(rom);
+    if (!(rom = allocRom(romSize))) return false;
+    romBufSize = romSize;
+    memcpy(rom, gbEmulator, gbEmulatorSize);
+    readRomFile(romFile, &rom[gbEmulatorSize], 0, std::min(fileSize, gameSize));
+    if (fileSize < gameSize) memset(&rom[gbEmulatorSize + fileSize], 0, gameSize - fileSize);
+    fclose(romFile);
+    romFile = nullptr;
+    setRomLoaded();
+    return true;
+}
+
 bool CartridgeGba::loadRom() {
     // Set the valid GBA save sizes
     if (saveSizes.empty()) {
@@ -1896,9 +1927,15 @@ bool CartridgeGba::loadRom() {
         saveSizes.push_back(0x20000); // FLASH 128KB
     }
 
-    // Load the ROM into memory
+    // Load the ROM into memory, with the GB emulator ahead of Game Boy ROMs
+    std::string path = getRomPath();
+    std::string ext = path.substr(std::min(path.rfind('.'), path.size()));
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     if (!Cartridge::loadRom()) return false;
-    if (!takeKeptRom()) {
+    if (gbEmulator && (ext == ".gb" || ext == ".gbc")) {
+        if (!loadGbRom()) return false;
+    }
+    else if (!takeKeptRom()) {
         loadRomSection(0, romSize);
         fclose(romFile);
         romFile = nullptr;
@@ -2053,6 +2090,10 @@ void CartridgeGba::eepromWrite(uint8_t value) {
 }
 
 uint8_t CartridgeGba::sramRead(uint32_t address) {
+    // Read GB emulator SRAM, mirrored like the real thing, which MiGoomba checks to tell 32KB from 64KB
+    if (gbRom && (saveSize == 0x8000 || saveSize == 0x10000))
+        return save[address & (saveSize - 1)];
+
     if (saveSize == 0x8000 && address < 0xE008000) { // SRAM
         // Read a single byte because the data bus is only 8 bits
         return save[address - 0xE000000];
@@ -2078,6 +2119,15 @@ uint8_t CartridgeGba::sramRead(uint32_t address) {
 }
 
 void CartridgeGba::sramWrite(uint32_t address, uint8_t value) {
+    if (gbRom && (saveSize == 0x8000 || saveSize == 0x10000)) {
+        // Write GB emulator SRAM, mirrored
+        mutex.lock();
+        save[address & (saveSize - 1)] = value;
+        saveDirty = true;
+        mutex.unlock();
+        return;
+    }
+
     if (saveSize == 0x8000 && address < 0xE008000) { // SRAM
         // Write a single byte because the data bus is only 8 bits
         mutex.lock();
