@@ -37,7 +37,7 @@ void MemoryInterface::ProgramWrite(u32 address, u16 value) {
 u16 MemoryInterface::DataRead(u16 address, bool bypass_mmio) {
     if (memory_interface_unit.InMMIO(address) && !bypass_mmio) {
         ASSERT(mmio != nullptr);
-        // NooDS U: only the status the host sets through its own registers is known to stay put until it acts
+        // Maelle: only the status the host sets through its own registers is known to stay put until it acts
         u16 reg = memory_interface_unit.ToMMIO(address);
         if (reg != 0x0CC && reg != 0x0CE && reg != 0x0D2 && reg != 0x0D6 && reg != 0x0D8)
             impure = true;
@@ -54,7 +54,7 @@ void MemoryInterface::DataWrite(u16 address, u16 value, bool bypass_mmio) {
         return mmio->Write(memory_interface_unit.ToMMIO(address), value);
     }
     u32 converted = memory_interface_unit.ConvertDataAddress(address);
-    // NooDS U: writing what's already there, like a return address pushed again, changes nothing
+    // Maelle: writing what's already there, like a return address pushed again, changes nothing
     if (shared_memory.ReadWord(converted) != value)
         impure = true;
     shared_memory.WriteWord(converted, value);

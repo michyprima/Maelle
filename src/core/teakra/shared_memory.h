@@ -5,7 +5,7 @@
 
 namespace Teakra {
 struct SharedMemory {
-    // NooDS U: memory is reached through the host's 32KB pages, 8 of program memory then 8 of data memory, holding
+    // Maelle: memory is reached through the host's 32KB pages, 8 of program memory then 8 of data memory, holding
     // little-endian words; a page that isn't mapped reads as 0
     u16 ReadWord(u32 word_address) const {
         const u8* page = pages ? pages[(word_address >> 14) & 0xF] : nullptr;

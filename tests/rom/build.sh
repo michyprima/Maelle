@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the instruction ROM. With a results file from NooDS U's interpreter, the ROM shows on its own screen what differs
+# Builds the instruction ROM. With a results file from Maelle's interpreter, the ROM shows on its own screen what differs
 # Usage: build.sh <ROM to take the logo from> [expected.bin]
 set -e
 here=$(cd "$(dirname "$0")"; pwd); logo=$1; results=$2
@@ -25,5 +25,5 @@ if [ -n "$results" ]; then
     offset=$(( $("$tools-nm" "$out/arm9.elf" | awk '$3 == "expected" { print "0x" $1 }') - 0x02000000 ))
     dd if="$results" of="$out/arm9.bin" bs=1 seek=$offset conv=notrunc 2>/dev/null
 fi
-python3 -I "$here/make_rom.py" "$out/arm9.bin" "$out/arm7.bin" "$logo" "$out/noodsu-instructions.nds"
-echo "Built $out/noodsu-instructions.nds, ARM9 $(wc -c < "$out/arm9.bin") bytes, ARM7 $(wc -c < "$out/arm7.bin") bytes"
+python3 -I "$here/make_rom.py" "$out/arm9.bin" "$out/arm7.bin" "$logo" "$out/maelle-instructions.nds"
+echo "Built $out/maelle-instructions.nds, ARM9 $(wc -c < "$out/arm9.bin") bytes, ARM7 $(wc -c < "$out/arm7.bin") bytes"

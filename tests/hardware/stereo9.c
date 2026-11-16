@@ -11,7 +11,7 @@ static void line(int row, const char *s, unsigned short color) {
 
 int main(void) {
     screenInit();
-    line(0, "NOODS U STEREO TEST", WHITE);
+    line(0, "MAELLE STEREO TEST", WHITE);
     line(2, "LOW TONE:  LEFT SPEAKER ONLY", GREEN);
     line(4, "HIGH TONE: RIGHT SPEAKER ONLY", YELLOW);
     line(6, "THEY TAKE TURNS, A SECOND EACH", WHITE);

@@ -4,7 +4,7 @@
 set -e
 here=$(cd "$(dirname "$0")"; pwd)
 ref=$1; shift
-base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/noodsu-jit-test}
+base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/maelle-jit-test}
 old=$base-bench-tree
 
 # Check out the other commit with this tree's harness, which also runs older cores

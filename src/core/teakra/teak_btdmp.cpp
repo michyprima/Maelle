@@ -170,7 +170,7 @@ void Btdmp::Skip(u64 /* ticks */) {
 #endif
 }
 
-// NooDS U: returns whether anything the program can see changed
+// Maelle: returns whether anything the program can see changed
 bool Btdmp::SampleClock(std::int16_t output[2], std::int16_t input) {
     bool changed = false;
     if (transmit_enable && (!(transmit_queue.empty()))) {

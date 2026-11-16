@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 
-// NooDS U: warnings about what programs do that isn't emulated are left out unless asked for
+// Maelle: warnings about what programs do that isn't emulated are left out unless asked for
 #ifdef TEAKRA_LOG
 #define TEAK_LOG(...) std::fprintf(stderr, __VA_ARGS__)
 #else

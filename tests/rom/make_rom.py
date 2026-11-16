@@ -24,7 +24,7 @@ while (0x20000 << capacity) < total:
     capacity += 1
 
 header = bytearray(0x200)
-header[0x00:0x0C] = b'NOODS U ROM\0'
+header[0x00:0x0C] = b'MAELLE ROM\0\0'
 header[0x0C:0x10] = b'####' # Flashcarts patch their DLDI driver into homebrew, which they tell by this and the ARM9's offset
 header[0x10:0x12] = b'00'
 header[0x14] = capacity

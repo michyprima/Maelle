@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build Wii U debug variants of NooDS U, each with its own build folder, app file and title, so they can sit next to
+# Build Wii U debug variants of Maelle, each with its own build folder, app file and title, so they can sit next to
 # the regular build. The folder is cleared first, since make doesn't notice when only the flags change.
 # Usage: ./build-wiiu-debug.sh <variant>...
 #   heartbeat    Progress counters and timings in heartbeat.log, 4 times a second
@@ -35,27 +35,27 @@ BASE='-g -Ofast -fno-allow-store-data-races -flto -ffunction-sections -DESPRESSO
 [ $# -gt 0 ] || { sed -n '2,29p' "$0"; exit 1; }
 for variant in "$@"; do
     case $variant in
-        heartbeat) flags='-DHEARTBEAT'; name=noodsu-hb; title='NooDS U Heartbeat' ;;
-        timeline) flags='-DHEARTBEAT -DGPU_TIMELINE'; name=noodsu-timeline; title='NooDS U GPU Timeline' ;;
-        nocrackfill) flags='-DHEARTBEAT -DGPU_NO_CRACK_FILL'; name=noodsu-nofill; title='NooDS U No Crack Fill' ;;
-        capture) flags='-DFRAME_CAPTURE'; name=noodsu-capture; title='NooDS U Capture' ;;
-        statedebug) flags='-DSTATE_DEBUG -DHEARTBEAT'; name=noodsu-statedebug; title='NooDS U State Debug' ;;
-        gpudump) flags='-DGPU_DUMP'; name=noodsu-dump; title='NooDS U Dump' ;;
-        threadprobe) flags='-DTHREAD_PROBE'; name=noodsu-probe; title='NooDS U Probe' ;;
-        netlog) flags='-DNET_LOG'; name=noodsu-netlog; title='NooDS U Net Log' ;;
-        profile) flags='-DPROFILE_EMU'; name=noodsu-profile; title='NooDS U Profile' ;;
-        jittest) flags='-DJIT_SELFTEST'; name=noodsu-jittest; title='NooDS U JIT Test' ;;
-        romtest) flags='-DROM_TEST'; name=noodsu-romtest; title='NooDS U ROM Test' ;;
-        jitsplit) flags='-DHEARTBEAT -DJIT_SPLIT'; name=noodsu-jitsplit; title='NooDS U JIT Split' ;;
-        drcdebug) flags='-DDRC_DEBUG'; name=noodsu-drcdebug; title='NooDS U GamePad Debug' ;;
-        frametime) flags='-DHEARTBEAT -DPROFILE_EMU'; name=noodsu-frametime; title='NooDS U Frame Times' ;;
-        frameslots) flags='-DHEARTBEAT -DPROFILE_EMU -DNO_FRAME_SAMPLES'; name=noodsu-frameslots; title='NooDS U Frame Slots' ;;
-        framelog) flags='-DFRAME_LOG'; name=noodsu-framelog; title='NooDS U Frame Log' ;;
-        audiocap) flags='-DFRAME_LOG -DAUDIO_CAPTURE'; name=noodsu-audiocap; title='NooDS U Audio Capture' ;;
-        romload) flags='-DROM_LOAD_TEST'; name=noodsu-romload; title='NooDS U ROM Load' ;;
-        frameart) flags='-DFRAME_ART_TEST'; name=noodsu-frameart; title='NooDS U Frame Art' ;;
-        nandlog) flags='-DNAND_LOG'; name=noodsu-nandlog; title='NooDS U NAND Log' ;;
-        gpucrc) flags='-DGPU_CRC'; name=noodsu-gpucrc; title='NooDS U GPU CRC' ;;
+        heartbeat) flags='-DHEARTBEAT'; name=maelle-hb; title='Maelle Heartbeat' ;;
+        timeline) flags='-DHEARTBEAT -DGPU_TIMELINE'; name=maelle-timeline; title='Maelle GPU Timeline' ;;
+        nocrackfill) flags='-DHEARTBEAT -DGPU_NO_CRACK_FILL'; name=maelle-nofill; title='Maelle No Crack Fill' ;;
+        capture) flags='-DFRAME_CAPTURE'; name=maelle-capture; title='Maelle Capture' ;;
+        statedebug) flags='-DSTATE_DEBUG -DHEARTBEAT'; name=maelle-statedebug; title='Maelle State Debug' ;;
+        gpudump) flags='-DGPU_DUMP'; name=maelle-dump; title='Maelle Dump' ;;
+        threadprobe) flags='-DTHREAD_PROBE'; name=maelle-probe; title='Maelle Probe' ;;
+        netlog) flags='-DNET_LOG'; name=maelle-netlog; title='Maelle Net Log' ;;
+        profile) flags='-DPROFILE_EMU'; name=maelle-profile; title='Maelle Profile' ;;
+        jittest) flags='-DJIT_SELFTEST'; name=maelle-jittest; title='Maelle JIT Test' ;;
+        romtest) flags='-DROM_TEST'; name=maelle-romtest; title='Maelle ROM Test' ;;
+        jitsplit) flags='-DHEARTBEAT -DJIT_SPLIT'; name=maelle-jitsplit; title='Maelle JIT Split' ;;
+        drcdebug) flags='-DDRC_DEBUG'; name=maelle-drcdebug; title='Maelle GamePad Debug' ;;
+        frametime) flags='-DHEARTBEAT -DPROFILE_EMU'; name=maelle-frametime; title='Maelle Frame Times' ;;
+        frameslots) flags='-DHEARTBEAT -DPROFILE_EMU -DNO_FRAME_SAMPLES'; name=maelle-frameslots; title='Maelle Frame Slots' ;;
+        framelog) flags='-DFRAME_LOG'; name=maelle-framelog; title='Maelle Frame Log' ;;
+        audiocap) flags='-DFRAME_LOG -DAUDIO_CAPTURE'; name=maelle-audiocap; title='Maelle Audio Capture' ;;
+        romload) flags='-DROM_LOAD_TEST'; name=maelle-romload; title='Maelle ROM Load' ;;
+        frameart) flags='-DFRAME_ART_TEST'; name=maelle-frameart; title='Maelle Frame Art' ;;
+        nandlog) flags='-DNAND_LOG'; name=maelle-nandlog; title='Maelle NAND Log' ;;
+        gpucrc) flags='-DGPU_CRC'; name=maelle-gpucrc; title='Maelle GPU CRC' ;;
         *) echo "Unknown variant: $variant"; exit 1 ;;
     esac
     rm -rf "build-wiiu-$name"

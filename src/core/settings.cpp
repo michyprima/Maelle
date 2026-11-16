@@ -2,20 +2,20 @@
     Copyright 2019-2026 Hydr8gon
     Copyright 2026 michyprima
 
-    This file is part of NooDS U.
+    This file is part of Maelle.
 
-    NooDS U is free software: you can redistribute it and/or modify it
+    Maelle is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    NooDS U is distributed in the hope that it will be useful, but
+    Maelle is distributed in the hope that it will be useful, but
     WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
+    along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include <sys/stat.h>
@@ -113,7 +113,7 @@ bool Settings::load(std::string path) {
     mkdir((basePath + "/bios").c_str() MKDIR_ARGS);
 
     // Open the settings file or set defaults if it doesn't exist, with system files in the bios folder
-    FILE *file = fopen((basePath + "/noodsu.ini").c_str(), "r");
+    FILE *file = fopen((basePath + "/maelle.ini").c_str(), "r");
     if (!file) {
         gbaBiosPath = basePath + "/bios/gba_bios.bin";
         ndsBios9Path = basePath + "/bios/bios9.bin";
@@ -153,7 +153,7 @@ bool Settings::load(std::string path) {
 bool Settings::save() {
     std::lock_guard<FileLock> guard(fileLock());
     // Attempt to open the settings file
-    FILE *file = fopen((basePath + "/noodsu.ini").c_str(), "w");
+    FILE *file = fopen((basePath + "/maelle.ini").c_str(), "w");
     if (!file) return false;
 
     // Write each setting to the settings file

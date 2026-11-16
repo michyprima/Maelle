@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Sums up the trace.bin that a `./build-wiiu-debug.sh frameslots` build of NooDS U writes to its folder on the SD card
+# Sums up the trace.bin that a `./build-wiiu-debug.sh frameslots` build of Maelle writes to its folder on the SD card
 # next to heartbeat.log: every emulated frame's record of where the emulator thread spent its time, by profiling slot and
 # by scheduled task, how the 2D engines drew the frame and how long the GPU took over its 3D. Frames are grouped into all
 # of them, slow ones where the emulator thread worked, and slow ones where it waited for a 2D engine at the end of the

@@ -1,20 +1,20 @@
 /*
     Copyright 2019-2026 Hydr8gon
 
-    This file is part of NooDS U.
+    This file is part of Maelle.
 
-    NooDS U is free software: you can redistribute it and/or modify it
+    Maelle is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    NooDS U is distributed in the hope that it will be useful, but
+    Maelle is distributed in the hope that it will be useful, but
     WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
+    along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include <algorithm>
@@ -286,9 +286,12 @@ void Spi::addAccessPoint() {
     // else taking the first unused one, or the last one if they're all used
     size_t offset = apOffset();
     if (!offset) return;
+    // A slot set up under the app's old name counts as its own, so it keeps its WFC user ID
+    static const char oldSsid[8] = "NooDS U";
     int slot = -1;
     for (int i = 0; i < 3 && slot < 0; i++)
-        if (!memcmp(&firmware[offset + i * 0x100 + 0x40], WifiAp::ssid, sizeof(WifiAp::ssid)))
+        if (!memcmp(&firmware[offset + i * 0x100 + 0x40], WifiAp::ssid, sizeof(WifiAp::ssid)) ||
+                !memcmp(&firmware[offset + i * 0x100 + 0x40], oldSsid, sizeof(oldSsid)))
             slot = i;
     for (int i = 0; i < 3 && slot < 0; i++)
         if (firmware[offset + i * 0x100 + 0xE7] == 0xFF)
@@ -297,7 +300,11 @@ void Spi::addAccessPoint() {
 
     // Keep everything in a slot already set up for it, like the WFC user ID, otherwise start it from scratch
     uint8_t *ap = &firmware[offset + slot * 0x100];
-    if (memcmp(&ap[0x40], WifiAp::ssid, sizeof(WifiAp::ssid))) {
+    if (!memcmp(&ap[0x40], oldSsid, sizeof(oldSsid))) {
+        memset(&ap[0x40], 0, 0x20);
+        memcpy(&ap[0x40], WifiAp::ssid, sizeof(WifiAp::ssid));
+    }
+    else if (memcmp(&ap[0x40], WifiAp::ssid, sizeof(WifiAp::ssid))) {
         memset(ap, 0, 0x100);
         memcpy(&ap[0x40], WifiAp::ssid, sizeof(WifiAp::ssid));
         ap[0xEF] = 0x01; // Configured

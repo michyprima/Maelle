@@ -11,7 +11,7 @@ this runs it for real, on the Wii U, with real memory.
 tests/rom/build.sh <any DS ROM, for the logo>
 ```
 
-Copy `noodsu-romtest.wuhb` and `tests/rom/build/noodsu-instructions.nds` to the SD card, start the first and choose the second
+Copy `maelle-romtest.wuhb` and `tests/rom/build/maelle-instructions.nds` to the SD card, start the first and choose the second
 as the game. It runs the ROM three times, with the interpreter, then the JIT with fast CPU timing, then the JIT with normal
 timing. That takes a few minutes, showing which case it's on, and ends by saying how many cases differ. A case that doesn't
 finish in 60 seconds stops the test, and if the console itself crashes, the last line written shows about where.
@@ -59,9 +59,9 @@ worst first, so what the JIT makes slower than the interpreter is at the top. It
 
 ## On a real DS
 
-Copy `build/noodsu-instructions.nds` to a flashcart and start it. It needs no libraries, touch screen or save. The case running stays on screen, so a hang shows where it happened. It takes a few minutes, then more to save, skipping the jumps and PC loads with misaligned addresses, which the ARM manual leaves undefined, so a real CPU might not come back from them.
+Copy `build/maelle-instructions.nds` to a flashcart and start it. It needs no libraries, touch screen or save. The case running stays on screen, so a hang shows where it happened. It takes a few minutes, then more to save, skipping the jumps and PC loads with misaligned addresses, which the ARM manual leaves undefined, so a real CPU might not come back from them.
 
-Results are compared with what's built in, which is NooDS U's interpreter on the Mac.
+Results are compared with what's built in, which is Maelle's interpreter on the Mac.
 
 | Button | What it does |
 |---|---|
@@ -71,16 +71,16 @@ Results are compared with what's built in, which is NooDS U's interpreter on the
 | B | Back from the details |
 | L or R | Switch between what differs, and the ARM9's and ARM7's cycles |
 
-Cycles are per instruction in tenths, this DS's first, red if they differ from NooDS U's. It can't time real speed on a DS.
+Cycles are per instruction in tenths, this DS's first, red if they differ from Maelle's. It can't time real speed on a DS.
 
 ### Saved results
 
-When the run ends, it writes what differs to `noodsu-results.bin` in the root of the flashcart's card, using libfat and the flashcart's DLDI driver like homebrew does. It reads the file back to check it, and the second line of the first page says what happened. libfat comes from devkitPro's `libfat-gba`, since it works with any DLDI driver.
+When the run ends, it writes what differs to `maelle-results.bin` in the root of the flashcart's card, using libfat and the flashcart's DLDI driver like homebrew does. It reads the file back to check it, and the second line of the first page says what happened. libfat comes from devkitPro's `libfat-gba`, since it works with any DLDI driver.
 
 Flashcarts usually patch their driver into homebrew when starting it, which the ROM's header is set up for. If one doesn't, put the driver in yourself after building, since building starts over; the driver is usually on the flashcart's card, like `__rpg/r4_sd.dldi`:
 
 ```
-tests/rom/dldi.py tests/rom/build/noodsu-instructions.nds <driver.dldi>
+tests/rom/dldi.py tests/rom/build/maelle-instructions.nds <driver.dldi>
 ```
 
 With no driver at all, the ROM tries the save chip instead, in case the flashcart keeps that as a `.sav` file, trying each kind and reading back to see what works. An empty `.sav` next to the ROM only means the flashcart took it for a game.
@@ -88,7 +88,7 @@ With no driver at all, the ROM tries the save chip instead, in case the flashcar
 To compare saved results word by word, get the same values from the Mac by running the ROM with the interpreter and `RomTest::detail` set to 2, then:
 
 ```
-tests/rom/results.py noodsu-results.bin <that run's results> tests/rom/build/cases.h
+tests/rom/results.py maelle-results.bin <that run's results> tests/rom/build/cases.h
 ```
 
 It lists which registers differ most with their commonest values, which combinations of them go together, and every difference. The details come from running each case again, so a case that gives the same values then was affected by what ran before it.
@@ -98,7 +98,7 @@ It lists which registers differ most with their commonest values, which combinat
 A real ARM7's multiplies with flags change the carry, which the ARM manual only calls meaningless. So the ROM also records the flags from every kind of multiply, on both CPUs, for 1,600 pairs of operands and with the carry clear and set beforehand. These go at the end of the saved results:
 
 ```
-tests/rom/multiply.py noodsu-results.bin [output.csv]
+tests/rom/multiply.py maelle-results.bin [output.csv]
 ```
 
 ## Updating what's built in
@@ -106,7 +106,7 @@ tests/rom/multiply.py noodsu-results.bin [output.csv]
 Run the ROM on the Mac with the interpreter and `RomTest::detail` set, which adds the `S` lines, then:
 
 ```
-JIT_TEST_CFLAGS=-DROM_TEST tests/jit/game.sh tests/rom/build/noodsu-instructions.nds <system files> 60000 --modes interp romtest=romtest.txt
+JIT_TEST_CFLAGS=-DROM_TEST tests/jit/game.sh tests/rom/build/maelle-instructions.nds <system files> 60000 --modes interp romtest=romtest.txt
 tests/rom/expected.py <the run-interp folder that prints>/romtest.txt tests/rom/build/cases.h tests/rom/build/expected.bin
 tests/rom/build.sh <the same ROM> tests/rom/build/expected.bin
 ```

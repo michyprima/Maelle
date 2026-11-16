@@ -15,8 +15,8 @@ extern char __end__[];
 // The memory the C library can use is what's left before the ARM7's code
 #define HEAP_END ((char*)0x02180000)
 #ifndef FILE_NAME
-#define FILE_NAME "fat:/noodsu-results.bin"
-#define FILE_LABEL "NOODSU-RESULTS.BIN"
+#define FILE_NAME "fat:/maelle-results.bin"
+#define FILE_LABEL "MAELLE-RESULTS.BIN"
 #endif
 #define FILE_LIMIT 0x800000
 
@@ -84,7 +84,7 @@ static int writeVerified(int to, const unsigned char *data, int length) {
 
 static int findChip(void) {
     // A word that won't be there already, from how long the DS has been on
-    static unsigned char probe[32] = "NOODSUPROBE";
+    static unsigned char probe[32] = "MAELLEPROBE";
     for (unsigned i = 0; i < sizeof(chips) / sizeof(chips[0]); i++) {
         chip = chips[i];
         probe[12] = REG16(0x04000100);

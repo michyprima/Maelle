@@ -15,7 +15,7 @@ while true; do
     elif [ "$1" = --wifi ]; then wifi=1; shift
     else break; fi
 done
-base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/noodsu-jit-test}
+base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/maelle-jit-test}
 build=${JIT_TEST_GAME_BUILD:-$base-game}; [ "$mutation" = 0 ] || build=$build-m$mutation
 mkdir -p "$build/obj"
 

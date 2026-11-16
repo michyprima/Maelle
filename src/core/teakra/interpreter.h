@@ -41,7 +41,7 @@ public:
         anchor_valid = false;
     }
 
-    // NooDS U: called when anything outside the processor changes what it can see, so a wait for that ends
+    // Maelle: called when anything outside the processor changes what it can see, so a wait for that ends
     void Wake() {
         idle = false;
         anchor_valid = false;
@@ -102,7 +102,7 @@ public:
     }
 
     void Run(u64 cycles) {
-        // NooDS U: idle is kept between runs, since Wake() ends it when something outside changes
+        // Maelle: idle is kept between runs, since Wake() ends it when something outside changes
         for (u64 i = 0; i < cycles; ++i) {
             if (idle) {
                 u64 skipped = core_timing.Skip(cycles - i - 1);
@@ -125,7 +125,7 @@ public:
                 regs.ipv = 1;
             }
 
-            // NooDS U: programs wait for the host in loops that poll, which would be run at full cost for nothing.
+            // Maelle: programs wait for the host in loops that poll, which would be run at full cost for nothing.
             // When execution comes back to where it was with every register the same, having changed no memory and
             // read nothing that varies by itself, the same will happen until an interrupt or the host steps in, so
             // the processor counts as idle and time is skipped as for a branch to itself
@@ -3014,7 +3014,7 @@ private:
 
     bool idle = false;
 
-    // NooDS U: where the check for a loop that only waits started, and the registers as they were there
+    // Maelle: where the check for a loop that only waits started, and the registers as they were there
     static constexpr u32 AnchorPeriod = 256;
     bool anchor_valid = false;
     u32 anchor_pc = 0;

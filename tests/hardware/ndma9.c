@@ -1,5 +1,5 @@
 // Settles how the DSi's NDMA channels really behave where GBATEK leaves it open or nothing else tests it. Each test runs on
-// the ARM9, then the ARM7, and everything is saved for ndma.py, which compares it with NooDS U's results
+// the ARM9, then the ARM7, and everything is saved for ndma.py, which compares it with Maelle's results
 #include <stdio.h>
 #include <nds.h>
 #include "screen.h"
@@ -65,7 +65,7 @@ int main(void) {
     block[N_MAGIC1] = NDMA_MAGIC1;
     pxiWaitRemote(PxiChannel_User0);
     textRow = textColumn = 0;
-    text("NOODS U NDMA TEST", WHITE);
+    text("MAELLE NDMA TEST", WHITE);
     newLine();
     text("RUNNING", YELLOW);
     newLine();
@@ -88,7 +88,7 @@ int main(void) {
     text("SAVING", YELLOW);
     newLine();
     const char *where = "";
-    FILE *file = openSave("noodsu-ndmatest.bin", &where);
+    FILE *file = openSave("maelle-ndmatest.bin", &where);
     int good = file && fwrite(block, 4, N_TOTAL, file) == N_TOTAL;
     if (file && fclose(file) != 0) good = 0;
     textRow--;

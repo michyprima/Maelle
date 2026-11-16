@@ -4,7 +4,7 @@
 set -e
 here=$(cd "$(dirname "$0")"; pwd)
 rom=$(cd "$(dirname "$1")"; pwd)/$(basename "$1"); cfg=$(cd "$2"; pwd)
-base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/noodsu-jit-test}
+base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/maelle-jit-test}
 build=${JIT_TEST_GAME_BUILD:-$base-game}
 
 # game.sh builds the core and Unicorn; only its objects are used here, with this test in place of its main

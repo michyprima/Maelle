@@ -66,7 +66,7 @@ public:
     u16 MMIORead(u16 address);
     void MMIOWrite(u16 address, u16 value);
 
-    // NooDS U: set when the program changes memory or a register, or reads a register that can change by itself or by
+    // Maelle: set when the program changes memory or a register, or reads a register that can change by itself or by
     // being read, for the interpreter to tell loops that only wait from ones that do something
     bool impure = false;
 

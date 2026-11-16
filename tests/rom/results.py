@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Compares what a real DS saved, in noodsu-results.bin or a .sav file, with what NooDS U's interpreter does, word by word, to show what the differences have in common
+# Compares what a real DS saved, in maelle-results.bin or a .sav file, with what Maelle's interpreter does, word by word, to show what the differences have in common
 # Usage: results.py <saved results> <details from the Mac, from a run with RomTest::detail set to 2> <cases.h>
 import collections, re, struct, sys
 
@@ -51,7 +51,7 @@ for i in range(stored):
         pairs[cpu, word][got, wanted] += 1
     rows.append((cpu, name, chosen, ' '.join(f'{w}={g:08X}/{e:08X}' for w, g, e in different) or 'same as the Mac when run again'))
 
-print('\nWords that differ most, by CPU (9 or 7), with the commonest values as DS/NooDS U:')
+print('\nWords that differ most, by CPU (9 or 7), with the commonest values as DS/Maelle:')
 for (cpu, word), n in perWord.most_common(16):
     top = ', '.join(f'{g:08X}/{e:08X} x{c}' for (g, e), c in pairs[cpu, word].most_common(3))
     print(f'  {"7" if cpu else "9"} {word:8s}{n:6d}  {top}')

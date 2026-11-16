@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Explains the noodsu-speedtest.bin the speed test saves, or finds its block in a RAM dump from tests/jit/game.sh;
-# with a second file, such as NooDS U's, it says where the two differ
-# Usage: speed.py <noodsu-speedtest.bin or RAM dump> [another to compare]
+# Explains the maelle-speedtest.bin the speed test saves, or finds its block in a RAM dump from tests/jit/game.sh;
+# with a second file, such as Maelle's, it says where the two differ
+# Usage: speed.py <maelle-speedtest.bin or RAM dump> [another to compare]
 import re, struct, sys
 
 h = open(__file__.replace('speed.py', 'speed.h')).read()

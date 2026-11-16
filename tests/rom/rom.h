@@ -3,7 +3,7 @@
 #define REG32(a) (*(volatile unsigned*)(a))
 #define REG16(a) (*(volatile unsigned short*)(a))
 
-// The romtest build of NooDS U answers these; on anything else they read as something other than the magic number
+// The romtest build of Maelle answers these; on anything else they read as something other than the magic number
 #define HOST_MAGIC REG32(0x04FFF000)
 #define HOST_MICROSECONDS REG32(0x04FFF004)
 #define HOST_TEXT REG32(0x04FFF008)

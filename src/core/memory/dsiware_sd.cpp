@@ -1,20 +1,20 @@
 /*
     Copyright 2026 michyprima
 
-    This file is part of NooDS U.
+    This file is part of Maelle.
 
-    NooDS U is free software: you can redistribute it and/or modify it
+    Maelle is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    NooDS U is distributed in the hope that it will be useful, but
+    Maelle is distributed in the hope that it will be useful, but
     WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
+    along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include <cstring>
@@ -138,7 +138,7 @@ void DsiWareSd::create(const uint8_t *header, std::string savePath) {
     boot[0x00] = 0xEB;
     boot[0x01] = 0x3C;
     boot[0x02] = 0x90;
-    memcpy(&boot[0x03], "NOODS U ", 8);
+    memcpy(&boot[0x03], "MAELLE  ", 8);
     put16(&boot[0x0B], 0x200); // Bytes per sector
     boot[0x0D] = sectorsPerCluster;
     put16(&boot[0x0E], 1); // Reserved sectors
@@ -153,7 +153,7 @@ void DsiWareSd::create(const uint8_t *header, std::string savePath) {
     boot[0x24] = 0x80; // Drive number
     boot[0x26] = 0x29; // Extended boot signature
     put32(&boot[0x27], U8TO32(header, 0xC)); // Serial number
-    memcpy(&boot[0x2B], "NOODS U    ", 11);
+    memcpy(&boot[0x2B], "MAELLE     ", 11);
     memcpy(&boot[0x36], "FAT16   ", 8);
     put16(&boot[0x1FE], 0xAA55);
 
@@ -172,7 +172,7 @@ void DsiWareSd::create(const uint8_t *header, std::string savePath) {
 
     // List the volume label and the files in the root folder, dated when the DSi came out
     uint8_t *root = &meta[(partStart + 1 + fatSectors * 2) << 9];
-    memcpy(&root[0x00], "NOODS U    ", 11);
+    memcpy(&root[0x00], "MAELLE     ", 11);
     root[0x0B] = 0x08; // Volume label
     for (size_t i = 0; i < files.size(); i++) {
         uint8_t *dir = &root[(i + 1) * 0x20];

@@ -2,7 +2,7 @@
 #include "rom.h"
 #include "font.h"
 
-// Filled in after building, from running this same ROM with NooDS U's interpreter
+// Filled in after building, from running this same ROM with Maelle's interpreter
 const volatile struct {
     unsigned hashes[2][MAX_CASES];
     unsigned short sets[2][MAX_CASES][SETS];
@@ -273,11 +273,11 @@ static void showDiffering(int first, int chosen) {
 }
 
 static void showCycles(int cpu, int first) {
-    // Cycles per instruction, in tenths, for this CPU and what NooDS U says
+    // Cycles per instruction, in tenths, for this CPU and what Maelle says
     volatile unsigned *got = cpu ? CYCLES7 : cycles;
     clearScreen();
     text(cpu ? "ARM7" : "ARM9", YELLOW);
-    text(" CYCLES X10: REAL, NOODS U, NAME", WHITE);
+    text(" CYCLES X10: REAL, MAELLE, NAME", WHITE);
     newline();
     int shown = 0;
     for (int i = 0; i < timedCount() && row < ROWS; i++) {
@@ -298,7 +298,7 @@ void cpuMain(void) {
     REG32(0x04000240) = 0x80;
     clearScreen();
     DISPCNT = 0x20000;
-    text("NOODS U INSTRUCTION ROM", WHITE);
+    text("MAELLE INSTRUCTION ROM", WHITE);
     newline();
     int host = hostHere();
     if (host) {

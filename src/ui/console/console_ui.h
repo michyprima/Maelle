@@ -2,20 +2,20 @@
     Copyright 2019-2026 Hydr8gon
     Copyright 2026 michyprima
 
-    This file is part of NooDS U.
+    This file is part of Maelle.
 
-    NooDS U is free software: you can redistribute it and/or modify it
+    Maelle is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    NooDS U is distributed in the hope that it will be useful, but
+    Maelle is distributed in the hope that it will be useful, but
     WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
+    along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #pragma once
@@ -74,6 +74,7 @@ struct MenuItem {
     void *iconTex;
     uint8_t iconSize;
     bool header;
+    bool separator = true; // Whether a line is drawn under it
 
     MenuItem(std::string name, std::string setting = "", void *iconTex = nullptr, uint8_t iconSize = 0):
         name(name), setting(setting), iconTex(iconTex), iconSize(iconSize), header(false) {}

@@ -717,7 +717,7 @@ int main(int argc, char **argv) {
         if (!windowOpen) fatal("the window needs game.sh's --window");
         if (input && !window) fatal("input needs the window");
         int position = (mode == "interp") ? 0 : (mode == "portable") ? 1 : 2;
-        if (!windowOpen(("NooDS U harness: " + mode).c_str(), position)) fatal("couldn't open a window");
+        if (!windowOpen(("Maelle harness: " + mode).c_str(), position)) fatal("couldn't open a window");
     }
 
     // Run from the current folder, keeping saves there, with everything that could differ between runs fixed
@@ -776,9 +776,9 @@ int main(int argc, char **argv) {
         static std::vector<uint8_t> migoomba;
         if (ext == ".gb" || ext == ".gbc") {
             std::string here = __FILE__;
-            std::string path = here.substr(0, here.rfind('/')) + "/../../src/ui/console/migoomba/migoomba_noodsu.gba";
+            std::string path = here.substr(0, here.rfind('/')) + "/../../src/ui/console/migoomba/migoomba_maelle.gba";
             FILE *file = fopen(path.c_str(), "rb");
-            if (!file) fatal("no %s; build NooDS U first", path.c_str());
+            if (!file) fatal("no %s; build Maelle first", path.c_str());
             fseek(file, 0, SEEK_END);
             migoomba.resize(ftell(file));
             fseek(file, 0, SEEK_SET);

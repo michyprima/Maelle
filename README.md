@@ -1,14 +1,11 @@
-<p align="center"><img src="icon/icon-wiiu-framed.png" width="256" alt="NooDS U icon"></p>
+<p align="center"><img src="icon/icon-wiiu-framed.png" width="256" alt="Maelle icon"></p>
 
-# NooDS U
+# Maelle
 A DS, DSi and GBA emulator for the Wii U, which also runs Game Boy and Game Boy Color games.
 
 ### Overview
-NooDS U is a Wii U-only fork of [NooDS](https://github.com/Hydr8gon/NooDS) by Hydr8gon, focused on running well on real
+Maelle is a Wii U-only fork of [NooDS](https://github.com/Hydr8gon/NooDS) by Hydr8gon, focused on running well on real
 hardware.
-
-Pokémon Black went from about 20 fps to 60 fps on a real Wii U, three times as fast, and most games should see a large
-jump too. DSi mode now also runs the DSi menu, cameras, microphone, sound and Wi-Fi.
 
 It's licensed under the GPL version 3, like NooDS.
 
@@ -36,7 +33,8 @@ It's licensed under the GPL version 3, like NooDS.
 - The DSi menu starts, and launches DS cartridges and DSi titles
 - DSiWare `.nds` files boot directly, with their saves kept next to them
 - DSi-only titles start in DSi mode, whatever the settings
-- DSP, with Nintendo's sound programs run natively, so DSi Sound plays and records
+- DSP, with Nintendo's sound programs reimplemented in C++ after melonDS (and Teakra for any others), so DSi Sound
+  plays and records, AAC files included
 - SD card from an `sd.img` image, written back without freezing, so Flipnote Studio can back up to it
 - NDMA and the main memory display FIFO behave as they do on a real DSi, checked with test ROMs run on one
 
@@ -46,6 +44,11 @@ It's licensed under the GPL version 3, like NooDS.
 - NAND saves for cartridges that keep them on the ROM chip, such as WarioWare: D.I.Y. and Jam with the Band
 - The RTC's remaining registers, its interrupts and day of the week, and the keypad interrupt (KEYCNT)
 - 3D far-plane clipping, single-dot polygon hiding, and polygon and vertex RAM overflow flags
+
+#### Game Boy and GBA
+- Game Boy and Game Boy Color games run in GBA mode through MiGoomba, built into the app, with rumble and battery saves
+- GBA cartridge clock, also for Pokémon Ruby, Sapphire and Emerald hacks that add one and for Goomba Color's MBC3 clocks
+- GBA rumble and solar sensor carts work with the DSi setting on too
 
 #### ROM loading
 - "Keep ROM in RAM" can load the whole ROM first, with progress and cancel, or stream it in the background
@@ -57,6 +60,7 @@ It's licensed under the GPL version 3, like NooDS.
 - TV + GamePad screen arrangements, with the top screen on the TV and the bottom one on the GamePad
 - The GamePad can be turned on and off during a game
 - Pro Controller and Classic Controller support
+- A 640x480 layout for TVs set to 4:3 in the Wii U's settings
 - HOME menu support
 - GamePad microphone input in DS and DSi mode, with a Blow into Mic hotkey for games that check for blowing
 - GamePad camera as the DSi's cameras, so DSi Camera can take and save photos
@@ -73,7 +77,9 @@ It's licensed under the GPL version 3, like NooDS.
 - Simpler settings menu, split into tabs switched with L and R
 - L and R are the DS's L and R, and ZL or ZR opens the menu; a hotkey can also take a combo of two buttons, set by
   pressing both together when remapping it
-- File browser: set a default folder (Y), and open a ROM's launch options (−) to run it with a chosen save type
+- File browser: set a default folder (Y), open a ROM's launch options (−) to run it with a chosen save type, and find the
+  last ROM played already selected (can be turned off)
+- Menus page with left and right, and wrap around from either end
 - Pause menu rearranged, and Restart asks for confirmation
 - Optional Screen Frame setting: the space around the screens looks like a DSi, in any of its eight colours, with
   working lights: wireless for Wi-Fi, and charge and power for the GamePad's battery
@@ -97,7 +103,7 @@ It's licensed under the GPL version 3, like NooDS.
 </details>
 
 ### Beta software
-NooDS U is beta software. Most games run well, but some may still hang, crash or misbehave, and DSi mode is newer and
+Maelle is beta software. Most games run well, but some may still hang, crash or misbehave, and DSi mode is newer and
 less tested than DS mode.
 
 If something hangs or isn't working, try changing settings before reporting it. Turning off JIT is the first thing to
@@ -106,22 +112,25 @@ try, followed by Fast CPU Timing, Sync to Display and the GPU 3D Renderer.
 When reporting a bug, include the game's name and the ROM's hash (SHA-1 or MD5), plus which settings you tried.
 
 ### Usage
-Put `noodsu.wuhb` in `sd:/wiiu/apps/` on your SD card. Settings, states and cheats are kept in `sd:/wiiu/apps/noodsu/`, and saves next to the ROM.
+Put `maelle.wuhb` in `sd:/wiiu/apps/` on your SD card. Settings, states and cheats are kept in `sd:/wiiu/apps/maelle/`, and saves next to the ROM.
 
-NooDS U should be able to run most DS and GBA games without any setup. Game Boy and Game Boy Color ROMs (`.gb`, `.gbc`)
+Maelle used to be called NooDS U. If `sd:/wiiu/apps/noodsu/` is there, the first start moves it to `sd:/wiiu/apps/maelle/`
+with everything in it, so `noodsu.wuhb` can be deleted.
+
+Maelle should be able to run most DS and GBA games without any setup. Game Boy and Game Boy Color ROMs (`.gb`, `.gbc`)
 run in GBA mode in [MiGoomba](https://github.com/michyprima/migoomba), a Goomba Color fork built into the app; their saves
 are in Goomba's packed format, which MiGoomba's `tools/goombasave.py` converts.
 
-System files go in `sd:/wiiu/apps/noodsu/bios/`, and their paths can be changed in the `noodsu.ini` file:
+System files go in `sd:/wiiu/apps/maelle/bios/`, and their paths can be changed in the `maelle.ini` file:
 - DS BIOS and firmware (`bios9.bin`, `bios7.bin`, `firmware.bin`) are needed to boot the system menu, and can be dumped
   from a DS with [DSBF Dumper](https://archive.org/details/dsbf-dumper). The firmware must come from an original DS; DSi
   and 3DS dumps don't contain any boot code.
 - DSi mode needs DSi BIOS, firmware and NAND files (`bios9i.bin`, `bios7i.bin`, `firmwarei.bin`, `nand.bin`), dumped
-  from a DSi. An SD card image can be put at `sd:/wiiu/apps/noodsu/sd.img`.
+  from a DSi. An SD card image can be put at `sd:/wiiu/apps/maelle/sd.img`.
 - A GBA BIOS file (`gba_bios.bin`) can be optionally provided, and can be dumped from many systems with
   [this dumper](https://github.com/mgba-emu/bios-dump).
 
- Save types are automatically detected, but this may not always be accurate. If you run something
+Save types are automatically detected, but this may not always be accurate. If you run something
 and it has issues with saving, the save type can be changed in the pause menu.
 
 ### Building
@@ -135,3 +144,10 @@ the project root directory to start building. `./build-wiiu-debug.sh` builds var
 * [melonDS Blog](https://melonds.kuribo64.net) - Contains posts that detail various 3D quirks
 * [DraStic BIOS](https://drive.google.com/file/d/1dl6xgOXc892r43RzkIJKI6nikYIipzoN/view) - Reference for the DS HLE BIOS functions
 * [Cult of GBA BIOS](https://github.com/Cult-of-GBA/BIOS) - Reference for the GBA HLE BIOS functions
+* [melonDS](https://github.com/melonDS-emu/melonDS) - The base for the DSi DSP's high-level programs and the emulated access point
+* [Teakra](https://github.com/wwylele/teakra) - Runs DSP programs that aren't reimplemented
+* [FAAD2](https://github.com/knik0/faad2) - Decodes AAC audio for the DSP
+
+---
+
+*Dedicato alla mia nipotina*

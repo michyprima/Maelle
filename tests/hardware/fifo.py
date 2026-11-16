@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Explains the noodsu-fifotest.bin the display FIFO test saves, or finds its block in a RAM dump from tests/jit/game.sh;
-# with a second file, such as NooDS U's, it lists only the scenes where the two differ
-# Usage: fifo.py <noodsu-fifotest.bin or RAM dump> [another to compare] [--images folder]
+# Explains the maelle-fifotest.bin the display FIFO test saves, or finds its block in a RAM dump from tests/jit/game.sh;
+# with a second file, such as Maelle's, it lists only the scenes where the two differ
+# Usage: fifo.py <maelle-fifotest.bin or RAM dump> [another to compare] [--images folder]
 import os, re, struct, sys
 
 h = open(__file__.replace('fifo.py', 'fifo.h')).read()

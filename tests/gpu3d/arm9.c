@@ -10,7 +10,7 @@
 #define KEYS REG16(0x04000130)
 #define SCREEN ((volatile unsigned short*)0x06800000)
 #define CAPTURE ((volatile unsigned short*)0x06820000)
-#define IMAGES ((unsigned short*)0x02200000) // Kept in main RAM, where a run in NooDS U can be read back too
+#define IMAGES ((unsigned short*)0x02200000) // Kept in main RAM, where a run in Maelle can be read back too
 #define STATUS REG32(0x021FFFF0)
 
 #define WHITE 0xFFFF
@@ -197,7 +197,7 @@ void cpuMain(void) {
     text("DRAWING", WHITE);
     REG32(0x04000600) = 1 << 15; // Clear any matrix stack error
 
-    // The first frame after starting comes out as one flat color in NooDS U, so it's drawn and left out
+    // The first frame after starting comes out as one flat color in Maelle, so it's drawn and left out
     runScene(0);
     streaks[0] = 0;
     for (int i = 0; i < SCENES; i++) runScene(i);

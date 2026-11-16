@@ -159,7 +159,7 @@ int main(void) {
     block[R_SCFG9] = IO(0x04004008);
 
     textRow = textColumn = 0;
-    text("NOODS U 3D TIMING TEST", WHITE);
+    text("MAELLE 3D TIMING TEST", WHITE);
     newLine();
     text("RUNNING", YELLOW);
     newLine();
@@ -188,7 +188,7 @@ int main(void) {
     text("DONE, SAVING", YELLOW);
     newLine();
     const char *where = "";
-    FILE *file = openSave("noodsu-rdlinestest.bin", &where);
+    FILE *file = openSave("maelle-rdlinestest.bin", &where);
     int good = file && fwrite(block, 4, R_TOTAL, file) == R_TOTAL;
     if (file && fclose(file) != 0) good = 0;
     textRow = 1;

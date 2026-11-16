@@ -12,7 +12,7 @@ tests/jit/mutate.sh <small ROM> <same folder> [suites]
 ```
 
 Any small DS ROM works, since the game itself isn't run. The first run makes a Python environment to get Unicorn and builds a
-changed copy of `src/core` in `$TMPDIR/noodsu-jit-test`; set `JIT_TEST_BUILD` to use another folder, and `JIT_TEST_SHARDS` to
+changed copy of `src/core` in `$TMPDIR/maelle-jit-test`; set `JIT_TEST_BUILD` to use another folder, and `JIT_TEST_SHARDS` to
 limit the processes. It exits with a failure if anything differs. `mutate.sh` plants the bugs listed in `patch.py` one at a
 time and checks that each is noticed; add one there when adding a kind of test.
 
@@ -133,7 +133,7 @@ The first run also builds Unicorn, which needs `cmake` and `ninja`: a developmen
 release checks every write to RAM for code being written over, which makes runs much slower. Set `JIT_TEST_UNICORN` to
 another Unicorn source folder, built in its `build` folder, to use that instead.
 
-It builds in `$TMPDIR/noodsu-jit-test-game`, and leaves each run's output in a `run-<mode>` folder there; set
+It builds in `$TMPDIR/maelle-jit-test-game`, and leaves each run's output in a `run-<mode>` folder there; set
 `JIT_TEST_GAME_BUILD` to use another folder, and `JIT_TEST_CFLAGS` to build with more flags, like
 `-fsanitize=address,undefined -g`.
 
@@ -151,7 +151,7 @@ big-endian host. A `gcc-` run should match `interp` exactly, and `--mutate` plan
 prefetching, take turns, only switching when one waits, so a run goes the same way every time. It reads the ROM from its
 file, there being no thread to load it into memory on, which doesn't change what the game sees. The window and Wi-Fi
 need the Mac's build, as do `clear` and `set`, which need its changes to the core. It needs devkitPPC, and builds in
-`$TMPDIR/noodsu-jit-test-gcc`, or `JIT_TEST_GCC_BUILD`.
+`$TMPDIR/maelle-jit-test-gcc`, or `JIT_TEST_GCC_BUILD`.
 
 What's still left to the console is the CPU itself: Unicorn's PowerPC 750 keeps its caches coherent and has no timing, so
 generated code that isn't flushed to the instruction cache, and anything to do with speed, still only show there.
@@ -179,7 +179,7 @@ commit's, like the last release before making a new one:
 tests/jit/bench.sh <commit or tag> <ROM, or - for none> <folder with the system files> <frames> [game.sh options]
 ```
 
-It checks the commit out in `$TMPDIR/noodsu-jit-test-bench-tree` with this tree's harness, runs both cores at once in
+It checks the commit out in `$TMPDIR/maelle-jit-test-bench-tree` with this tree's harness, runs both cores at once in
 `game.sh`, then prints each run's counts, the change in instructions, and whether the frames and memory still match. Older
 cores only work as far back as `patch.py` still applies to them; v0.5 does. The counts leave out the C++ that generated
 code calls, which runs natively on the Mac, so a change there only shows in the `interp` time, and only roughly. At 17fa864,

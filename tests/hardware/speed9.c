@@ -79,7 +79,7 @@ int main(void) {
     block[S_MAGIC1] = SPED_MAGIC1;
     pxiWaitRemote(PxiChannel_User0);
     textRow = textColumn = 0;
-    text("NOODS U SPEED TEST", WHITE);
+    text("MAELLE SPEED TEST", WHITE);
     newLine();
     text("RUNNING", YELLOW);
     newLine();
@@ -165,7 +165,7 @@ int main(void) {
 
     // Save the whole block, which tests/hardware/speed.py explains
     const char *where = "";
-    FILE *file = openSave("noodsu-speedtest.bin", &where);
+    FILE *file = openSave("maelle-speedtest.bin", &where);
     int good = file && fwrite(block, 4, S_TOTAL, file) == S_TOTAL;
     if (file && fclose(file) != 0) good = 0;
     text(!file ? "NOT SAVED" : !good ? "SAVE FAILED" : "SAVED ", good ? GREEN : RED);

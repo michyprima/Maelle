@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Explains the noodsu-mictest.bin the DSi microphone test saves, or finds its block in a RAM dump from tests/jit/game.sh; with
-# a second file, such as NooDS U's, it shows both side by side and marks the tests where they differ. Sample data differs
-# between any two runs, and NooDS U's harness has no microphone input, so the samples are shown but not compared
-# Usage: mic.py <noodsu-mictest.bin or RAM dump> [another to compare]
+# Explains the maelle-mictest.bin the DSi microphone test saves, or finds its block in a RAM dump from tests/jit/game.sh; with
+# a second file, such as Maelle's, it shows both side by side and marks the tests where they differ. Sample data differs
+# between any two runs, and Maelle's harness has no microphone input, so the samples are shown but not compared
+# Usage: mic.py <maelle-mictest.bin or RAM dump> [another to compare]
 import re, struct, sys
 
 h = open(__file__.replace('mic.py', 'mic.h')).read()

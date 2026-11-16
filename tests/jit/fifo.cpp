@@ -1,7 +1,7 @@
 // Checks the main memory display FIFO with both CPUs halted, through the real registers and events: what writes to
 // DISP_MMEM_FIFO do, engine A showing it in display mode 3, display capture taking it as source B, DMA timing 4 and DSi
 // NDMA mode 9 filling it, and the DMA being stopped at V-blank. The expected values are what tests/hardware's
-// noodsu-fifo.nds found on a real DSi, and melonDS for the rest
+// maelle-fifo.nds found on a real DSi, and melonDS for the rest
 #include <algorithm>
 #include <atomic>
 #include <chrono>

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Explains the noodsu-rdlinestest.bin the 3D timing test saves, or finds its block in a RAM dump from tests/jit/game.sh;
-# with a second file, such as NooDS U's, it lists only the scenes where the two differ. With --images <folder> it also
+# Explains the maelle-rdlinestest.bin the 3D timing test saves, or finds its block in a RAM dump from tests/jit/game.sh;
+# with a second file, such as Maelle's, it lists only the scenes where the two differ. With --images <folder> it also
 # writes each capture as a PPM, and with --lines it says, for each run of lines in a capture, which quad shows and how far
-# Usage: rdlines.py <noodsu-rdlinestest.bin or RAM dump> [another to compare] [--images folder] [--lines]
+# Usage: rdlines.py <maelle-rdlinestest.bin or RAM dump> [another to compare] [--images folder] [--lines]
 import os, re, struct, sys
 
 h = open(__file__.replace('rdlines.py', 'rdlines.h')).read()

@@ -89,7 +89,7 @@ void Teakra::DoSavestate(melonDS::Savestate* file) {
     impl->DoSavestate(file);
 }
 
-// NooDS U: everything below that changes what the processor can see also ends a wait it was found to be in
+// Maelle: everything below that changes what the processor can see also ends a wait it was found to be in
 void Teakra::Wake() {
     impl->processor.Wake();
 }

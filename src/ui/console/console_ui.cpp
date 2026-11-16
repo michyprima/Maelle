@@ -2,20 +2,20 @@
     Copyright 2019-2026 Hydr8gon
     Copyright 2026 michyprima
 
-    This file is part of NooDS U.
+    This file is part of Maelle.
 
-    NooDS U is free software: you can redistribute it and/or modify it
+    Maelle is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    NooDS U is distributed in the hope that it will be useful, but
+    Maelle is distributed in the hope that it will be useful, but
     WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
+    along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include <algorithm>
@@ -1260,12 +1260,12 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
         drawRectangle(SCALE(30), SCALE(88), SCALE(1220), lineHeight, palette[1]);
         drawRectangle(SCALE(30), SCALE(648), SCALE(1220), lineHeight, palette[1]);
         // Dev builds also show when they were built, on a second line
-        if (NOODSU_DEV) {
-            drawString(NOODSU_VERSION, SCALE(72), SCALE(655), SCALE(28), palette[1]);
-            drawString(NOODSU_BUILT, SCALE(72), SCALE(685), SCALE(28), palette[1]);
+        if (MAELLE_DEV) {
+            drawString(MAELLE_VERSION, SCALE(72), SCALE(655), SCALE(28), palette[1]);
+            drawString(MAELLE_BUILT, SCALE(72), SCALE(685), SCALE(28), palette[1]);
         }
         else {
-            drawString(NOODSU_VERSION, SCALE(72), SCALE(667), SCALE(34), palette[1]);
+            drawString(MAELLE_VERSION, SCALE(72), SCALE(667), SCALE(34), palette[1]);
         }
         drawString(actionTabs + actionPlus + actionY + actionX + actionB + actionA, SCALE(1218), SCALE(667), SCALE(34),
             palette[1], true);
@@ -1439,7 +1439,7 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
                 drawRectangle(SCALE(88), SCALE(top - 2 + i * rowHeight), SCALE(5), SCALE(rowHeight + 3), palette[4]);
                 drawRectangle(SCALE(1188), SCALE(top - 2 + i * rowHeight), SCALE(5), SCALE(rowHeight + 3), palette[4]);
             }
-            else {
+            else if (items[offset].separator) {
                 // Draw separators between the items
                 drawRectangle(SCALE(90), SCALE(top + (i + 1) * rowHeight), SCALE(1100), lineHeight, palette[2]);
             }
@@ -1600,7 +1600,7 @@ bool ConsoleUI::fileBrowser() {
         }
 
         // Create the file browser menu
-        uint32_t pressed = menu("NooDS U", files, index, "Settings", "Exit", true,
+        uint32_t pressed = menu("Maelle", files, index, "Settings", "Exit", true,
             "Set Default", defaultKeys[INPUT_SELECT]);
 
         // Open the launch options of a selected ROM, and launch it if one was chosen
@@ -1782,8 +1782,8 @@ void ConsoleUI::settingsMenu() {
     std::u16string miiName = getMiiName();
 
     // Split the settings into tabs, remembering the last one opened and where each was left
-    enum { TAB_EMULATION, TAB_GRAPHICS, TAB_SCREEN, TAB_CONSOLE, TAB_CONTROLS, TAB_NOODSU, TAB_COUNT };
-    const std::vector<std::string> tabs = { "Emulation", "Graphics", "Screen", "Console", "Controls", "NooDS U" };
+    enum { TAB_EMULATION, TAB_GRAPHICS, TAB_SCREEN, TAB_CONSOLE, TAB_CONTROLS, TAB_MAELLE, TAB_COUNT };
+    const std::vector<std::string> tabs = { "Emulation", "Graphics", "Screen", "Console", "Controls", "Maelle" };
     static int tab = TAB_EMULATION;
     int indices[TAB_COUNT] = {};
 
@@ -1892,12 +1892,12 @@ void ConsoleUI::settingsMenu() {
             }
             break;
 
-        case TAB_NOODSU:
+        case TAB_MAELLE:
             add("Menu Theme", menuTheme, theme);
             add("Show FPS Counter", showFpsCounter, toggle);
             add("Select Last ROM", selectLastRom, toggle);
             aboutIndex = settings.size();
-            settings.push_back(MenuItem("About NooDS U"));
+            settings.push_back(MenuItem("About Maelle"));
             values.push_back({ nullptr, 0 });
             break;
         }
@@ -1973,13 +1973,13 @@ void ConsoleUI::settingsMenu() {
 void ConsoleUI::aboutMenu() {
     // List who made this and what it's based on, staying until backing out
     std::vector<MenuItem> items = {
-        MenuItem("NooDS U", true),
-        MenuItem("Version", NOODSU_VERSION),
-        MenuItem("Built", NOODSU_BUILT),
+        MenuItem("Maelle", true),
+        MenuItem("Version", MAELLE_VERSION),
+        MenuItem("Built", MAELLE_BUILT),
         MenuItem("Based on", "NooDS by Hydr8gon"),
         MenuItem("License", "GNU GPL v3 or later"),
         MenuItem("Authors", true),
-        MenuItem("michyprima", "NooDS U"),
+        MenuItem("michyprima", "Maelle"),
         MenuItem("Hydr8gon", "NooDS"),
         MenuItem("NooDS Contributors", true),
         MenuItem("Nadia Holmquist Pedersen"),
@@ -1992,16 +1992,23 @@ void ConsoleUI::aboutMenu() {
         MenuItem("Wii U toolchain", "devkitPro and wut"),
         MenuItem("Audio", "SDL2"),
         MenuItem("Wi-Fi Network", "libslirp (BSD license)"),
+        MenuItem("DSP", "Teakra (MIT license)"),
+        MenuItem("AAC Audio", "FAAD2 (GPL)"),
+        MenuItem("Game Boy", "MiGoomba (Goomba Color)"),
         MenuItem("References", true),
         MenuItem("GBATEK", "DS and GBA hardware"),
         MenuItem("melonDS Blog", "3D quirks"),
-        MenuItem("melonDS", "Wi-Fi access point"),
+        MenuItem("melonDS", "Wi-Fi access point and DSP"),
         MenuItem("DraStic BIOS", "DS HLE BIOS"),
         MenuItem("Cult of GBA BIOS", "GBA HLE BIOS"),
         MenuItem("Links", true),
-        MenuItem("NooDS U", "github.com/michyprima/NooDSU"),
-        MenuItem("NooDS", "github.com/Hydr8gon/NooDS")
+        MenuItem("Maelle", "github.com/michyprima/Maelle"),
+        MenuItem("NooDS", "github.com/Hydr8gon/NooDS"),
+        MenuItem("", true),
+        MenuItem("Dedicato alla mia nipotina")
     };
+    // Leave the gap and the dedication at the end without lines under them
+    items[items.size() - 2].separator = items.back().separator = false;
     int index = 0;
     while (!(menu("About", items, index, "", "", false) & defaultKeys[INPUT_B]));
 }
@@ -2028,7 +2035,7 @@ void ConsoleUI::pauseMenu() {
     int index = 0;
     while (true) {
         // Create the pause menu
-        uint32_t pressed = menu("NooDS U", items, index, "Settings", "Exit");
+        uint32_t pressed = menu("Maelle", items, index, "Settings", "Exit");
 
         // Handle menu input
         if (pressed & defaultKeys[INPUT_A]) {
@@ -2093,7 +2100,7 @@ void ConsoleUI::pauseMenu() {
 
                 case STATE_VERSION_FAIL:
                     title = "Error";
-                    text = "The state file isn't compatible with this version of NooDS U.";
+                    text = "The state file isn't compatible with this version of Maelle.";
                     break;
                 }
 
@@ -2608,27 +2615,27 @@ bool ConsoleUI::createCore() {
         switch (e) {
         case ERROR_NDS_BIOS: // Missing NDS BIOS files
             text = "Make sure the path settings point to valid NDS BIOS files, or boot ROMs directly.\n"
-                "You can modify path settings in the noodsu.ini file.";
+                "You can modify path settings in the maelle.ini file.";
             message("Error Loading NDS BIOS", text);
             break;
         case ERROR_NDS_FIRM: // Non-bootable firmware file
             text = "Make sure the path settings point to a firmware file dumped from a pre-DSi console,"
-                " or boot ROMs directly.\nYou can modify path settings in the noodsu.ini file.";
+                " or boot ROMs directly.\nYou can modify path settings in the maelle.ini file.";
             message("Error Loading NDS Firmware", text);
             break;
         case ERROR_DSI_BIOS: // Missing DSi BIOS files
             text = "Make sure the path settings point to valid DSi BIOS files, or turn off DSi mode.\n"
-                "You can modify path settings in the noodsu.ini file.";
+                "You can modify path settings in the maelle.ini file.";
             message("Error Loading DSi BIOS", text);
                 break;
         case ERROR_DSI_FIRM: // Invalid DSi firmware file
             text = "Make sure the path settings point to a firmware file dumped from a DSi console,"
-                " or turn off DSi mode.\nYou can modify path settings in the noodsu.ini file.";
+                " or turn off DSi mode.\nYou can modify path settings in the maelle.ini file.";
             message("Error Loading DSi Firmware", text);
             break;
         case ERROR_DSI_NAND: // Missing DSi NAND file
             text = "Make sure the path settings point to a valid DSi NAND file, or turn off DSi mode.\n"
-                "You can modify path settings in the noodsu.ini file.";
+                "You can modify path settings in the maelle.ini file.";
             message("Error Loading DSi NAND", text);
             break;
         case ERROR_ROM: // Unreadable ROM file

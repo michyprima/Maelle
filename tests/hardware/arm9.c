@@ -1,4 +1,4 @@
-// Runs the tests on both CPUs and shows where this DS differs from what NooDS U does
+// Runs the tests on both CPUs and shows where this DS differs from what Maelle does
 #include <stdio.h>
 #include <nds.h>
 #include <fat.h>
@@ -14,7 +14,7 @@ static const char *const names[] = { NORMAL_TESTS RISKY_TESTS };
 static const int normalCount = 0 NORMAL_TESTS, totalCount = 0 NORMAL_TESTS RISKY_TESTS;
 #undef T
 
-// From running this same ROM in NooDS U, which build.sh puts in expected.c
+// From running this same ROM in Maelle, which build.sh puts in expected.c
 extern volatile const unsigned expected[2][MAX_TESTS][WORDS];
 static struct Shared block;
 
@@ -70,7 +70,7 @@ static void buildLines(void) {
 static void showResults(void) {
     textRow = 0;
     textColumn = 0;
-    text("NOODS U INSTRUCTION TEST", WHITE);
+    text("MAELLE INSTRUCTION TEST", WHITE);
     newLine();
     text(shownCpu ? "ARM7" : "ARM9", YELLOW);
     text(" SAME ", WHITE);
@@ -141,12 +141,12 @@ static void put(FILE *file, unsigned value, unsigned *hash) {
 }
 
 static void saveResults(void) {
-    // Write everything so far to the card after each run, with what NooDS U gives, so tests/hardware/results.py can
+    // Write everything so far to the card after each run, with what Maelle gives, so tests/hardware/results.py can
     // list the differences; the results are on screen first, in case saving hangs
     saved = "SAVING";
     showResults();
     const char *where;
-    FILE *file = openSave("noodsu-hwtest.bin", &where);
+    FILE *file = openSave("maelle-hwtest.bin", &where);
     if (!file) {
         saved = "NOT SAVED";
         return;
@@ -206,7 +206,7 @@ int main(void) {
 
     textRow = 0;
     textColumn = 0;
-    text("NOODS U INSTRUCTION TEST", WHITE);
+    text("MAELLE INSTRUCTION TEST", WHITE);
     newLine();
     runNormal(0);
 

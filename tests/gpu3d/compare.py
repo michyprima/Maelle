@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Compares what the ROM saved on a real DS with a run in NooDS U, and writes each image for looking at
-# Usage: compare.py <noodsu-3d.bin from a DS> <the same from NooDS U> <folder for images>
+# Compares what the ROM saved on a real DS with a run in Maelle, and writes each image for looking at
+# Usage: compare.py <maelle-3d.bin from a DS> <the same from Maelle> <folder for images>
 import os, struct, sys
 
 def load(path):

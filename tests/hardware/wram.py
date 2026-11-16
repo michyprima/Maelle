@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Explains the noodsu-wramtest.bin the shared WRAM test saves, or finds its block in a RAM dump from tests/jit/game.sh;
-# with a second file, such as NooDS U's, it says where the two differ
-# Usage: wram.py <noodsu-wramtest.bin or RAM dump> [another to compare]
+# Explains the maelle-wramtest.bin the shared WRAM test saves, or finds its block in a RAM dump from tests/jit/game.sh;
+# with a second file, such as Maelle's, it says where the two differ
+# Usage: wram.py <maelle-wramtest.bin or RAM dump> [another to compare]
 import re, struct, sys
 
 h = open(__file__.replace('wram.py', 'wram.h')).read()

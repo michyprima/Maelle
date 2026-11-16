@@ -1,12 +1,12 @@
 # 3D replay ROM
 
 Draws one frame's polygons on a real DS with exactly the coordinates a game gave them, and captures what the 3D engine really
-outputs, to compare pixel by pixel with NooDS U. The polygons are from Zelda: Spirit Tracks' opening tunnel, where NooDS U draws a
+outputs, to compare pixel by pixel with Maelle. The polygons are from Zelda: Spirit Tracks' opening tunnel, where Maelle draws a
 bright line along the ground that a real DS doesn't. Textures aren't replayed, so polygons keep only their vertex colors.
 
 ## Running it
 
-Copy `build/noodsu-3d.nds` to a flashcart and start it. After a moment it shows the first scene.
+Copy `build/maelle-3d.nds` to a flashcart and start it. After a moment it shows the first scene.
 
 | Button | What it does |
 |---|---|
@@ -21,16 +21,16 @@ Copy `build/noodsu-3d.nds` to a flashcart and start it. After a moment it shows 
 | 4 Black over white | Only the black lining, in front of a plain white wall, with anti-aliasing |
 
 `STREAKS` counts lines at least 4 pixels long and one pixel high that are bright between dark rows. The third line says where the
-images were saved: `NOODSU-3D.BIN` in the root of the card, or the save chip it used. If it says `NOT SAVED`, take photos of each scene, zoomed too.
+images were saved: `MAELLE-3D.BIN` in the root of the card, or the save chip it used. If it says `NOT SAVED`, take photos of each scene, zoomed too.
 
-In NooDS U on the Wii U it runs too, and falls back to the save chip, so the captures end up in `noodsu-3d.sav` next to the ROM, in the same format. It captures once at startup, so choose the renderer before starting it.
+In Maelle on the Wii U it runs too, and falls back to the save chip, so the captures end up in `maelle-3d.sav` next to the ROM, in the same format. It captures once at startup, so choose the renderer before starting it.
 
 ## Comparing
 
-`compare.py` needs the same file from NooDS U, which is the captures at `0x02200000` in main RAM after 70 frames, in the same format:
+`compare.py` needs the same file from Maelle, which is the captures at `0x02200000` in main RAM after 70 frames, in the same format:
 
 ```
-tests/gpu3d/compare.py noodsu-3d.bin <from NooDS U> <folder for images>
+tests/gpu3d/compare.py maelle-3d.bin <from Maelle> <folder for images>
 ```
 
 ## Building it

@@ -1,26 +1,26 @@
 # Instruction tests for a real DS
 
 A ROM that settles how the CPUs really behave where the interpreter, the ARM manual and Unicorn disagree, or where the
-manual doesn't promise anything. It runs each test on the ARM9 and ARM7, and shows where the DS differs from NooDS U, whose
+manual doesn't promise anything. It runs each test on the ARM9 and ARM7, and shows where the DS differs from Maelle, whose
 results are built in.
 
 ## Running it
 
-Copy `build/noodsu-test.nds` to the SD card or a flashcart and start it like any homebrew, such as from TWiLight Menu++ or
+Copy `build/maelle-test.nds` to the SD card or a flashcart and start it like any homebrew, such as from TWiLight Menu++ or
 nds-bootstrap. On a DSi, run it in DSi mode, since that's what reaches the SD card. It doesn't use the touch screen.
 
 It's built with libnds, whose ARM7 side gives the ARM9 the SD card or the flashcart's. The tests take over interrupts and
 exceptions from libnds while they run, through the BIOS like a bare DS program, and give them back afterwards.
 
 After the first results are on screen, and again after each test START runs, it writes all the results so far to
-`noodsu-hwtest.bin` in the folder it started from, or else the root of the SD card or flashcart. The end of the second line
+`maelle-hwtest.bin` in the folder it started from, or else the root of the SD card or flashcart. The end of the second line
 says how that went: `SAVED`, `SAVED SD:` or `SAVED FAT:` for where, `NOT SAVED` or `SAVE FAILED`. To list the differences:
 
 ```
-tests/hardware/results.py noodsu-hwtest.bin [all]
+tests/hardware/results.py maelle-hwtest.bin [all]
 ```
 
-The file has NooDS U's results too, so that's all it needs; `all` lists every result, not only the differences.
+The file has Maelle's results too, so that's all it needs; `all` lists every result, not only the differences.
 
 | Button | What it does |
 |---|---|
@@ -30,8 +30,8 @@ The file has NooDS U's results too, so that's all it needs; `all` lists every re
 | A | Switch between only the differences and all results |
 | START | Run the next test that could hang a DS, on both CPUs, one per press. Everything else is saved first |
 
-The first line after the title gives how many tests match NooDS U and how many differ. In the differences, the line under a
-test's name gives the result word that differs, then `R` for this DS and `E` for NooDS U. Words 0-5 are what the test
+The first line after the title gives how many tests match Maelle and how many differ. In the differences, the line under a
+test's name gives the result word that differs, then `R` for this DS and `E` for Maelle. Words 0-5 are what the test
 recorded, and 6-11 are the first six words of its data afterwards. `tests.S` says what each test does.
 
 If it hangs, the third line says which ARM9 test was running. A stuck ARM7 is reported on screen after about 10 seconds. A
@@ -39,18 +39,18 @@ test that causes a CPU exception shows `DEADDEAD` in word 3, with the mode and r
 
 ## The shared WRAM test
 
-`build/noodsu-wram.nds` is a second ROM, for a DSi in DSi mode. It settles what the top byte of MBK9 does, which nothing
+`build/maelle-wram.nds` is a second ROM, for a DSi in DSi mode. It settles what the top byte of MBK9 does, which nothing
 documents: cart headers set it with WRAMCNT, and the DSi menu sets it to 0xFC. On a DSi it reads back as 0 and does
-nothing, and every block follows WRAMCNT as on a DS, which is what NooDS U does.
+nothing, and every block follows WRAMCNT as on a DS, which is what Maelle does.
 
-It runs by itself and saves `noodsu-wramtest.bin` like the other ROM. To see what it found, and how that compares with
-NooDS U:
+It runs by itself and saves `maelle-wramtest.bin` like the other ROM. To see what it found, and how that compares with
+Maelle:
 
 ```
-tests/hardware/wram.py noodsu-wramtest.bin [NooDS U's]
+tests/hardware/wram.py maelle-wramtest.bin [Maelle's]
 ```
 
-NooDS U's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/noodsu-wram.nds <system files folder> 300 --modes
+Maelle's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/maelle-wram.nds <system files folder> 300 --modes
 interp dsi ram=wram.bin`, which `wram.py` reads too.
 
 Each of its six phases sets WRAMCNT, maybe writes MBK9, then switches WRAMCNT between 0 and 3. Both CPUs then read each
@@ -69,7 +69,7 @@ If it hangs, the third line gives the ARM9's step and the last command the ARM7 
 
 ## The NDMA test
 
-`build/noodsu-ndma.nds` is a third ROM, for a DSi in DSi mode. It settles what GBATEK leaves open about the DSi's NDMA channels,
+`build/maelle-ndma.nds` is a third ROM, for a DSi in DSi mode. It settles what GBATEK leaves open about the DSi's NDMA channels,
 and what nothing else here tests: what each register keeps, what the address steps do including the reserved one, totals that
 aren't a whole number of blocks, what's left in the registers afterwards, which scanlines V-blank, H-blank and display sync
 transfers happen on, and timers and GXFIFO as triggers.
@@ -77,19 +77,19 @@ transfers happen on, and timers and GXFIFO as triggers.
 Each test runs on the ARM9 and then the ARM7, with interrupts off, on channel 2. Timers libnds already has running are skipped
 and shown as `busy`. The DS cart trigger isn't tested, since that needs a real card in the slot.
 
-It runs by itself and saves `noodsu-ndmatest.bin` like the other ROMs. To see what it found, and how that compares with NooDS U:
+It runs by itself and saves `maelle-ndmatest.bin` like the other ROMs. To see what it found, and how that compares with Maelle:
 
 ```
-tests/hardware/ndma.py noodsu-ndmatest.bin [NooDS U's]
+tests/hardware/ndma.py maelle-ndmatest.bin [Maelle's]
 ```
 
-NooDS U's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/noodsu-ndma.nds <system files folder> 900 --modes interp
+Maelle's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/maelle-ndma.nds <system files folder> 900 --modes interp
 dsi ram=ndma.bin`, which `ndma.py` reads too. If it hangs, the third line says which test on which CPU. What each result word
 means is in the comments in `ndma_tests.c`.
 
 ## The 3D timing test
 
-`build/noodsu-rdlines.nds` is a fourth ROM, for a DS or a DSi in either mode. It settles how long the 3D engine takes to
+`build/maelle-rdlines.nds` is a fourth ROM, for a DS or a DSi in either mode. It settles how long the 3D engine takes to
 render, through the two things it reports: RDLINES_COUNT, the fewest lines its 48-line buffer held during a frame, and
 DISP3DCNT bit 12, set when the buffer ran dry. Nothing else documents the costs; melonDS's unmerged model guesses them.
 
@@ -98,11 +98,11 @@ watched line by line for 6 frames, recording every change of RDLINES_COUNT and e
 acknowledged. Four overloaded scenes are captured with display capture too, to show what the DS draws when it runs behind.
 The 3D is on the top screen and the results on the bottom one, as the steady RDLINES_COUNT with `F` if bit 12 was set.
 
-It saves `noodsu-rdlinestest.bin` like the other ROMs; in DS mode on a DSi, that may only work through a flashcart. To see
-what it found, and how that compares with NooDS U:
+It saves `maelle-rdlinestest.bin` like the other ROMs; in DS mode on a DSi, that may only work through a flashcart. To see
+what it found, and how that compares with Maelle:
 
 ```
-tests/hardware/rdlines.py noodsu-rdlinestest.bin [NooDS U's] [--lines] [--images folder]
+tests/hardware/rdlines.py maelle-rdlinestest.bin [Maelle's] [--lines] [--images folder]
 ```
 
 `rdlines-realds.bin` is what a real DS saved; a DSi gave the same in both modes. A model of the render timing that matched
@@ -110,12 +110,12 @@ all of it was added in 44edc7a and taken out again in a revert, since no game te
 and it cost time on nearly every frame; the revert can be reverted to bring it back.
 
 `--lines` says, for each run of lines in a capture, which quad shows and how far right it reaches, and `--images` writes the
-captures as PPM files. NooDS U's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/noodsu-rdlines.nds <system
+captures as PPM files. Maelle's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/maelle-rdlines.nds <system
 files folder> 1200 --modes interp ram=rdlines.bin`, adding `dsi` for DSi mode.
 
 ## The display FIFO test
 
-`build/noodsu-fifo.nds` is a fifth ROM, for a DS or a DSi in either mode. It settles what GBATEK leaves open about the main
+`build/maelle-fifo.nds` is a fifth ROM, for a DS or a DSi in either mode. It settles what GBATEK leaves open about the main
 memory display FIFO: what the display and display capture take from it when DMA fills it 4, 8 or 2 words at a time, in
 halfwords, all at once, or not at all, what CPU writes of each size do, whether DMA timing 4 and NDMA mode 9 fire when nothing
 uses the FIFO or when started mid-frame, which lines they fire on and how often, and whether V-blank stops them.
@@ -125,17 +125,17 @@ capture's source B in the first frame, which shows exactly what it gave each pix
 on the same trigger. The top screen shows the FIFO in display mode 3, and the bottom one lists the scenes as they finish. The
 NDMA scenes only run in DSi mode.
 
-It saves `noodsu-fifotest.bin` like the other ROMs; in DS mode on a DSi, that may only work through a flashcart. To see what
-it found, and how that compares with NooDS U:
+It saves `maelle-fifotest.bin` like the other ROMs; in DS mode on a DSi, that may only work through a flashcart. To see what
+it found, and how that compares with Maelle:
 
 ```
-tests/hardware/fifo.py noodsu-fifotest.bin [NooDS U's] [--images folder]
+tests/hardware/fifo.py maelle-fifotest.bin [Maelle's] [--images folder]
 ```
 
-NooDS U's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/noodsu-fifo.nds <system files folder> 400 --modes
+Maelle's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/maelle-fifo.nds <system files folder> 400 --modes
 interp ram=fifo.bin`, adding `dsi` for DSi mode. `--images` writes each capture as a PPM file.
 
-A real DSi in DSi mode settled it, and NooDS U now matches 15 of its 16 scenes:
+A real DSi in DSi mode settled it, and Maelle now matches 15 of its 16 scenes:
 
 - DMA timing 4 is requested every 8 pixels, 32 times a line, and only while the FIFO is shown or captured. Only channels
   already started when the frame starts answer, and V-blank stops them. NDMA mode 9 is the same, except that V-blank doesn't
@@ -146,12 +146,12 @@ A real DSi in DSi mode settled it, and NooDS U now matches 15 of its 16 scenes:
   places last held, so 2 words a request shows a mix of new and older pixels.
 - Capture blending rounds to the nearest, and a source B pixel with bit 15 clear blends as black.
 - `BIG` is the one that differs: a DMA without repeat sends its whole count at the first request, as fast as the bus allows
-  while the display reads, which NooDS U does all at once. Two pixels of `COUNT2` also came out 16 pixels older on the DSi,
+  while the display reads, which Maelle does all at once. Two pixels of `COUNT2` also came out 16 pixels older on the DSi,
   which looks like bus timing.
 
 ## The DSi microphone test
 
-`build/noodsu-mic.nds` is a sixth ROM, for a DSi in DSi mode. It settles what GBATEK leaves open about the DSi's microphone
+`build/maelle-mic.nds` is a sixth ROM, for a DSi in DSi mode. It settles what GBATEK leaves open about the DSi's microphone
 FIFO (`MIC_CNT`, `MIC_DATA`) and `SNDEXCNT`: which register bits stick, what the four data formats do, when the first sample
 arrives and whether the sample clock runs freely, when each status bit and the interrupt come, what reads of each size take
 from the FIFO and what an empty FIFO reads, what turning it off and on or clearing it keeps, how NDMA mode 0xC fetches blocks
@@ -162,18 +162,18 @@ Only the ARM7 has the microphone, so the ARM9 asks it for one test at a time, wh
 IF2 bit 14, while nothing reads the FIFO, then what reading it gives. SNDEXCNT and the touchscreen controller are put back as
 they were afterwards. Hold the DSi still and quiet, or talk, either works; the samples are shown but not compared.
 
-It saves `noodsu-mictest.bin` like the other ROMs. To see what it found, and how that compares with NooDS U:
+It saves `maelle-mictest.bin` like the other ROMs. To see what it found, and how that compares with Maelle:
 
 ```
-tests/hardware/mic.py noodsu-mictest.bin [NooDS U's]
+tests/hardware/mic.py maelle-mictest.bin [Maelle's]
 ```
 
-NooDS U's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/noodsu-mic.nds <system files folder> 600 --modes interp
+Maelle's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/maelle-mic.nds <system files folder> 600 --modes interp
 dsi ram=mic.bin`, which `mic.py` reads too. Timeline events are `cycles(samples of 1024 cycles):status`, with `E`, `H`, `F`, `O`
 for empty, half full, full and overrun, and `I` for IF2 bit 14. If it hangs, the third line says which test. What each result
 word means is in the comments in `mic_tests.c`.
 
-A real DSi settled most of it, and NooDS U now does the same:
+A real DSi settled most of it, and Maelle now does the same:
 
 - The sample clock runs freely, so the first sample comes 0 to 1 frames after turning the microphone on, plus however long
   the format takes to fill a word. Each frame has a left slot and a right slot half a 32.73kHz or 47.61kHz frame later, even
@@ -194,20 +194,20 @@ A real DSi settled most of it, and NooDS U now does the same:
 
 ## The speed test
 
-`build/noodsu-speed.nds` is a seventh ROM, for a DS or a DSi in either mode; DSi mode is the one that matters. It settles
+`build/maelle-speed.nds` is a seventh ROM, for a DS or a DSi in either mode; DSi mode is the one that matters. It settles
 how fast each CPU really runs, which decides races between them: DSi Sound's menu only loads if the ARM7 answers a
-command before the ARM9, switching to a thread that has never run, gets its next one out. When it was written, NooDS U
+command before the ARM9, switching to a thread that has never run, gets its next one out. When it was written, Maelle
 counted no time for code and data that aren't in the ARM9's caches, and counted each of the ARM7's cycles as two outside
 its BIOS; what it does now is at the end of the results below.
 
-It runs by itself in under a second, shows the least ticks of each measurement and saves `noodsu-speedtest.bin` like the
-other ROMs. To see what it found, and how that compares with NooDS U:
+It runs by itself in under a second, shows the least ticks of each measurement and saves `maelle-speedtest.bin` like the
+other ROMs. To see what it found, and how that compares with Maelle:
 
 ```
-tests/hardware/speed.py noodsu-speedtest.bin [NooDS U's]
+tests/hardware/speed.py maelle-speedtest.bin [Maelle's]
 ```
 
-NooDS U's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/noodsu-speed.nds <system files folder> 400 --modes
+Maelle's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/maelle-speed.nds <system files folder> 400 --modes
 interp dsi ram=speed.bin`, which `speed.py` reads too.
 
 Everything is timed with timers 0 and 1, which count at 33.513982MHz on both CPUs, four times each with interrupts off.
@@ -227,7 +227,7 @@ A measurement includes the call, which the empty one gives by itself.
   Rs. A multiply takes 1 cycle and m more, plus 1 for a long one and 1 for accumulating, where m is 1 to 4 from how many
   of Rs's top bytes it can skip. `00000050`, `00001234`, `00123456` and `12345678` give 1 to 4 when zero top bytes count,
   and `FFFFFFF0` and `FFFFF000` give 1 and 2 when top bytes of all ones count too, as they do for `MUL` and `SMULL`, but
-  4 if only zeros count, as NooDS U has it for `UMULL` and `UMLAL`. `speed.py` shows m for each; the ARM9 doesn't show
+  4 if only zeros count, as Maelle has it for `UMULL` and `UMLAL`. `speed.py` shows m for each; the ARM9 doesn't show
   them on screen.
 
 The block also holds SCFG_CLK and SCFG_EXT as each CPU found them, and the ARM9's control register and regions, to
@@ -244,9 +244,9 @@ On a DSi in DSi mode (`speed-realdsi.bin`, from the first version, which ran 128
 
 A later run on the same DSi with the multiplies (`speed-realdsi-multiply.bin`) gives the same ARM7 loops, and m of 1 to 4
 for `MUL` and `SMULL` with top bytes of zeros or all ones, but for `UMULL` and `UMLAL` only with zeros: 4 for `FFFFFFF0`
-and `FFFFF000`. NooDS U gives the same m for all 24.
+and `FFFFF000`. Maelle gives the same m for all 24.
 
-NooDS U, run with `game.sh` in DSi mode, counts a line of code that isn't in the cache like the DSi, 656ns more a line,
+Maelle, run with `game.sh` in DSi mode, counts a line of code that isn't in the cache like the DSi, 656ns more a line,
 but nothing for data, and nothing more with the code cache off. Its ARM9 loop takes 2 ticks a turn, where the DSi's
 takes 1. The ARM7's loop takes 4 cycles a turn in its WRAM and new WRAM, as on the DSi, with 3 more for a read and 2 for
 a write, and 8 in main RAM, with 6 more for a read and 4 for a write.
@@ -254,15 +254,15 @@ a write, and 8 in main RAM, with 6 more for a read and 4 for a write.
 ## Building it
 
 ```
-tests/hardware/build.sh [results from NooDS U]
+tests/hardware/build.sh [results from Maelle]
 ```
 
-It builds all seven ROMs, and needs devkitPro's `nds-dev`. The results are NooDS U's for the instruction test's CPUs, as 2 x
+It builds all seven ROMs, and needs devkitPro's `nds-dev`. The results are Maelle's for the instruction test's CPUs, as 2 x
 110 x 12 little-endian words, which go in a table of the same size either way, so the code doesn't move. Build once without
-them, run that in NooDS U to get them, and build again. On the Mac, `tests/jit/game.sh` gets them:
+them, run that in Maelle to get them, and build again. On the Mac, `tests/jit/game.sh` gets them:
 
 ```
-tests/jit/game.sh tests/hardware/build/noodsu-test.nds <system files folder> 600 --modes interp start=30 results=results.bin
+tests/jit/game.sh tests/hardware/build/maelle-test.nds <system files folder> 600 --modes interp start=30 results=results.bin
 ```
 
 Get them in the mode the ROM will run in on the console, adding `dsi` to that for a DSi in DSi mode. Tests that cause an
@@ -276,14 +276,14 @@ ARM7.
 
 ## The stereo test
 
-`build/noodsu-stereo.nds` tells left from right by ear, on a DS or a DSi in either mode and in NooDS U. A low tone
+`build/maelle-stereo.nds` tells left from right by ear, on a DS or a DSi in either mode and in Maelle. A low tone
 plays from the left speaker only, then a high one from the right only, a second each, over and over; holding A plays
 both. If the low tone comes from the right, left and right are swapped somewhere after the DS's mixer.
 
 The ARM7 sets the sound registers itself, without libnds's sound driver. Using that driver would take the ARM7's mic
 server as well: any ARM9 that links libnds's sound functions runs `soundInit()` and `micInit()` before `main()`, and
 `micInit()` waits for the ARM7's mic server, so with only `soundStartServer()` the ARM9 never reaches `main()` and the
-screens stay white, on a real DS as in NooDS U. Without the driver, nothing turns a real console's speaker amplifier on
+screens stay white, on a real DS as in Maelle. Without the driver, nothing turns a real console's speaker amplifier on
 beyond what it starts with, so on real hardware this ROM may stay silent. On the Mac, `tests/jit/game.sh
-tests/hardware/build/noodsu-stereo.nds <system files folder> 420 wav=stereo.wav` saves what the DS's mixer made, which
+tests/hardware/build/maelle-stereo.nds <system files folder> 420 wav=stereo.wav` saves what the DS's mixer made, which
 has the low tone on the left.

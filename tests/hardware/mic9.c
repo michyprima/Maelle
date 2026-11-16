@@ -1,5 +1,5 @@
 // Settles how the DSi's microphone FIFO really behaves where GBATEK leaves it open: the ARM9 asks the ARM7, which has the
-// microphone, for each test, and saves everything for mic.py, which compares it with NooDS U's results
+// microphone, for each test, and saves everything for mic.py, which compares it with Maelle's results
 #include <stdio.h>
 #include <nds.h>
 #include "screen.h"
@@ -57,7 +57,7 @@ int main(void) {
     block[M_MAGIC1] = MIC_MAGIC1;
     pxiWaitRemote(PxiChannel_User0);
     textRow = textColumn = 0;
-    text("NOODS U MIC TEST", WHITE);
+    text("MAELLE MIC TEST", WHITE);
     newLine();
     text("RUNNING", YELLOW);
     newLine();
@@ -78,7 +78,7 @@ int main(void) {
     text("SAVING", YELLOW);
     newLine();
     const char *where = "";
-    FILE *file = openSave("noodsu-mictest.bin", &where);
+    FILE *file = openSave("maelle-mictest.bin", &where);
     int good = file && fwrite(block, 4, M_TOTAL, file) == M_TOTAL;
     if (file && fclose(file) != 0) good = 0;
     textRow--;

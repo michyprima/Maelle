@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Explains the noodsu-ndmatest.bin the NDMA test saves, or finds its block in a RAM dump from tests/jit/game.sh; with a
-# second file, such as NooDS U's, it lists only the tests where the two differ
-# Usage: ndma.py <noodsu-ndmatest.bin or RAM dump> [another to compare]
+# Explains the maelle-ndmatest.bin the NDMA test saves, or finds its block in a RAM dump from tests/jit/game.sh; with a
+# second file, such as Maelle's, it lists only the tests where the two differ
+# Usage: ndma.py <maelle-ndmatest.bin or RAM dump> [another to compare]
 import re, struct, sys
 
 h = open(__file__.replace('ndma.py', 'ndma.h')).read()

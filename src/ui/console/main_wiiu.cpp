@@ -2,20 +2,20 @@
     Copyright 2019-2026 Hydr8gon
     Copyright 2026 michyprima
 
-    This file is part of NooDS U.
+    This file is part of Maelle.
 
-    NooDS U is free software: you can redistribute it and/or modify it
+    Maelle is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    NooDS U is distributed in the hope that it will be useful, but
+    Maelle is distributed in the hope that it will be useful, but
     WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
+    along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
 
@@ -35,6 +35,7 @@
 #include <nn/ac.h>
 #include <nsysnet/_socket.h>
 #endif
+#include <sys/stat.h>
 #include <gx2/display.h>
 #include <gx2/draw.h>
 #include <gx2/event.h>
@@ -79,7 +80,7 @@
 extern const uint8_t shader_wiiu_gsh[];
 extern const uint8_t screen_wiiu_gsh[];
 extern const uint8_t screen_blend_wiiu_gsh[];
-extern const uint8_t migoomba_noodsu_gba[], migoomba_noodsu_gba_end[];
+extern const uint8_t migoomba_maelle_gba[], migoomba_maelle_gba_end[];
 
 ScreenLayout gpLayout;
 GX2Texture *gpTexture, *gpLastTexture;
@@ -1543,7 +1544,14 @@ int runUi(int, void *) {
 
     // Initialize the UI and open the file browser
     std::string base = WHBGetSdCardMountPath();
-    ConsoleUI::initialize(tvWidth, tvHeight, base, base + "/wiiu/apps/noodsu/");
+
+    // Carry settings, states and system files over from the app's old name, once
+    struct stat st;
+    std::string oldDir = base + "/wiiu/apps/noodsu", newDir = base + "/wiiu/apps/maelle";
+    if (stat(newDir.c_str(), &st) != 0 && stat(oldDir.c_str(), &st) == 0 && rename(oldDir.c_str(), newDir.c_str()) == 0)
+        rename((newDir + "/noodsu.ini").c_str(), (newDir + "/maelle.ini").c_str());
+
+    ConsoleUI::initialize(tvWidth, tvHeight, base, base + "/wiiu/apps/maelle/");
     ConsoleUI::fileBrowser();
 
     // Run the emulator until it exits, then close the game while the app still has the foreground
@@ -1608,7 +1616,7 @@ int probeThreads(int, void *) {
             if (RPLWRAP(recvfrom)(udp, &request, sizeof(request), 0, (sockaddr*)&sender, &length) < 0) continue;
             destination.sin_addr = sender.sin_addr;
         }
-        __os_snprintf(message, sizeof(message), "NooDS U thread probe %u on core %u, probe address %08X\n", tick,
+        __os_snprintf(message, sizeof(message), "Maelle thread probe %u on core %u, probe address %08X\n", tick,
             OSGetCoreId(), (uint32_t)&probeThreads);
         send();
         if (!tick) continue;
@@ -1642,7 +1650,7 @@ int probeThreads(int, void *) {
 #ifdef HEARTBEAT
 int logHeartbeat(int, void *) {
     // Append the progress counters to a file a few times a second, closing it every time so it survives a freeze
-    std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/noodsu/heartbeat.log";
+    std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/maelle/heartbeat.log";
     FILE *file = fopen(path.c_str(), "w");
     if (file) fclose(file);
     uint32_t last[HB_COUNT] = {};
@@ -1772,7 +1780,7 @@ int logHeartbeat(int, void *) {
             }
         }
         lastRecord = count;
-        FrameTrace::write((std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/noodsu/trace.bin").c_str());
+        FrameTrace::write((std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/maelle/trace.bin").c_str());
 #endif
 #ifdef JIT_SPLIT
         // Show the total time in each step of compiling blocks so far
@@ -1804,7 +1812,7 @@ int logHeartbeat(int, void *) {
 #ifdef FRAME_LOG
 int logFrames(int, void *) {
     // Write what the frame log collected every few seconds, unless the system wants the foreground or the UI is done
-    std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/noodsu/framelog.bin";
+    std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/maelle/framelog.bin";
     while (true) {
         OSSleepTicks(OSMillisecondsToTicks(2000));
         if (releaseRequested.load() || uiParked || uiDone) continue;
@@ -1823,7 +1831,7 @@ int logFrames(int, void *) {
 // the stack, which might be damaged
 static BOOL showCrash(OSContext *context, const char *type) {
     char message[512];
-    __os_snprintf(message, sizeof(message), "NooDS U crashed (%s) on core %u\n"
+    __os_snprintf(message, sizeof(message), "Maelle crashed (%s) on core %u\n"
         "PC %08X LR %08X address %08X status %08X\nSP %08X handler %08X\n"
         "r3 %08X r4 %08X r5 %08X r6 %08X\nr7 %08X r8 %08X r9 %08X r10 %08X\n",
         type, OSGetCoreId(), context->srr0, context->lr, context->dar, context->srr1,
@@ -1837,7 +1845,7 @@ static BOOL showCrash(OSContext *context, const char *type) {
 // on the screen and no message
 extern "C" void __assert_func(const char *file, int line, const char *function, const char *expression) {
     char message[512];
-    __os_snprintf(message, sizeof(message), "NooDS U assertion failed on core %u\n%s\nin %s\n%s:%d\n", OSGetCoreId(),
+    __os_snprintf(message, sizeof(message), "Maelle assertion failed on core %u\n%s\nin %s\n%s:%d\n", OSGetCoreId(),
         expression, function ? function : "?", file, line);
     OSFatal(message);
     while (true);
@@ -1855,7 +1863,7 @@ int main() {
         [](OSContext *context) { return showCrash(context, "alignment"); });
 
     // Run Game Boy ROMs in MiGoomba, the GB emulator for GBA built into the app, as built for it
-    CartridgeGba::setGbEmulator(migoomba_noodsu_gba, migoomba_noodsu_gba_end - migoomba_noodsu_gba);
+    CartridgeGba::setGbEmulator(migoomba_maelle_gba, migoomba_maelle_gba_end - migoomba_maelle_gba);
 
     // Run the UI on core 2 so it doesn't compete with the JIT's emulator thread, which has to use core 1
     // The main thread can't be moved there, since running threads can't change cores

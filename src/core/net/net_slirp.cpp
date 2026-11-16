@@ -1,20 +1,20 @@
 /*
     Copyright 2019-2026 Hydr8gon
 
-    This file is part of NooDS U.
+    This file is part of Maelle.
 
-    NooDS U is free software: you can redistribute it and/or modify it
+    Maelle is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    NooDS U is distributed in the hope that it will be useful, but
+    Maelle is distributed in the hope that it will be useful, but
     WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with NooDS U. If not, see <https://www.gnu.org/licenses/>.
+    along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include <algorithm>
@@ -205,7 +205,7 @@ void NetSlirp::run() {
 #ifdef __WIIU__
     // Name the thread for hang reports, and connect the console to its network if it isn't already; connecting can
     // block for a while, so check if the game was closed in the meantime
-    OSSetThreadName(OSGetCurrentThread(), "NooDS U Network");
+    OSSetThreadName(OSGetCurrentThread(), "Maelle Network");
     ACInitialize();
     // Connections made here are closed when the thread ends, since the system waits on ones left open when powering off
     BOOL connected = FALSE;

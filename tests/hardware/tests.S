@@ -805,7 +805,7 @@ TEST t_mrc_id
 TEST t_mrc_p0
     mov r0, #0x55
     mov r3, #0
-    .word 0xEE1D0030 @ MRC p0,0,r0,c13,c0,1, which NooDS U reads as CP15's trace process ID
+    .word 0xEE1D0030 @ MRC p0,0,r0,c13,c0,1, which Maelle reads as CP15's trace process ID
     mov r3, #1
     RESULT 0, r0
     RESULT 1, r3

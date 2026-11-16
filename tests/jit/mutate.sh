@@ -5,7 +5,7 @@ here=$(cd "$(dirname "$0")"; pwd)
 rom=$1; cfg=$2; shift 2
 count=$(grep -c "^    (.*# [0-9]*:" "$here/patch.py")
 only=${JIT_TEST_ONLY:-}
-base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/noodsu-jit-test}
+base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/maelle-jit-test}
 missed=0
 for ((m = 1; m <= count; m++)); do
     if [ -n "$only" ] && ! echo " $only " | grep -q " $m "; then continue; fi

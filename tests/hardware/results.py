@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Lists where a DS differed from NooDS U, from the noodsu-hwtest.bin the ROM saves to the SD card
-# Usage: results.py <noodsu-hwtest.bin> [all]
+# Lists where a DS differed from Maelle, from the maelle-hwtest.bin the ROM saves to the SD card
+# Usage: results.py <maelle-hwtest.bin> [all]
 import os, re, struct, sys
 
 MAX_TESTS, WORDS = 110, 12
@@ -23,6 +23,6 @@ for cpu in range(2):
         differ += got != want
         print(f'ARM{9 - cpu * 2} {test + 1} {names[test]}' + (' differs' if got != want else ''))
         for w in range(WORDS):
-            if got[w] != want[w]: print(f'    word {w}: DS {got[w]:08X}, NooDS U {want[w]:08X}')
+            if got[w] != want[w]: print(f'    word {w}: DS {got[w]:08X}, Maelle {want[w]:08X}')
             elif 'all' in sys.argv[2:] and got[w]: print(f'    word {w}: {got[w]:08X}')
     print(f'ARM{9 - cpu * 2}: {differ} of {ran} differ')

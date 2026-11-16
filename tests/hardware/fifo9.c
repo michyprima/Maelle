@@ -209,7 +209,7 @@ int main(void) {
     armDCacheFlush(bitmap, sizeof(bitmap));
 
     textRow = textColumn = 0;
-    text("NOODS U DISPLAY FIFO TEST", WHITE);
+    text("MAELLE DISPLAY FIFO TEST", WHITE);
     newLine();
     text("RUNNING", YELLOW);
     newLine();
@@ -232,7 +232,7 @@ int main(void) {
     text("DONE, SAVING", YELLOW);
     newLine();
     const char *where = "";
-    FILE *file = openSave("noodsu-fifotest.bin", &where);
+    FILE *file = openSave("maelle-fifotest.bin", &where);
     int good = file && fwrite(block, 4, R_TOTAL, file) == R_TOTAL;
     if (file && fclose(file) != 0) good = 0;
     textRow = 1;

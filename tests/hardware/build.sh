@@ -1,12 +1,12 @@
 #!/bin/bash
-# Builds the test ROMs with libnds. With a results file from running it in NooDS U, the ROM shows what differs from that
+# Builds the test ROMs with libnds. With a results file from running it in Maelle, the ROM shows what differs from that
 # Usage: build.sh [results file]
 set -e
 here=$(cd "$(dirname "$0")"; pwd); results=$1
 dkp=${DEVKITPRO:-/opt/devkitpro}; tools=${DEVKITARM:-$dkp/devkitARM}/bin/arm-none-eabi
 out=$here/build; mkdir -p "$out"
 
-# NooDS U's results go in a table of the same size either way, so the code is in the same place with or without them
+# Maelle's results go in a table of the same size either way, so the code is in the same place with or without them
 python3 -I - "$out/expected.c" "$results" <<'EOF'
 import struct, sys
 words = [0x4E4F4E45] + [0] * (2 * 110 * 12 - 1)
@@ -24,67 +24,67 @@ common="-g -Os -marm -D__NDS__ -I$dkp/calico/include -I$dkp/libnds/include -L$dk
     "$here/tests.S" "$here/common.c" "$here/screen.c" "$here/arm9.c" "$out/expected.c" -lfat -lnds9 -lcalico_ds9 -o "$out/arm9.elf"
 "$tools-gcc" $common -march=armv4t -mtune=arm7tdmi -Wa,-march=armv5te -DARM7 -specs="$dkp/calico/share/ds7.specs" \
     "$here/tests.S" "$here/common.c" "$here/arm7.c" -lnds7 -lcalico_ds7 -o "$out/arm7.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-test.nds" -7 "$out/arm7.elf" -9 "$out/arm9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U test;Instructions on a real DS;" > /dev/null
-echo "Built $out/noodsu-test.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-test.nds" -7 "$out/arm7.elf" -9 "$out/arm9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle test;Instructions on a real DS;" > /dev/null
+echo "Built $out/maelle-test.nds"
 
 # The shared WRAM test, a ROM of its own
 "$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
     "$here/screen.c" "$here/wram9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/wram9.elf"
 "$tools-gcc" $common -march=armv4t -mtune=arm7tdmi -DARM7 -specs="$dkp/calico/share/ds7.specs" \
     "$here/wram7.S" "$here/wram7.c" -lnds7 -lcalico_ds7 -o "$out/wram7.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-wram.nds" -7 "$out/wram7.elf" -9 "$out/wram9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U WRAM test;Shared WRAM on a real DSi;" > /dev/null
-echo "Built $out/noodsu-wram.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-wram.nds" -7 "$out/wram7.elf" -9 "$out/wram9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle WRAM test;Shared WRAM on a real DSi;" > /dev/null
+echo "Built $out/maelle-wram.nds"
 
 # The NDMA test, a ROM of its own for a DSi
 "$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
     "$here/screen.c" "$here/ndma_tests.c" "$here/ndma9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/ndma9.elf"
 "$tools-gcc" $common -march=armv4t -mtune=arm7tdmi -DARM7 -specs="$dkp/calico/share/ds7.specs" \
     "$here/ndma_tests.c" "$here/ndma7.c" -lnds7 -lcalico_ds7 -o "$out/ndma7.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-ndma.nds" -7 "$out/ndma7.elf" -9 "$out/ndma9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U NDMA test;NDMA on a real DSi;" > /dev/null
-echo "Built $out/noodsu-ndma.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-ndma.nds" -7 "$out/ndma7.elf" -9 "$out/ndma9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle NDMA test;NDMA on a real DSi;" > /dev/null
+echo "Built $out/maelle-ndma.nds"
 
 # The 3D timing test, a ROM of its own for a DS or a DSi in either mode
 "$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
     "$here/screen.c" "$here/rdlines9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/rdlines9.elf"
 "$tools-gcc" $common -march=armv4t -mtune=arm7tdmi -DARM7 -specs="$dkp/calico/share/ds7.specs" \
     "$here/rdlines7.c" -lnds7 -lcalico_ds7 -o "$out/rdlines7.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-rdlines.nds" -7 "$out/rdlines7.elf" -9 "$out/rdlines9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U 3D timing test;3D render timing on a real DS;" > /dev/null
-echo "Built $out/noodsu-rdlines.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-rdlines.nds" -7 "$out/rdlines7.elf" -9 "$out/rdlines9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle 3D timing test;3D render timing on a real DS;" > /dev/null
+echo "Built $out/maelle-rdlines.nds"
 
 # The display FIFO test, a ROM of its own for a DS or a DSi in either mode, with the 3D timing test's ARM7
 "$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
     "$here/screen.c" "$here/fifo9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/fifo9.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-fifo.nds" -7 "$out/rdlines7.elf" -9 "$out/fifo9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U FIFO test;Display FIFO on a real DS;" > /dev/null
-echo "Built $out/noodsu-fifo.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-fifo.nds" -7 "$out/rdlines7.elf" -9 "$out/fifo9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle FIFO test;Display FIFO on a real DS;" > /dev/null
+echo "Built $out/maelle-fifo.nds"
 
 # The DSi microphone test, a ROM of its own for a DSi in DSi mode
 "$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
     "$here/screen.c" "$here/mic9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/mic9.elf"
 "$tools-gcc" $common -march=armv4t -mtune=arm7tdmi -DARM7 -specs="$dkp/calico/share/ds7.specs" \
     "$here/mic_tests.c" "$here/mic7.c" -lnds7 -lcalico_ds7 -o "$out/mic7.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-mic.nds" -7 "$out/mic7.elf" -9 "$out/mic9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U mic test;DSi microphone on a real DSi;" > /dev/null
-echo "Built $out/noodsu-mic.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-mic.nds" -7 "$out/mic7.elf" -9 "$out/mic9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle mic test;DSi microphone on a real DSi;" > /dev/null
+echo "Built $out/maelle-mic.nds"
 
 # The speed test, a ROM of its own for a DS or a DSi in either mode
 "$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
     "$here/screen.c" "$here/speed9.S" "$here/speed9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/speed9.elf"
 "$tools-gcc" $common -march=armv4t -mtune=arm7tdmi -DARM7 -specs="$dkp/calico/share/ds7.specs" \
     "$here/speed7.S" "$here/speed7.c" -lnds7 -lcalico_ds7 -o "$out/speed7.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-speed.nds" -7 "$out/speed7.elf" -9 "$out/speed9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U speed test;CPU speed on a real DS;" > /dev/null
-echo "Built $out/noodsu-speed.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-speed.nds" -7 "$out/speed7.elf" -9 "$out/speed9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle speed test;CPU speed on a real DS;" > /dev/null
+echo "Built $out/maelle-speed.nds"
 
 # The stereo test, a ROM of its own for a DS or a DSi in either mode
 "$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
     "$here/screen.c" "$here/stereo9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/stereo9.elf"
 "$tools-gcc" $common -march=armv4t -mtune=arm7tdmi -DARM7 -specs="$dkp/calico/share/ds7.specs" \
     "$here/stereo7.c" -lnds7 -lcalico_ds7 -o "$out/stereo7.elf"
-"$dkp/tools/bin/ndstool" -c "$out/noodsu-stereo.nds" -7 "$out/stereo7.elf" -9 "$out/stereo9.elf" \
-    -b "$dkp/calico/share/nds-icon.bmp" "NooDS U stereo test;Left and right by ear;" > /dev/null
-echo "Built $out/noodsu-stereo.nds"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-stereo.nds" -7 "$out/stereo7.elf" -9 "$out/stereo9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle stereo test;Left and right by ear;" > /dev/null
+echo "Built $out/maelle-stereo.nds"

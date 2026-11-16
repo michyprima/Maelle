@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Sums up the framelog.bin that a `./build-wiiu-debug.sh framelog` build of NooDS U writes to its folder on the SD card:
+# Sums up the framelog.bin that a `./build-wiiu-debug.sh framelog` build of Maelle writes to its folder on the SD card:
 # how long the emulator worked on each frame, from the end of one frame's wait for the display to the next being done,
 # which shows what a change costs on the console even with the frame limiter on. With two logs of the same save state
 # left alone, it also compares the frames where both drew the same number of polygons, since a change to timing lets a

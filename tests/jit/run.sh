@@ -6,11 +6,11 @@ here=$(cd "$(dirname "$0")"; pwd)
 rom=$(cd "$(dirname "$1")"; pwd)/$(basename "$1"); cfg=$(cd "$2"; pwd); shift 2
 mutation=0
 if [ "$1" = --mutate ]; then mutation=$2; shift 2; fi
-build=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/noodsu-jit-test}; [ "$mutation" = 0 ] || build=$build-m$mutation
+build=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/maelle-jit-test}; [ "$mutation" = 0 ] || build=$build-m$mutation
 mkdir -p "$build/obj"
 
 # Get the Unicorn PowerPC emulator once
-base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/noodsu-jit-test}
+base=${JIT_TEST_BUILD:-${TMPDIR:-/tmp}/maelle-jit-test}
 if [ ! -d "$base/venv" ]; then python3 -m venv "$base/venv"; "$base/venv/bin/pip" install -q unicorn; fi
 uni=$(ls -d "$base"/venv/lib/python*/site-packages/unicorn)
 
