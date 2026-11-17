@@ -17,6 +17,7 @@
 #   drcdebug     What's known about the GamePad's display on the TV, with combos to try getting it back
 #   frametime    Heartbeat, plus where the emulator thread spends each frame, listing every slow frame, and samples
 #                of where its core was during slow frames in trace.bin
+#   nostrips     frametime without the GPU 3D renderer drawing flat polygons a row at a time, to compare frame times
 #   frameslots   frametime without the samples, which slow the emulator down, for truer times
 #   framelog     The time of every emulator and UI frame in framelog.bin, cheap enough to measure dropped frames
 #                and what a change costs; tests/framelog/report.py sums it up and compares two of them
@@ -32,7 +33,7 @@ cd "$(dirname "$0")"
 export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro} DEVKITPPC=${DEVKITPPC:-/opt/devkitpro/devkitPPC}
 BASE='-g -Ofast -fno-allow-store-data-races -flto -ffunction-sections -DESPRESSO -mcpu=750 -meabi -mhard-float $(INCLUDE) -D__WIIU__ -D__WUT__ -DENDIAN_BIG -DNO_FDOPEN -DLOG_LEVEL=0'
 
-[ $# -gt 0 ] || { sed -n '2,29p' "$0"; exit 1; }
+[ $# -gt 0 ] || { sed -n '2,30p' "$0"; exit 1; }
 for variant in "$@"; do
     case $variant in
         heartbeat) flags='-DHEARTBEAT'; name=maelle-hb; title='Maelle Heartbeat' ;;
@@ -49,6 +50,7 @@ for variant in "$@"; do
         jitsplit) flags='-DHEARTBEAT -DJIT_SPLIT'; name=maelle-jitsplit; title='Maelle JIT Split' ;;
         drcdebug) flags='-DDRC_DEBUG'; name=maelle-drcdebug; title='Maelle GamePad Debug' ;;
         frametime) flags='-DHEARTBEAT -DPROFILE_EMU'; name=maelle-frametime; title='Maelle Frame Times' ;;
+        nostrips) flags='-DHEARTBEAT -DPROFILE_EMU -DGPU_NO_STRIPS'; name=maelle-nostrips; title='Maelle No Strips' ;;
         frameslots) flags='-DHEARTBEAT -DPROFILE_EMU -DNO_FRAME_SAMPLES'; name=maelle-frameslots; title='Maelle Frame Slots' ;;
         framelog) flags='-DFRAME_LOG'; name=maelle-framelog; title='Maelle Frame Log' ;;
         audiocap) flags='-DFRAME_LOG -DAUDIO_CAPTURE'; name=maelle-audiocap; title='Maelle Audio Capture' ;;

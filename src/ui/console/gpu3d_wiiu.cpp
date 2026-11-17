@@ -119,6 +119,11 @@ struct GpuDraw {
     bool clearMask; // Whether this starts a group of shadow masks, which clears the shadow bits first
     bool split; // Whether pixels can be opaque or translucent, so they're drawn separately to follow different rules
     bool lines; // Whether this draws the edges of wireframe polygons as lines, instead of triangles
+    bool quads; // Whether this draws polygons a row at a time as quads, 4 vertices each instead of 6 for 2 triangles
+
+    GX2PrimitiveMode primitive() const {
+        return lines ? GX2_PRIMITIVE_MODE_LINES : quads ? GX2_PRIMITIVE_MODE_QUADS : GX2_PRIMITIVE_MODE_TRIANGLES;
+    }
     bool noFog; // Whether this is translucent without fog, which turns fog off for the pixels it's drawn over
     uint32_t first, count;
 };
@@ -919,7 +924,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
         GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
         GX2SetTargetChannelMasks(NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS,
             NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-        GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, draw.count, draw.first, 1);
+        GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
         GX2SetAlphaTest(TRUE, GX2_COMPARE_FUNC_GREATER, alphaMin);
     };
 
@@ -931,7 +936,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
     // Draw a group of triangles
     auto submitDraw = [&](GpuDraw &draw) {
         bindDraw(draw);
-        GX2PrimitiveMode primitive = draw.lines ? GX2_PRIMITIVE_MODE_LINES : GX2_PRIMITIVE_MODE_TRIANGLES;
+        GX2PrimitiveMode primitive = draw.primitive();
         GX2CompareFunction func = wBuffer ? (draw.depthEqual ? GX2_COMPARE_FUNC_GEQUAL : GX2_COMPARE_FUNC_GREATER) :
             (draw.depthEqual ? GX2_COMPARE_FUNC_LEQUAL : GX2_COMPARE_FUNC_LESS);
         GX2SetColorControl(GX2_LOGIC_OP_COPY, draw.translucent ? 0x01 : 0x00, FALSE, TRUE);
@@ -982,7 +987,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
             GX2SetTargetChannelMasks(NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS,
                 NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-            GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, draw.count, draw.first, 1);
+            GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
             GX2SetAlphaTest(TRUE, GX2_COMPARE_FUNC_GREATER, alphaMin);
 
             // Then draw them where the marks are left, like translucent pixels, removing the marks they draw over;
@@ -996,7 +1001,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             GX2SetStencilMask(0x80, 0xFF, draw.stencil & 0x7F, 0x80, 0xFF, draw.stencil & 0x7F);
             GX2SetTargetChannelMasks(colorMask, (attribs && draw.depthWrite) ? GX2_CHANNEL_MASK_G : NO_CHANNELS,
                 NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-            GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, draw.count, draw.first, 1);
+            GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
             return;
         }
         if (draw.split) {
@@ -1194,9 +1199,11 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             // software renderer's own values for each row. Moving a row's end by up to a pixel moves its texels by up to
             // how much they change across a pixel, so this is only done where that's 0.4 texels or more, as for sprites,
             // and not where textures are much smaller than drawn, which could only show neighbors along edges anyway;
-            // past a budget of rows a frame, the rest are drawn as triangles too
+            // past a budget of rows a frame, the rest are drawn as triangles too. Only quads are, like sprites: the
+            // triangles of models drawn without perspective are flat too, but their edges are mostly shared, and
+            // there can be so many that drawing them a row at a time slowed New Super Mario Bros.' intro to about 52 fps
             bool strips = false, sized = false;
-            if (textured) {
+            if (textured && polygon->size >= 4) {
                 Vertex &a = vertex(0), &b = vertex(1), &c = vertex(2);
                 float bx = b.x - a.x, by = b.y - a.y, cx = c.x - a.x, cy = c.y - a.y;
                 float bs = (b.s - a.s) / 16.0f, bt = (b.t - a.t) / 16.0f, cs = (c.s - a.s) / 16.0f, ct = (c.t - a.t) / 16.0f;
@@ -1222,10 +1229,16 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 }
                 // With anti-aliasing like the DS, rows can take 3 quads, for the edge pixels on each side and the middle
                 int rows = bottom - top + 1, quads = (dsAntiAlias && !translucent) ? 3 : 1;
+#ifdef GPU_NO_STRIPS
+                // Debug builds can leave this out, to compare how long frames take without it
+                strips = false;
+#else
                 strips = !wireframe && flat && slanted && sized && stripRows + rows <= STRIP_ROWS &&
-                    count + rows * quads * 6 <= MAX_VERTICES;
+                    count + rows * quads * 4 <= MAX_VERTICES;
+#endif
                 if (strips) stripRows += rows;
             }
+            draw.quads = strips;
 
             // At high resolution, flat polygons only read the texels their native pixels would, so the pixels in
             // between don't show texels the DS never draws, like the next image in a texture atlas
@@ -1392,9 +1405,9 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                             out.color[2] = value(span.be, at) / (8 * 63.0f);
                         }
 
-                        // Add it as 2 triangles, claiming the vertices' cache blocks before writing them
-                        static const int order[6] = { 0, 2, 3, 0, 3, 1 };
-                        for (int c = 0; c < 6; c++) {
+                        // Add it as a quad, going around it, claiming the vertices' cache blocks before writing them
+                        static const int order[4] = { 0, 2, 3, 1 };
+                        for (int c = 0; c < 4; c++) {
                             GpuVertex &out = vertices[count++];
                             claimBlock(&out);
                             claimBlock(&out.color);
@@ -1437,7 +1450,8 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             if (last && last->shader == draw.shader && last->texture == draw.texture && last->sampler == draw.sampler &&
                     last->translucent == draw.translucent && last->depthEqual == draw.depthEqual &&
                     last->depthWrite == draw.depthWrite && last->stencil == draw.stencil && last->split == draw.split &&
-                    last->shadow == draw.shadow && !draw.clearMask && last->lines == draw.lines && last->noFog == draw.noFog &&
+                    last->shadow == draw.shadow && !draw.clearMask && last->lines == draw.lines &&
+                    last->quads == draw.quads && last->noFog == draw.noFog &&
                     last->first + last->count == draw.first && draws.size() > sentDraws)
                 last->count += draw.count;
             else
@@ -1653,7 +1667,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             for (GpuDraw &draw : draws) {
                 if (!draw.noFog) continue;
                 bindDraw(draw);
-                GX2DrawEx(draw.lines ? GX2_PRIMITIVE_MODE_LINES : GX2_PRIMITIVE_MODE_TRIANGLES, draw.count, draw.first, 1);
+                GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
             }
             HB_LAP(HB_GPU_PASS_FOG_US);
         }
@@ -1923,7 +1937,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 GX2CompareFunction func = wBuffer ? (draw.depthEqual ? GX2_COMPARE_FUNC_GEQUAL : GX2_COMPARE_FUNC_GREATER) :
                     (draw.depthEqual ? GX2_COMPARE_FUNC_LEQUAL : GX2_COMPARE_FUNC_LESS);
                 GX2SetDepthOnlyControl(TRUE, draw.depthWrite, func);
-                GX2DrawEx(draw.lines ? GX2_PRIMITIVE_MODE_LINES : GX2_PRIMITIVE_MODE_TRIANGLES, draw.count, draw.first, 1);
+                GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
             }
             GX2Invalidate(GX2_INVALIDATE_MODE_COLOR_BUFFER, colorBuffer.surface.image, colorBuffer.surface.imageSize);
             GX2DrawDone();
