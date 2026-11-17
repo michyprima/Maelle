@@ -196,6 +196,7 @@ private:
     template <bool gbaMode> void drawText(int bg, int line);
     template <bool gbaMode> void drawAffine(int bg, int line);
     void drawExtended(int bg, int line);
+    void endExtended(int bg);
     void drawExtendedGba(int bg, int line);
     void drawLarge(int bg, int line);
     template <bool gbaMode> void drawObjects(int line, bool window);

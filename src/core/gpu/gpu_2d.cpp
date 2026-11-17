@@ -868,6 +868,50 @@ void Gpu2D::drawExtended(int bg, int line) {
         // Use the standard palette by default
         uint8_t *pal = palette;
 
+        // Without rotation or scaling, X moves by a whole pixel each time and Y stays the same, so each tile's row is
+        // read once, the way text backgrounds are, giving the same pixels as the loop below
+        if (bgPA[bg - 2] == 0x100 && bgPC[bg - 2] == 0) {
+            int x = internalX[bg - 2] >> 8;
+            int y = internalY[bg - 2] >> 8;
+            bool wrap = bgCnt[bg] & BIT(13);
+            if (wrap)
+                y &= size - 1;
+            else if (y < 0 || size_t(y) >= size)
+                return endExtended(bg);
+
+            for (int i = 0; i < 256;) {
+                // Skip pixels outside the layer
+                int tx = wrap ? ((x + i) & (size - 1)) : (x + i);
+                if (!wrap && (tx < 0 || size_t(tx) >= size)) {
+                    i++;
+                    continue;
+                }
+
+                // Read the current tile, which covers the pixels up to its right edge
+                int run = std::min(8 - (tx & 7), 256 - i);
+                uint16_t tile = core->memory.read<uint16_t>(0, tileBase + ((y / 8) * (size / 8) + (tx / 8)) * 2);
+                if (dispCnt & BIT(30)) {
+                    if (!extPalettes[bg]) {
+                        i += run;
+                        continue;
+                    }
+                    pal = &extPalettes[bg][(tile >> 3) & 0x1E00];
+                }
+
+                // Read the tile's row of palette indices, flipped vertically if enabled, and draw its pixels
+                uint32_t indexAddr = indexBase + (tile & 0x3FF) * 64 + (((tile & BIT(11)) ? (7 - y) : y) & 7) * 8;
+                uint64_t indices = core->memory.read<uint32_t>(0, indexAddr) |
+                    ((uint64_t)core->memory.read<uint32_t>(0, indexAddr + 4) << 32);
+                for (int j = 0; j < run; j++) {
+                    int column = ((tile & BIT(10)) ? (7 - tx - j) : (tx + j)) & 7;
+                    if (uint8_t index = indices >> (column * 8))
+                        drawBgPixel(bg, line, i + j, U8TO16(pal, index * 2) | BIT(15));
+                }
+                i += run;
+            }
+            return endExtended(bg);
+        }
+
         // Draw a line of the layer
         for (int i = 0; i < 256; i++) {
             // Increment the rotscaled coordinates and remove the fraction
@@ -905,6 +949,10 @@ void Gpu2D::drawExtended(int bg, int line) {
         }
     }
 
+    endExtended(bg);
+}
+
+void Gpu2D::endExtended(int bg) {
     // Increment the internal registers at the end of the scanline
     internalX[bg - 2] += bgPB[bg - 2];
     internalY[bg - 2] += bgPD[bg - 2];
