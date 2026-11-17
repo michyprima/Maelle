@@ -75,7 +75,7 @@
 #include "frame_log.h"
 #include "../core/file_lock.h"
 
-#define MAX_DRAWS 1024
+#define MAX_DRAWS 4096 // Quads the UI can draw in a frame, which long message boxes need a glyph each of
 #define NO_INVALIDATE GX2RResourceFlags(GX2R_RESOURCE_DISABLE_CPU_INVALIDATE | GX2R_RESOURCE_DISABLE_GPU_INVALIDATE)
 extern const uint8_t shader_wiiu_gsh[];
 extern const uint8_t screen_wiiu_gsh[];
@@ -702,6 +702,13 @@ void ConsoleUI::destroyHiResTexture(void *texture) {
         delete (GX2Texture*)texture;
 }
 
+static void nextQuad() {
+    // Move to the next quad's place in the buffers if there's one; past the last, further quads reuse it, which can
+    // draw them wrong but stays inside the buffers
+    if (size_t(bufOffset) < 8 * sizeof(float) * (MAX_DRAWS - 1))
+        bufOffset += 8 * sizeof(float);
+}
+
 static void uploadQuad(const float *pos, const float *tex, const float *col) {
     // Upload positions to the buffer
     // Only the written range is flushed, since locking and unlocking normally flush the whole buffer
@@ -840,9 +847,8 @@ void ConsoleUI::drawTexture(void *texture, float tx, float ty, float tw, float t
     if (lapScreen) gpuLap(HB_UI_GPU_SCREENS_DRC_US);
 #endif
 
-    // Adjust the buffer offset if there's still room
-    if (size_t(bufOffset) < 8 * sizeof(float) * MAX_DRAWS)
-        bufOffset += 8 * sizeof(float);
+    // Move to the next quad in the buffers
+    nextQuad();
 }
 
 void ConsoleUI::writeTexture(void *texture, const uint32_t *data, int x, int y, int width, int height) {
@@ -899,9 +905,8 @@ void ConsoleUI::drawFrames(void *tv, void *gamepad) {
         frameRepaint[i].clear();
     }
 
-    // Adjust the buffer offset if there's still room
-    if (size_t(bufOffset) < 8 * sizeof(float) * MAX_DRAWS)
-        bufOffset += 8 * sizeof(float);
+    // Move to the next quad in the buffers
+    nextQuad();
 }
 
 void ConsoleUI::drawOverlay(void *texture, float x, float y, float w, float h, bool gamepad) {
@@ -923,9 +928,8 @@ void ConsoleUI::drawOverlay(void *texture, float x, float y, float w, float h, b
     GX2RSetAttributeBuffer(&colBuffer, 2, colBuffer.elemSize, bufOffset * 2);
     drawQuad((GX2Texture*)texture, true);
 
-    // Adjust the buffer offset if there's still room
-    if (size_t(bufOffset) < 8 * sizeof(float) * MAX_DRAWS)
-        bufOffset += 8 * sizeof(float);
+    // Move to the next quad in the buffers
+    nextQuad();
 }
 
 uint32_t extToVpad(uint32_t hold, bool pro) {
@@ -1839,6 +1843,7 @@ static BOOL showCrash(OSContext *context, const char *type) {
         type, OSGetCoreId(), context->srr0, context->lr, context->dar, context->srr1,
         context->gpr[1], (uint32_t)&showCrash, context->gpr[3], context->gpr[4], context->gpr[5], context->gpr[6],
         context->gpr[7], context->gpr[8], context->gpr[9], context->gpr[10]);
+
     OSFatal(message);
     return FALSE;
 }
