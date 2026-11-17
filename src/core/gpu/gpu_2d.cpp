@@ -1304,14 +1304,27 @@ template <bool gbaMode> void Gpu2D::drawObjects(int line, bool window) {
                 pal = &palette[0x200];
             }
 
-            // Draw a line of the object
+            // Draw a line of the object, reading the palette indices of each tile's row at once
+            uint64_t indices = 0;
             for (int j = 0; j < width; j++) {
+                if (!(j & 7)) {
+                    uint32_t indexAddr = tileBase + (j / 8) * 64;
+                    indices = core->memory.read<uint32_t>(gbaMode, indexAddr) |
+                        ((uint64_t)core->memory.read<uint32_t>(gbaMode, indexAddr + 4) << 32);
+
+                    // On the DS, a row of transparent pixels changes nothing, so it can be skipped
+                    if (!gbaMode && !indices) {
+                        j += 7;
+                        continue;
+                    }
+                }
+
                 // Determine the horizontal pixel offset based on whether or not the sprite is horizontally flipped
                 int offset = (object[1] & BIT(12)) ? (x + width - j - 1) : (x + j);
                 if (offset < 0 || offset >= (gbaMode ? 240 : 256)) continue;
 
                 // Get the palette index for the current pixel
-                uint8_t index = core->memory.read<uint8_t>(gbaMode, tileBase + (j / 8) * 64 + j % 8);
+                uint8_t index = indices >> ((j & 7) * 8);
 
                 if (index && type == 2) { // Object window
                     // Mark object window pixels with an extra bit, and don't draw anything
@@ -1341,15 +1354,25 @@ template <bool gbaMode> void Gpu2D::drawObjects(int line, bool window) {
             // In 4-bit mode, the object can select from multiple 16-color palettes
             uint8_t *pal = &palette[0x200 + ((object[2] & 0xF000) >> 12) * 32];
 
-            // Draw a line of the object
+            // Draw a line of the object, reading the palette indices of each tile's row at once
+            uint32_t indices = 0;
             for (int j = 0; j < width; j++) {
+                if (!(j & 7)) {
+                    indices = core->memory.read<uint32_t>(gbaMode, tileBase + (j / 8) * 32);
+
+                    // On the DS, a row of transparent pixels changes nothing, so it can be skipped
+                    if (!gbaMode && !indices) {
+                        j += 7;
+                        continue;
+                    }
+                }
+
                 // Determine the horizontal pixel offset based on whether or not the sprite is horizontally flipped
                 int offset = (object[1] & BIT(12)) ? (x + width - j - 1) : (x + j);
                 if (offset < 0 || offset >= (gbaMode ? 240 : 256)) continue;
 
                 // Get the palette index for the current pixel
-                uint8_t index = core->memory.read<uint8_t>(gbaMode, tileBase + (j / 8) * 32 + (j % 8) / 2);
-                index = (j & 1) ? ((index & 0xF0) >> 4) : (index & 0x0F);
+                uint8_t index = (indices >> ((j & 7) * 4)) & 0xF;
 
                 if (index && type == 2) { // Object window
                     // Mark object window pixels with an extra bit, and don't draw anything
