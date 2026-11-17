@@ -74,6 +74,8 @@ export OFILES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(FAADOFILES) $(BMPFILES:.b
 .PHONY: $(BUILD) migoomba
 all: $(BUILD)
 
+# Keep variables given on the command line, like build-wiiu-debug.sh's PowerPC CFLAGS and BUILD, out of MiGoomba's ARM build
+migoomba: MAKEOVERRIDES :=
 migoomba:
 	@[ -f $(MIGOOMBA)/Makefile ] || { echo "MiGoomba is missing: run git submodule update --init"; exit 1; }
 	$(MAKE) -C $(MIGOOMBA) DEVKITARM=$(DEVKITARM) VARIANT=maelle
