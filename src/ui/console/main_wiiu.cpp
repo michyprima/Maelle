@@ -1844,6 +1844,16 @@ static BOOL showCrash(OSContext *context, const char *type) {
         context->gpr[1], (uint32_t)&showCrash, context->gpr[3], context->gpr[4], context->gpr[5], context->gpr[6],
         context->gpr[7], context->gpr[8], context->gpr[9], context->gpr[10]);
 
+    // Follow the stack's back chain for the functions that led there, as far as it stays in the app's memory
+    size_t length = strlen(message);
+    length += __os_snprintf(&message[length], sizeof(message) - length, "stack:");
+    uint32_t sp = context->gpr[1];
+    for (int i = 0; i < 8 && sp - 0x10000000 < 0x40000000 && !(sp & 3) && length < sizeof(message) - 10; i++) {
+        uint32_t frame = *(uint32_t*)(uintptr_t)sp;
+        if (frame - 0x10000000 >= 0x40000000 || (frame & 3)) break;
+        length += __os_snprintf(&message[length], sizeof(message) - length, " %08X", *(uint32_t*)(uintptr_t)(frame + 4));
+        sp = frame;
+    }
     OSFatal(message);
     return FALSE;
 }
