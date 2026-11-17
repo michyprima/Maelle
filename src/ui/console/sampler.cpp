@@ -48,6 +48,11 @@ static volatile const uint32_t osNameCount = 0;
 static const char *const osNames[1] = { "" };
 #endif
 
+// The core to sample, which is the emulator's unless a build picks another, like core 0 for the 2D thread
+#ifndef SAMPLER_CORE
+#define SAMPLER_CORE 1
+#endif
+
 namespace Sampler {
     static const uint32_t LINK_START = 0x02000000, TEXT_SIZE = 0x200000;
     static const uint32_t OS_START = 0x01000000, OS_SIZE = 0x100000;
@@ -64,12 +69,12 @@ namespace Sampler {
 
     // A thread on the lowest priority that only runs when the core would otherwise be idle, so idle time shows up
     // as samples in it instead of in the system's scheduler
-    static volatile bool idling;
+    static volatile bool idling; // Whether samples are being taken
     static OSThread *idleThread;
 
-    static int idleSpin(int argc, void *argv) {
+    // How the thread spins, kept apart so samples in it can be told by address
+    __attribute__((noinline)) static void idleSpin() {
         while (idling);
-        return 0;
     }
 
     static const char *symbolAt(uint32_t addr) {
@@ -99,12 +104,14 @@ namespace Sampler {
 
     static void callback(OSAlarm *alarm, OSContext *context) {
         // Count where the emulator's core was interrupted
+        if (!idling) return;
         uint32_t pc = context->srr0;
         total++;
         if ((pc - (uint32_t)(uintptr_t)(&idleSpin)) < 0x20) {
             // When the core is idle, the sampled thread is blocked, so follow its stack back to the app's code
             // to find what it was waiting for
             idle++;
+            if (!sampled) return;
             if (uint32_t lr = findCaller(0, sampled->context.gpr[1]))
                 blocked[(lr - textStart) >> 4]++;
         }
@@ -120,6 +127,21 @@ namespace Sampler {
         else if (pc - codegenStart < codegenSplit + 0x1000) stubs7++;
         else if (pc - codegenStart < codegenSize) jitBlocks7++;
         else other++;
+    }
+
+    static int idleEntry(int argc, void *argv) {
+        // Set the alarm from the sampled core, since alarms go off on the core they're set on, then stay on it as its
+        // lowest-priority thread, spinning while samples are taken so the core's idle time shows up as samples in it
+        // The thread and alarm last for the rest of the run, since a thread's memory is freed by the system when it
+        // exits, from where the heap's lock can't be relied on
+        OSCreateAlarm(&alarm);
+        OSSetPeriodicAlarm(&alarm, OSMicrosecondsToTicks(100), OSMicrosecondsToTicks(100), callback);
+        OSSetThreadPriority(OSGetCurrentThread(), 31);
+        while (true) {
+            idleSpin();
+            OSSleepTicks(OSMillisecondsToTicks(10));
+        }
+        return 0;
     }
 
     void start() {
@@ -138,18 +160,15 @@ namespace Sampler {
         memset(blocked, 0, sizeof(blocked));
         memset(sysCallers, 0, sizeof(sysCallers));
         jitBlocks = jitBlocks7 = stubs7 = other = total = idle = 0;
-        sampled = OSGetCurrentThread();
-        OSCreateAlarm(&alarm);
-        OSSetPeriodicAlarm(&alarm, OSMicrosecondsToTicks(100), OSMicrosecondsToTicks(100), callback);
+        // Another core's samples have no single thread to follow when the core is idle
+        sampled = (SAMPLER_CORE == 1) ? OSGetCurrentThread() : nullptr;
         idling = true;
-        idleThread = WorkerThread::createThread(idleSpin, nullptr, 0x4000, 31, OS_THREAD_ATTRIB_AFFINITY_CPU1);
+        if (!idleThread)
+            idleThread = WorkerThread::createThread(idleEntry, nullptr, 0x4000, 16, 1 << SAMPLER_CORE);
     }
 
     void stop() {
-        OSCancelAlarm(&alarm);
         idling = false;
-        if (idleThread) OSJoinThread(idleThread, nullptr);
-        idleThread = nullptr;
     }
 
     static std::vector<std::pair<uint32_t, uint32_t>> topCounts(const uint32_t *counts, uint32_t size, uint32_t scale) {
