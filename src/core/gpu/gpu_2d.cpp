@@ -810,6 +810,46 @@ void Gpu2D::drawExtended(int bg, int line) {
         if (core->memory.vramUnmapped9(dataBase, sizeX * sizeY * ((bgCnt[bg] & BIT(2)) ? 2 : 1))) {
             // Nothing to draw
         }
+        else if (bgPA[bg - 2] == 0x100 && bgPC[bg - 2] == 0) {
+            // Without rotation or scaling, X moves by a whole pixel each time and Y stays the same, so a row's pixels
+            // are next to each other and are read 2 or 4 at a time, giving the same pixels as the loops below
+            int x = internalX[bg - 2] >> 8;
+            int y = internalY[bg - 2] >> 8;
+            bool wrap = bgCnt[bg] & BIT(13);
+            if (wrap)
+                y &= sizeY - 1;
+            else if (y < 0 || y >= sizeY)
+                return endExtended(bg);
+            uint32_t rowBase = dataBase + y * sizeX * ((bgCnt[bg] & BIT(2)) ? 2 : 1);
+            uint32_t word = 0;
+            int wordX = -1; // The first pixel of the word that was read last
+
+            if (bgCnt[bg] & BIT(2)) { // Direct color bitmap
+                for (int i = 0; i < 256; i++, x++) {
+                    int px = wrap ? (x & (sizeX - 1)) : x;
+                    if (px < 0 || px >= sizeX) continue;
+                    if ((px & ~1) != wordX) {
+                        wordX = px & ~1;
+                        word = core->memory.read<uint32_t>(0, rowBase + wordX * 2);
+                    }
+                    uint16_t pixel = word >> ((px & 1) * 16);
+                    if (pixel & BIT(15))
+                        drawBgPixel(bg, line, i, pixel);
+                }
+            }
+            else { // 256 color bitmap
+                for (int i = 0; i < 256; i++, x++) {
+                    int px = wrap ? (x & (sizeX - 1)) : x;
+                    if (px < 0 || px >= sizeX) continue;
+                    if ((px & ~3) != wordX) {
+                        wordX = px & ~3;
+                        word = core->memory.read<uint32_t>(0, rowBase + wordX);
+                    }
+                    if (uint8_t index = word >> ((px & 3) * 8))
+                        drawBgPixel(bg, line, i, U8TO16(palette, index * 2) | BIT(15));
+                }
+            }
+        }
         else if (bgCnt[bg] & BIT(2)) { // Direct color bitmap
             // Draw a line
             for (int i = 0; i < 256; i++) {
@@ -1161,14 +1201,23 @@ template <bool gbaMode> void Gpu2D::drawObjects(int line, bool window) {
                 // Adjust the bitmap offset based on whether or not the sprite is vertically flipped
                 dataBase += ((object[1] & BIT(13)) ? (height - spriteY - 1) : spriteY) * bitmapWidth * 2;
 
-                // Draw a line of the object
+                // Draw a line of the object, reading 2 pixels at a time and skipping pairs with nothing to draw
+                uint32_t pair = 0;
                 for (int j = 0; j < width; j++) {
+                    if (!(j & 1)) {
+                        pair = core->memory.read<uint32_t>(0, dataBase + j * 2);
+                        if (!(pair & 0x80008000)) {
+                            j++;
+                            continue;
+                        }
+                    }
+
                     // Determine the horizontal pixel offset based on whether or not the sprite is horizontally flipped
                     int offset = (object[1] & BIT(12)) ? (x + width - j - 1) : (x + j);
                     if (offset < 0 || offset >= (gbaMode ? 240 : 256)) continue;
 
                     // Draw a pixel
-                    uint16_t pixel = core->memory.read<uint16_t>(0, dataBase + j * 2);
+                    uint16_t pixel = pair >> ((j & 1) * 16);
                     if (pixel & BIT(15))
                         drawObjPixel(line, offset, pixel, priority);
                 }
