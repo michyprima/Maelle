@@ -128,6 +128,12 @@ struct GpuDraw {
     uint32_t first, count;
 };
 
+// Draw a range of vertices, skipping empty ranges, since the GPU hangs on a draw of no vertices until the system resets
+// it a second later, and the system then hangs on the way back to the Wii U menu
+static void drawVertices(GX2PrimitiveMode primitive, uint32_t count, uint32_t first) {
+    if (count) GX2DrawEx(primitive, count, first, 1);
+}
+
 class Gpu3DWiiU: public Gpu3DHardware {
 public:
     bool init();
@@ -924,7 +930,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
         GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
         GX2SetTargetChannelMasks(NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS,
             NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-        GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
+        drawVertices(draw.primitive(), draw.count, draw.first);
         GX2SetAlphaTest(TRUE, GX2_COMPARE_FUNC_GREATER, alphaMin);
     };
 
@@ -987,7 +993,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
             GX2SetTargetChannelMasks(NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS,
                 NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-            GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
+            drawVertices(draw.primitive(), draw.count, draw.first);
             GX2SetAlphaTest(TRUE, GX2_COMPARE_FUNC_GREATER, alphaMin);
 
             // Then draw them where the marks are left, like translucent pixels, removing the marks they draw over;
@@ -1001,7 +1007,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             GX2SetStencilMask(0x80, 0xFF, draw.stencil & 0x7F, 0x80, 0xFF, draw.stencil & 0x7F);
             GX2SetTargetChannelMasks(colorMask, (attribs && draw.depthWrite) ? GX2_CHANNEL_MASK_G : NO_CHANNELS,
                 NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-            GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
+            drawVertices(draw.primitive(), draw.count, draw.first);
             return;
         }
         if (draw.split) {
@@ -1015,7 +1021,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             GX2SetStencilMask(0x7F, 0x7F, draw.stencil & 0x3F, 0x7F, 0x7F, draw.stencil & 0x3F);
             GX2SetTargetChannelMasks(colorMask, attribs ? GX2_CHANNEL_MASK_RGBA : NO_CHANNELS,
                 NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-            GX2DrawEx(primitive, draw.count, draw.first, 1);
+            drawVertices(primitive, draw.count, draw.first);
             GX2SetAlphaTest(TRUE, GX2_COMPARE_FUNC_GREATER, alphaMin);
             if (draw.shader != 1) return;
             WHBGfxShaderGroup &trans = groups[3];
@@ -1034,7 +1040,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
         GX2SetTargetChannelMasks(colorMask, !attribs ? NO_CHANNELS : draw.solid ? GX2_CHANNEL_MASK_RGBA :
             draw.depthWrite ? GX2_CHANNEL_MASK_G : NO_CHANNELS,
             NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS, NO_CHANNELS);
-        GX2DrawEx(primitive, draw.count, draw.first, 1);
+        drawVertices(primitive, draw.count, draw.first);
     };
 
     // On heavy frames, the polygons built so far are sent in pieces while the rest are built, so the GPU draws them
@@ -1446,8 +1452,11 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 }
             }
 
-            // Merge the triangles into the last draw if the state is the same
+            // Merge the triangles into the last draw if the state is the same; a polygon that added none, like one
+            // drawn a row at a time whose rows were all empty, adds no draw, unless it starts a group of shadow masks,
+            // which still clears the marks
             draw.count = count - draw.first;
+            if (!draw.count && !draw.clearMask) continue;
             GpuDraw *last = draws.empty() ? nullptr : &draws.back();
             if (last && last->shader == draw.shader && last->texture == draw.texture && last->sampler == draw.sampler &&
                     last->translucent == draw.translucent && last->depthEqual == draw.depthEqual &&
@@ -1672,7 +1681,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             for (GpuDraw &draw : draws) {
                 if (!draw.noFog) continue;
                 bindDraw(draw);
-                GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
+                drawVertices(draw.primitive(), draw.count, draw.first);
             }
             HB_LAP(HB_GPU_PASS_FOG_US);
         }
@@ -1942,7 +1951,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 GX2CompareFunction func = wBuffer ? (draw.depthEqual ? GX2_COMPARE_FUNC_GEQUAL : GX2_COMPARE_FUNC_GREATER) :
                     (draw.depthEqual ? GX2_COMPARE_FUNC_LEQUAL : GX2_COMPARE_FUNC_LESS);
                 GX2SetDepthOnlyControl(TRUE, draw.depthWrite, func);
-                GX2DrawEx(draw.primitive(), draw.count, draw.first, 1);
+                drawVertices(draw.primitive(), draw.count, draw.first);
             }
             GX2Invalidate(GX2_INVALIDATE_MODE_COLOR_BUFFER, colorBuffer.surface.image, colorBuffer.surface.imageSize);
             GX2DrawDone();
