@@ -1145,6 +1145,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             HB_TICK_TIMER(hbTexture);
             draw.texture = textured ? getTexture(renderer, polygon) : nullptr;
             HB_ADD_TICKS(HB_GPU_TEXTURE_US, hbTexture);
+            HB_TICK_TIMER(hbSetup);
             draw.lines = wireframe;
             draw.shader = !draw.texture ? 0 : (polygon->mode == 1 || polygon->mode == 3) ? 2 : 1;
             if (polygon->mode == 2) {
@@ -1287,6 +1288,7 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             // They're interpolated with perspective like the other values, which is close enough within a pixel
             // Only solid polygons give coverage, and only when anti-aliasing like the DS, so others skip the work
             bool distances = dsAntiAlias && !translucent;
+            HB_ADD_TICKS(HB_GPU_SETUP_US, hbSetup);
             HB_TICK_TIMER(hbVertex);
             GpuVertex converted[10]; // Each polygon vertex is converted once, since the fan shares the first one
             for (int k = 0; k < polygon->size; k++)
@@ -1456,8 +1458,11 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
                 last->count += draw.count;
             else
                 draws.push_back(draw);
-            if (chunked && count - sentVertices >= (started ? CHUNK_VERTICES : FIRST_CHUNK_VERTICES))
+            if (chunked && count - sentVertices >= (started ? CHUNK_VERTICES : FIRST_CHUNK_VERTICES)) {
+                HB_TICK_TIMER(hbSend);
                 sendChunk();
+                HB_ADD_TICKS(HB_GPU_SEND_US, hbSend);
+            }
         }
     }
     HB_TIMER(hbPostLoop);

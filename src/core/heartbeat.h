@@ -50,6 +50,8 @@ enum HeartbeatSlot {
     HB_GPU_VERTEX_US, // Within building, in time base ticks: converting polygon vertices
     HB_GPU_FAN_US, // Within building, in time base ticks: writing the triangles, with edge distances for anti-aliasing
     HB_GPU_POSTLOOP_US, // Within building: after the polygons, until GX2 is locked
+    HB_GPU_SETUP_US, // Within building, in time base ticks: choosing how to draw each polygon, after its texture
+    HB_GPU_SEND_US, // Within building, in time base ticks: sending finished parts of the frame to the GPU
     HB_3D_WAIT_US, // Total microseconds the 2D engine waited for 3D scanlines
     HB_EMU_3D_WAIT_US, // Total microseconds the emulator waited for the GPU 3D renderer to finish a frame
     HB_2D_JOIN_US, // Total microseconds the emulator waited for the 2D thread at the end of frames

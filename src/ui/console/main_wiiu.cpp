@@ -1687,7 +1687,8 @@ int logHeartbeat(int, void *) {
             per(HB_GPU_CONVERT_US, gpuFrames), per(HB_EMU_3D_WAIT_US, frames), per(HB_2D_JOIN_US, frames),
             per(HB_3D_WAIT_US, frames), per(HB_EMU_HIRES_US, frames));
         uint32_t textureUs = perTicks(HB_GPU_TEXTURE_US, gpuFrames), vertexUs = perTicks(HB_GPU_VERTEX_US, gpuFrames);
-        uint32_t fanUs = perTicks(HB_GPU_FAN_US, gpuFrames);
+        uint32_t fanUs = perTicks(HB_GPU_FAN_US, gpuFrames), setupUs = perTicks(HB_GPU_SETUP_US, gpuFrames);
+        uint32_t sendUs = perTicks(HB_GPU_SEND_US, gpuFrames);
         fprintf(file, "   gpu draw timeline per frame (GPU_TIMELINE only): earlier work done %u, polygons submitted %u, "
             "polygons done %u, all submitted %u, all done %u us | draws %u, vertices %u\n", per(HB_GPU_PRIOR_US, gpuFrames), per(HB_GPU_MAIN_SUBMIT_US, gpuFrames),
             per(HB_GPU_MAIN_DONE_US, gpuFrames), per(HB_GPU_SUBMIT_US, gpuFrames), per(HB_GPU_DRAW_US, gpuFrames),
@@ -1710,10 +1711,11 @@ int logHeartbeat(int, void *) {
             per(HB_GPU_DRAW_MODTRANS_US, gpuFrames), per(HB_GPU_VTX_MODTRANS, gpuFrames), per(HB_GPU_DRAW_TOON_US, gpuFrames),
             per(HB_GPU_VTX_TOON, gpuFrames), per(HB_GPU_DRAW_SHADOW_US, gpuFrames), per(HB_GPU_VTX_SHADOW, gpuFrames));
 #endif
-        fprintf(file, "   gpu build parts per frame: before polygons %u, vertices %u, triangles %u, after polygons %u, "
-            "textures %u, rest %d us\n", per(HB_GPU_PRELOOP_US, gpuFrames), vertexUs, fanUs, per(HB_GPU_POSTLOOP_US, gpuFrames),
-            textureUs, int(per(HB_GPU_BUILD_US, gpuFrames)) - int(per(HB_GPU_PRELOOP_US, gpuFrames) + vertexUs + fanUs +
-            per(HB_GPU_POSTLOOP_US, gpuFrames) + textureUs));
+        fprintf(file, "   gpu build parts per frame: before polygons %u, setup %u, vertices %u, triangles %u, sending %u, "
+            "after polygons %u, textures %u, rest %d us\n", per(HB_GPU_PRELOOP_US, gpuFrames), setupUs, vertexUs, fanUs, sendUs,
+            per(HB_GPU_POSTLOOP_US, gpuFrames), textureUs, int(per(HB_GPU_BUILD_US, gpuFrames)) -
+            int(per(HB_GPU_PRELOOP_US, gpuFrames) + setupUs + vertexUs + fanUs + sendUs + per(HB_GPU_POSTLOOP_US, gpuFrames) +
+            textureUs));
         fprintf(file, "   2D lines drawn by the emulator per frame: A %u, B %u | cores: 2D %u, geometry %u | "
             "ROM misses %u, waited %u us\n", per(HB_2D_EMU_LINES_A, frames), per(HB_2D_EMU_LINES_B, frames),
             v[HB_2D_CORE], v[HB_GEOM_CORE], v[HB_ROM_MISSES] - last[HB_ROM_MISSES],
