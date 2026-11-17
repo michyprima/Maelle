@@ -326,6 +326,10 @@ FILE *openHangReport(const char *reason) {
         reason, (unsigned long long)OSGetTime(), uiFrames, gpu3dStage, gpu3dFrames,
         (unsigned long long)GX2GetLastSubmittedTimeStamp(), (unsigned long long)GX2GetRetiredTimeStamp());
     fputs(line, file);
+    if (gpu3dDraw[0]) {
+        fputs(gpu3dDraw, file);
+        fputc('\n', file);
+    }
 
     // Walk the OS's list of active threads; other cores keep running, so check tags and bound the walk
     OSThread *thread = OSGetCurrentThread();

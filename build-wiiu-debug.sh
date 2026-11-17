@@ -15,7 +15,8 @@
 #   romtest      Runs tests/rom's ROM with the interpreter and the JIT, timing them, with the results in romtest.txt
 #   jitsplit     Heartbeat, plus how long each step of compiling JIT blocks takes
 #   drcdebug     What's known about the GamePad's display on the TV, with combos to try getting it back
-#   frametime    Heartbeat, plus where the emulator thread spends each frame, listing every slow frame, and samples
+#   frametime    Heartbeat, plus where the emulator thread spends each frame, listing every slow frame, 3D frames the
+#                GPU took over 250 ms on in hang.txt with their draws, and samples
 #                of where its core was during slow frames in trace.bin
 #   nostrips     frametime without the GPU 3D renderer drawing flat polygons a row at a time, to compare frame times
 #   frameslots   frametime without the samples, which slow the emulator down, for truer times
@@ -49,7 +50,7 @@ for variant in "$@"; do
         romtest) flags='-DROM_TEST'; name=maelle-romtest; title='Maelle ROM Test' ;;
         jitsplit) flags='-DHEARTBEAT -DJIT_SPLIT'; name=maelle-jitsplit; title='Maelle JIT Split' ;;
         drcdebug) flags='-DDRC_DEBUG'; name=maelle-drcdebug; title='Maelle GamePad Debug' ;;
-        frametime) flags='-DHEARTBEAT -DPROFILE_EMU'; name=maelle-frametime; title='Maelle Frame Times' ;;
+        frametime) flags='-DHEARTBEAT -DPROFILE_EMU -DSLOW_GPU_REPORT'; name=maelle-frametime; title='Maelle Frame Times' ;;
         nostrips) flags='-DHEARTBEAT -DPROFILE_EMU -DGPU_NO_STRIPS'; name=maelle-nostrips; title='Maelle No Strips' ;;
         frameslots) flags='-DHEARTBEAT -DPROFILE_EMU -DNO_FRAME_SAMPLES'; name=maelle-frameslots; title='Maelle Frame Slots' ;;
         framelog) flags='-DFRAME_LOG'; name=maelle-framelog; title='Maelle Frame Log' ;;

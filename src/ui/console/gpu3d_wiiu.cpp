@@ -58,6 +58,7 @@
 // The GPU 3D renderer's step and frame, which hang reports include: 1 = waiting, 2 = building, 3 = locking GX2,
 // 4 = drawing, 5 = handing over scanlines, 6 = submitting, 7 = waiting for the GPU, 8 = timed out
 volatile uint32_t gpu3dStage, gpu3dFrames;
+char gpu3dDraw[512];
 #define GPU_STAGE(stage) do { gpu3dStage = (stage); HB_SET(HB_GPU_STAGE, stage); } while (0)
 #include "../../core/settings.h"
 #include "../../core/worker_thread.h"
@@ -941,6 +942,31 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
 
     // Draw a group of triangles
     auto submitDraw = [&](GpuDraw &draw) {
+#if defined(HEARTBEAT) && defined(GPU_TIMELINE)
+        // Describe the draw before sending it, with its vertices' ranges, so a hang report shows the one the GPU is stuck on
+        {
+            float lo[8], hi[8];
+            for (int c = 0; c < 8; c++) { lo[c] = 1e30f; hi[c] = -1e30f; }
+            for (uint32_t v = draw.first; v < draw.first + draw.count && v < MAX_VERTICES; v++) {
+                GpuVertex &vtx = vertices[v];
+                float p[8] = { vtx.pos[0] / vtx.pos[3], vtx.pos[1] / vtx.pos[3], vtx.pos[3], vtx.tex[0], vtx.tex[1],
+                    vtx.tex[2], vtx.bounds[0], vtx.bounds[2] };
+                for (int c = 0; c < 8; c++) { lo[c] = std::min(lo[c], p[c]); hi[c] = std::max(hi[c], p[c]); }
+            }
+            auto ci = [](float f) { return std::isfinite(f) ? int(std::max(-2e9f, std::min(2e9f, f))) : -1; };
+            GX2Texture *t = draw.texture;
+            __os_snprintf(gpu3dDraw, sizeof(gpu3dDraw), "draw %d of %d: shader %d prim %d first %u count %u translucent %d "
+                "shadow %d split %d sampler %d | texture %08X image %08X %ux%u pitch %u size %u align %u format %X tile %d "
+                "| x %d..%d y %d..%d w %d..%d s %d..%d t %d..%d d %d..%d bounds %d..%d (x1000)",
+                int(&draw - draws.data()), int(draws.size()), draw.shader, int(draw.primitive()), draw.first, draw.count,
+                draw.translucent, draw.shadow, draw.split, draw.sampler, (unsigned)(uintptr_t)t, t ? (unsigned)(uintptr_t)t->surface.image : 0,
+                t ? t->surface.width : 0, t ? t->surface.height : 0, t ? t->surface.pitch : 0,
+                t ? t->surface.imageSize : 0, t ? t->surface.alignment : 0, t ? (unsigned)t->surface.format : 0,
+                t ? (int)t->surface.tileMode : 0, ci(lo[0] * 1000), ci(hi[0] * 1000), ci(lo[1] * 1000),
+                ci(hi[1] * 1000), ci(lo[2]), ci(hi[2]), ci(lo[3] * 1000), ci(hi[3] * 1000), ci(lo[4] * 1000),
+                ci(hi[4] * 1000), ci(lo[5] * 1000), ci(hi[5] * 1000), ci(lo[6] * 1000), ci(hi[7] * 1000));
+        }
+#endif
         bindDraw(draw);
         GX2PrimitiveMode primitive = draw.primitive();
         GX2CompareFunction func = wBuffer ? (draw.depthEqual ? GX2_COMPARE_FUNC_GEQUAL : GX2_COMPARE_FUNC_GREATER) :
@@ -1061,8 +1087,22 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
     // Wait for the GPU to finish a pass, adding the time since the last one to its slot
     OSTime hbLapStart = 0;
     auto hbLap = [&](HeartbeatSlot slot) {
-        GX2DrawDone();
+        // Wait by polling the retired timestamp, since GX2DrawDone never returns after the GPU recovers from a hang,
+        // and report parts the GPU took over 250 ms on with the last draw sent
+        GX2Flush();
+        OSTime submitted = GX2GetLastSubmittedTimeStamp();
+        while (GX2GetRetiredTimeStamp() < submitted)
+            OSSleepTicks(OSMicrosecondsToTicks(20));
         OSTime now = OSGetSystemTime();
+        static int stalls = 0;
+        if (OSTicksToMilliseconds(now - hbLapStart) > 250 && stalls < 16) {
+            stalls++;
+            char message[64];
+            __os_snprintf(message, sizeof(message), "GPU stalled %u ms in frame %u",
+                (uint32_t)OSTicksToMilliseconds(now - hbLapStart), frameCount);
+            if (FILE *file = openHangReport(message)) fclose(file);
+            now = OSGetSystemTime();
+        }
         Heartbeat::values[slot] += (uint32_t)OSTicksToMicroseconds(now - hbLapStart);
         hbLapStart = now;
     };
@@ -1510,6 +1550,42 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
             }
             OSSleepTicks(OSMicrosecondsToTicks(100));
         }
+#ifdef SLOW_GPU_REPORT
+        // Report frames the GPU took over 250 ms to finish, with each draw's vertex range, to find what stalls it
+        uint32_t waited = OSTicksToMilliseconds(OSGetSystemTime() - start);
+        static int reports = 0;
+        if (waited > 250 && reports < 8) {
+            reports++;
+            char message[256];
+            __os_snprintf(message, sizeof(message), "Slow GPU frame %u: waited %u ms, %u draws, %u vertices, "
+                "3D display control %04X", frameCount, waited, (uint32_t)draws.size(), count, disp3DCnt);
+            if (FILE *file = openHangReport(message)) {
+                fprintf(file, "multisample %d, edges %d, fog %d, DS anti-aliasing %d, high-res %d, overlapped %d, "
+                    "textures updated %u, cached %u\n", msaa, gpuEdges, fog, dsAntiAlias, shift, chunked,
+                    (uint32_t)updated.size(), (uint32_t)textures.size());
+                for (GpuDraw &draw : draws) {
+                    float lo[3] = { 1e30f, 1e30f, 1e30f }, hi[3] = { -1e30f, -1e30f, -1e30f };
+                    uint32_t bad = 0;
+                    for (uint32_t v = draw.first; v < draw.first + draw.count && v < MAX_VERTICES; v++) {
+                        float *pos = vertices[v].pos;
+                        float p[3] = { pos[0] / pos[3], pos[1] / pos[3], pos[3] };
+                        for (int c = 0; c < 3; c++) {
+                            if (!std::isfinite(p[c]) || fabsf(p[c]) > 1e6f) bad++;
+                            lo[c] = std::min(lo[c], p[c]);
+                            hi[c] = std::max(hi[c], p[c]);
+                        }
+                    }
+                    fprintf(file, "shader %d texture %ux%u %p sampler %d prim %d translucent %d shadow %d split %d "
+                        "first %u count %u | x %g..%g y %g..%g w %g..%g bad %u\n", draw.shader,
+                        draw.texture ? draw.texture->surface.width : 0, draw.texture ? draw.texture->surface.height : 0,
+                        draw.texture ? draw.texture->surface.image : nullptr, draw.sampler, (int)draw.primitive(),
+                        draw.translucent, draw.shadow, draw.split, draw.first, draw.count,
+                        lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], bad);
+                }
+                fclose(file);
+            }
+        }
+#endif
     };
 
     bool packed = false; // Whether the finished frame has been packed as the 2D engine's 3D pixels yet

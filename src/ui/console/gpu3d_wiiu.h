@@ -29,6 +29,7 @@
 
 extern std::mutex gx2Mutex;
 extern volatile uint32_t gpu3dStage, gpu3dFrames; // The renderer's step and frame count, for hang reports
+extern char gpu3dDraw[512]; // The last draw sent, in GPU timeline builds, which wait for each draw, so a hang names it
 
 // Appends a report of a hang to hang.txt with every thread's state, returning the file so more can be added
 FILE *openHangReport(const char *reason);
