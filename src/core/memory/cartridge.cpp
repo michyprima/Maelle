@@ -26,6 +26,7 @@
 #include "../core.h"
 #include "../file_lock.h"
 #include "../heartbeat.h"
+#include "rom_heap.h"
 
 #include <malloc.h>
 #ifdef ROM_LOAD_TEST
@@ -42,7 +43,18 @@ size_t CartridgeGba::gbEmulatorSize = 0;
 
 static uint8_t *allocRom(size_t size) {
     // Reading from file into memory that's aligned for it is much faster on Wii U
+#ifdef __WIIU__
+    if (uint8_t *rom = allocTopRom(size)) return rom;
+#endif
     return (uint8_t*)memalign(64, size);
+}
+
+static void freeRom(void *rom) {
+    // Give memory back to where allocRom took it from
+#ifdef __WIIU__
+    if (freeTopRom(rom)) return;
+#endif
+    free(rom);
 }
 
 Cartridge::~Cartridge() {
@@ -71,7 +83,7 @@ Cartridge::~Cartridge() {
 
     // Free the ROM and save memory
     if (romFile) fclose(romFile);
-    free(rom);
+    freeRom(rom);
     if (save) delete[] save;
     for (int i = 0; i < CHUNK_COUNT; i++)
         delete[] chunks[i].alloc;
@@ -138,7 +150,7 @@ bool Cartridge::loadRom() {
 void Cartridge::loadRomSection(size_t offset, size_t size) {
     // Make sure the ROM buffer can hold the section, keeping it between loads
     if (size > romBufSize) {
-        free(rom);
+        freeRom(rom);
         rom = allocRom(size);
         romBufSize = size;
     }
@@ -301,11 +313,11 @@ void Cartridge::runPrefetch() {
 bool Cartridge::startRomLoad() {
     // Allocate memory for the whole ROM, with room for DLDI patches that run past the end, and track its blocks
     size_t blocks = (romSize + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    free(rom);
+    freeRom(rom);
     rom = allocRom(romSize + 0x100);
     romBlocks = new (std::nothrow) std::atomic<uint8_t>[blocks];
     if (!rom || !romBlocks) {
-        free(rom);
+        freeRom(rom);
         delete[] romBlocks;
         rom = nullptr;
         romBlocks = nullptr;
@@ -335,7 +347,7 @@ bool Cartridge::startRomLoad() {
 }
 
 void Cartridge::freeKeptRom(KeptRom &kept) {
-    free(kept.data);
+    freeRom(kept.data);
     kept.data = nullptr;
 }
 
@@ -369,7 +381,7 @@ bool Cartridge::takeKeptRom() {
     }
 
     // Read from memory like a ROM that was just loaded into RAM, which needs the file no more
-    free(rom);
+    freeRom(rom);
     rom = kept.data;
     romBufSize = romSize;
     kept.data = nullptr;
@@ -606,7 +618,7 @@ void Cartridge::trimRom() {
         romSize = newSize;
         uint8_t *newRom = allocRom(newSize);
         memcpy(newRom, rom, newSize * sizeof(uint8_t));
-        free(rom);
+        freeRom(rom);
         rom = newRom;
         romBufSize = newSize;
 
@@ -1904,7 +1916,7 @@ bool CartridgeGba::loadGbRom() {
     gbRom = true;
     if (saveSize == -1) resizeSave(0x10000, false);
     if (takeKeptRom()) return true;
-    free(rom);
+    freeRom(rom);
     if (!(rom = allocRom(romSize))) return false;
     romBufSize = romSize;
     memcpy(rom, gbEmulator, gbEmulatorSize);
