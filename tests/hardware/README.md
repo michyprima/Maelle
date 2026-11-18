@@ -106,8 +106,8 @@ tests/hardware/rdlines.py maelle-rdlinestest.bin [Maelle's] [--lines] [--images 
 ```
 
 `rdlines-realds.bin` is what a real DS saved; a DSi gave the same in both modes. A model of the render timing that matched
-all of it was added in 44edc7a and taken out again in a revert, since no game tested read RDLINES_COUNT or relied on bit 12,
-and it cost time on nearly every frame; the revert can be reverted to bring it back.
+all of it was added in 019422e and taken out again in d72a2c0, since no game tested read RDLINES_COUNT or relied on bit
+12, and it cost time on nearly every frame; reverting d72a2c0 brings it back.
 
 `--lines` says, for each run of lines in a capture, which quad shows and how far right it reaches, and `--images` writes the
 captures as PPM files. Maelle's comes from a RAM dump, `tests/jit/game.sh tests/hardware/build/maelle-rdlines.nds <system
