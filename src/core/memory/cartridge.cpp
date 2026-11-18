@@ -35,6 +35,7 @@
 
 std::atomic<int> Cartridge::loadPercent{-1};
 std::atomic<bool> Cartridge::cancelLoad{false};
+std::atomic<bool> Cartridge::ramFallback{false};
 Cartridge::KeptRom Cartridge::keptRoms[2];
 std::string Cartridge::launchSavePath;
 int Cartridge::launchSaveSize = -1;
@@ -152,7 +153,8 @@ void Cartridge::loadRomSection(size_t offset, size_t size) {
     if (size > romBufSize) {
         freeRom(rom);
         rom = allocRom(size);
-        romBufSize = size;
+        romBufSize = rom ? size : 0;
+        if (!rom) throw ERROR_MEMORY;
     }
 
     // Load the whole ROM directly, since caching it in chunks wouldn't help
@@ -753,6 +755,7 @@ bool CartridgeNds::loadRom() {
         // Load the ROM into RAM on another thread, or fall back to reading from file if there isn't room
         // With streaming, the game starts right away and reads load what they need first; otherwise, wait for it all
         if (!startRomLoad()) {
+            ramFallback.store(true);
             loadRomSection(0, 0x5000);
         }
         else if (Settings::romInRam != 2) {
@@ -1917,7 +1920,10 @@ bool CartridgeGba::loadGbRom() {
     if (saveSize == -1) resizeSave(0x10000, false);
     if (takeKeptRom()) return true;
     freeRom(rom);
-    if (!(rom = allocRom(romSize))) return false;
+    if (!(rom = allocRom(romSize))) {
+        romBufSize = 0;
+        throw ERROR_MEMORY;
+    }
     romBufSize = romSize;
     memcpy(rom, gbEmulator, gbEmulatorSize);
     readRomFile(romFile, &rom[gbEmulatorSize], 0, std::min(fileSize, gameSize));

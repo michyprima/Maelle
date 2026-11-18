@@ -72,6 +72,7 @@ enum CoreError {
     ERROR_DSI_FIRM,
     ERROR_DSI_NAND,
     ERROR_ROM,
+    ERROR_MEMORY, // Not enough free memory to load the ROM
     ERROR_CANCELLED // Loading was cancelled by the user
 };
 

@@ -50,6 +50,7 @@ public:
     // How much of a ROM being loaded into RAM is loaded, from 0 to 100, or -1 if none is being loaded
     static std::atomic<int> loadPercent;
     static std::atomic<bool> cancelLoad; // Set to stop waiting for a ROM to fully load, which cancels creating the core
+    static std::atomic<bool> ramFallback; // Set when a ROM couldn't be kept in RAM and is read from file instead
 
     // Set the save size a ROM gets when it's next loaded, which resizes its save file for good; -1 for none
     static void setLaunchSave(std::string path, int size) { launchSavePath = path; launchSaveSize = size; }

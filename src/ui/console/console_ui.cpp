@@ -2631,6 +2631,7 @@ bool ConsoleUI::createCore() {
         }
         core = nullptr;
         Cartridge::dropKeptRoms(ndsPath, gbaPath);
+        Cartridge::ramFallback.store(false);
 
         // Attempt to create the core
         if (Settings::romInRam == 1) {
@@ -2674,6 +2675,12 @@ bool ConsoleUI::createCore() {
         else {
             core = new Core(ndsPath, gbaPath);
         }
+
+        // Let the user know if the ROM is read from the SD card instead of RAM, which can stutter
+        if (Cartridge::ramFallback.load())
+            message("Keep ROM in RAM", "There isn't a free block of memory big enough to keep this ROM in RAM,\n"
+                "so it will be read from the SD card instead, which can make the game stutter.\n"
+                "Restarting Maelle before loading it should leave enough room.");
         return true;
     }
     catch (CoreError e) {
@@ -2707,6 +2714,10 @@ bool ConsoleUI::createCore() {
             break;
         case ERROR_ROM: // Unreadable ROM file
             text = "Make sure the ROM file is accessible and try again.";
+            message("Error Loading ROM", text);
+            break;
+        case ERROR_MEMORY: // Not enough memory for the ROM
+            text = "There isn't enough free memory to load this ROM.\nRestarting Maelle should free some up.";
             message("Error Loading ROM", text);
             break;
         case ERROR_CANCELLED: // Loading cancelled, which needs no message
