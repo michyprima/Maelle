@@ -296,3 +296,7 @@ it, and a white bar moving 4 pixels a frame. With ghosting on, the left square l
 a faint copy behind it; with it off, the left square flickers and the bar is sharp. Run it with the FPS limiter on, since
 the screen only shows every emulated frame then.
 
+`build/maelle-ghost.gba` is the same test for GBA mode, where the UI builds the GBA screen itself: the square switches
+color through a palette entry changed in each V-blank, so every frame differs from the last one without tearing. Try it
+with GBA Crop on and off, since the two draw through different paths.
+

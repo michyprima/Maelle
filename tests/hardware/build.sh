@@ -95,3 +95,9 @@ echo "Built $out/maelle-stereo.nds"
 "$dkp/tools/bin/ndstool" -c "$out/maelle-ghost.nds" -7 "$out/rdlines7.elf" -9 "$out/ghost9.elf" \
     -b "$dkp/calico/share/nds-icon.bmp" "Maelle ghosting test;Frame blending in Maelle;" > /dev/null
 echo "Built $out/maelle-ghost.nds"
+
+# The GBA ghosting test, a GBA ROM of its own built without libraries
+"$tools-gcc" -g -O2 -marm -mcpu=arm7tdmi -specs=gba.specs "$here/ghost_gba.c" -o "$out/ghost_gba.elf"
+"$tools-objcopy" -O binary "$out/ghost_gba.elf" "$out/maelle-ghost.gba"
+"$dkp/tools/bin/gbafix" "$out/maelle-ghost.gba" -tMAELLE_GHOST > /dev/null
+echo "Built $out/maelle-ghost.gba"

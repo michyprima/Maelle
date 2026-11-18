@@ -1,0 +1,81 @@
+// Shows whether a frontend's ghosting works in GBA mode, like ghost9.c on the DS: a square switches between red and blue
+// every frame, through a palette color changed in V-blank, next to a square of their mix, and a white bar moves 4 pixels
+// a frame. The screen is a mode 4 bitmap of palette indices, two to a halfword since VRAM takes no byte writes
+#define DISPCNT (*(volatile unsigned short*)0x04000000)
+#define VCOUNT (*(volatile unsigned short*)0x04000006)
+#define PALETTE ((volatile unsigned short*)0x05000000)
+#define VRAM ((volatile unsigned short*)0x06000000)
+#define COLOR(r, g, b) ((r) | ((g) << 5) | ((b) << 10))
+
+enum { BLACK, WHITE, GREEN, YELLOW, SQUARE, MIX };
+
+static const unsigned char font[][5] = {
+    {0,0,0,0,0},{0,0,0x5F,0,0},{0,7,0,7,0},{0x14,0x7F,0x14,0x7F,0x14},{0x24,0x2A,0x7F,0x2A,0x12},{0x23,0x13,8,0x64,0x62},
+    {0x36,0x49,0x55,0x22,0x50},{0,5,3,0,0},{0,0x1C,0x22,0x41,0},{0,0x41,0x22,0x1C,0},{0x14,8,0x3E,8,0x14},{8,8,0x3E,8,8},
+    {0,0x50,0x30,0,0},{8,8,8,8,8},{0,0x60,0x60,0,0},{0x20,0x10,8,4,2},{0x3E,0x51,0x49,0x45,0x3E},{0,0x42,0x7F,0x40,0},
+    {0x42,0x61,0x51,0x49,0x46},{0x21,0x41,0x45,0x4B,0x31},{0x18,0x14,0x12,0x7F,0x10},{0x27,0x45,0x45,0x45,0x39},
+    {0x3C,0x4A,0x49,0x49,0x30},{1,0x71,9,5,3},{0x36,0x49,0x49,0x49,0x36},{6,0x49,0x49,0x29,0x1E},{0,0x36,0x36,0,0},
+    {0,0x56,0x36,0,0},{8,0x14,0x22,0x41,0},{0x14,0x14,0x14,0x14,0x14},{0,0x41,0x22,0x14,8},{2,1,0x51,9,6},
+    {0x32,0x49,0x79,0x41,0x3E},{0x7E,0x11,0x11,0x11,0x7E},{0x7F,0x49,0x49,0x49,0x36},{0x3E,0x41,0x41,0x41,0x22},
+    {0x7F,0x41,0x41,0x22,0x1C},{0x7F,0x49,0x49,0x49,0x41},{0x7F,9,9,9,1},{0x3E,0x41,0x49,0x49,0x7A},{0x7F,8,8,8,0x7F},
+    {0,0x41,0x7F,0x41,0},{0x20,0x40,0x41,0x3F,1},{0x7F,8,0x14,0x22,0x41},{0x7F,0x40,0x40,0x40,0x40},{0x7F,2,0xC,2,0x7F},
+    {0x7F,4,8,0x10,0x7F},{0x3E,0x41,0x41,0x41,0x3E},{0x7F,9,9,9,6},{0x3E,0x41,0x51,0x21,0x5E},{0x7F,9,0x19,0x29,0x46},
+    {0x46,0x49,0x49,0x49,0x31},{1,1,0x7F,1,1},{0x3F,0x40,0x40,0x40,0x3F},{0x1F,0x20,0x40,0x20,0x1F},{0x3F,0x40,0x38,0x40,0x3F},
+    {0x63,0x14,8,0x14,0x63},{7,8,0x70,8,7},{0x61,0x51,0x49,0x45,0x43},
+};
+
+static void pixel(int x, int y, int index) {
+    volatile unsigned short *pair = &VRAM[(y * 240 + x) >> 1];
+    *pair = (x & 1) ? ((*pair & 0xFF) | (index << 8)) : ((*pair & 0xFF00) | index);
+}
+
+static void fill(int x0, int y0, int w, int h, int index) {
+    for (int y = y0; y < y0 + h; y++)
+        for (int x = x0; x < x0 + w; x++)
+            pixel(x, y, index);
+}
+
+static void line(int row, const char *s, int index) {
+    // Draw a line of text in 6x8 characters, 40 to a line
+    for (int column = 0; *s && column < 40; s++, column++) {
+        char c = (*s < 32 || *s > 90) ? '?' : *s;
+        for (int x = 0; x < 5; x++)
+            for (int y = 0; y < 8; y++)
+                if ((font[c - 32][x] >> y) & 1) pixel(column * 6 + x, row * 8 + y, index);
+    }
+}
+
+static void waitVBlank(void) {
+    while (VCOUNT >= 160);
+    while (VCOUNT < 160);
+}
+
+int main(void) {
+    // Show a black mode 4 bitmap, then draw the text and squares on it
+    DISPCNT = 0x0404;
+    PALETTE[BLACK] = COLOR(0, 0, 0);
+    PALETTE[WHITE] = COLOR(31, 31, 31);
+    PALETTE[GREEN] = COLOR(0, 31, 0);
+    PALETTE[YELLOW] = COLOR(31, 31, 0);
+    PALETTE[SQUARE] = COLOR(20, 0, 0);
+    PALETTE[MIX] = COLOR(10, 0, 10);
+    for (int i = 0; i < 240 * 160 / 2; i++) VRAM[i] = 0;
+    line(0, "MAELLE GBA GHOSTING TEST", WHITE);
+    line(2, "LEFT: RED AND BLUE, SWAPPED EVERY FRAME", WHITE);
+    line(3, "RIGHT: THEIR MIX, FOR REFERENCE", WHITE);
+    line(4, "GHOSTING ON: LEFT LOOKS LIKE RIGHT", GREEN);
+    line(5, "GHOSTING OFF: LEFT FLICKERS", YELLOW);
+    line(6, "BAR: GHOSTING SHOWS A FAINT COPY BEHIND", WHITE);
+    fill(16, 64, 80, 48, SQUARE);
+    fill(144, 64, 80, 48, MIX);
+
+    // In each V-blank, switch the square's color and move the bar, erasing it where it was
+    int bar = -1;
+    for (unsigned frame = 0;; frame++) {
+        waitVBlank();
+        PALETTE[SQUARE] = (frame & 1) ? COLOR(0, 0, 20) : COLOR(20, 0, 0);
+        if (bar >= 0) fill(bar, 120, 8, 32, BLACK);
+        bar = (frame * 4) % 232;
+        fill(bar, 120, 8, 32, WHITE);
+    }
+}
