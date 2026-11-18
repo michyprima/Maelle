@@ -1579,10 +1579,10 @@ uint32_t ConsoleUI::message(std::string title, std::string text, int type) {
 
 bool ConsoleUI::fileBrowser() {
     // Return whether the browser was closed for good, or false if going back to a paused game's menu
-    // At startup, the last ROM started is selected if it's in the start folder
+    // The last ROM started is selected if it's in the folder the browser opens in, only at startup or every time
     static bool startup = true;
     int index = 0;
-    bool selectLast = startup && selectLastRom;
+    bool selectLast = (startup && selectLastRom == 1) || selectLastRom == 2;
     startup = false;
     while (true) {
         // Open the current directory to list files from, keeping other file access out until the list is built, like
@@ -1758,6 +1758,7 @@ void ConsoleUI::settingsMenu() {
     // Define possible values for settings
     const std::vector<std::string> toggle = { "Off", "On" };
     const std::vector<std::string> theme = { "Dark", "Light" };
+    const std::vector<std::string> selectLast = { "Off", "Only on First Start", "On" };
     const std::vector<std::string> frames = { "None", "1 Frame", "2 Frames", "3 Frames", "4 Frames", "5 Frames" };
     const std::vector<std::string> threads = { "Disabled", "1 Thread", "2 Threads" };
     const std::vector<std::string> position = { "Center", "Top", "Bottom", "Left", "Right" };
@@ -1922,7 +1923,7 @@ void ConsoleUI::settingsMenu() {
         case TAB_MAELLE:
             add("Menu Theme", menuTheme, theme);
             add("Show FPS Counter", showFpsCounter, toggle);
-            add("Select Last ROM", selectLastRom, toggle);
+            add("Select Last ROM", selectLastRom, selectLast);
             aboutIndex = settings.size();
             settings.push_back(MenuItem("About Maelle"));
             values.push_back({ nullptr, 0 });
