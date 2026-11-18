@@ -88,3 +88,10 @@ echo "Built $out/maelle-speed.nds"
 "$dkp/tools/bin/ndstool" -c "$out/maelle-stereo.nds" -7 "$out/stereo7.elf" -9 "$out/stereo9.elf" \
     -b "$dkp/calico/share/nds-icon.bmp" "Maelle stereo test;Left and right by ear;" > /dev/null
 echo "Built $out/maelle-stereo.nds"
+
+# The ghosting test, a ROM of its own for a DS or a DSi in either mode, with the 3D timing test's ARM7
+"$tools-gcc" $common -march=armv5te -mtune=arm946e-s -DARM9 -specs="$dkp/calico/share/ds9.specs" \
+    "$here/screen.c" "$here/ghost9.c" -lfat -lnds9 -lcalico_ds9 -o "$out/ghost9.elf"
+"$dkp/tools/bin/ndstool" -c "$out/maelle-ghost.nds" -7 "$out/rdlines7.elf" -9 "$out/ghost9.elf" \
+    -b "$dkp/calico/share/nds-icon.bmp" "Maelle ghosting test;Frame blending in Maelle;" > /dev/null
+echo "Built $out/maelle-ghost.nds"

@@ -257,7 +257,7 @@ a write, and 8 in main RAM, with 6 more for a read and 4 for a write.
 tests/hardware/build.sh [results from Maelle]
 ```
 
-It builds all seven ROMs, and needs devkitPro's `nds-dev`. The results are Maelle's for the instruction test's CPUs, as 2 x
+It builds all eight ROMs, and needs devkitPro's `nds-dev`. The results are Maelle's for the instruction test's CPUs, as 2 x
 110 x 12 little-endian words, which go in a table of the same size either way, so the code doesn't move. Build once without
 them, run that in Maelle to get them, and build again. On the Mac, `tests/jit/game.sh` gets them:
 
@@ -287,3 +287,12 @@ screens stay white, on a real DS as in Maelle. Without the driver, nothing turns
 beyond what it starts with, so on real hardware this ROM may stay silent. On the Mac, `tests/jit/game.sh
 tests/hardware/build/maelle-stereo.nds <system files folder> 420 wav=stereo.wav` saves what the DS's mixer made, which
 has the low tone on the left.
+
+## The ghosting test
+
+`build/maelle-ghost.nds` checks Maelle's ghosting setting, which averages each frame with the last one. The main screen
+shows VRAM A and B on alternate frames: a square that's red in one and blue in the other, a square of their mix beside
+it, and a white bar moving 4 pixels a frame. With ghosting on, the left square looks like the right one and the bar has
+a faint copy behind it; with it off, the left square flickers and the bar is sharp. Run it with the FPS limiter on, since
+the screen only shows every emulated frame then.
+
