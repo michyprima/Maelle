@@ -106,7 +106,8 @@ public:
     // ones, and the UI draws those, averaged with the last ones for ghosting
     static void *composed[2], *composedLast[2];
     static bool screensComposed; // Whether the screens being drawn are those
-    static void composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop, bool packed);
+    static bool composedHigh; // Whether the last screens built are at twice the size, or else at the DS's
+    static void composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop, bool packed, bool high);
     static void composeGbaScreen(void *gba);
 
     // With ghosting at native size, frames alternate between two halves of the framebuffer, so the last one is kept as

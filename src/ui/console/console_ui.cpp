@@ -104,6 +104,7 @@ uint32_t *ConsoleUI::packedData;
 void *ConsoleUI::composed[2];
 void *ConsoleUI::composedLast[2];
 bool ConsoleUI::screensComposed;
+bool ConsoleUI::composedHigh;
 uint32_t *ConsoleUI::screenFrame = ConsoleUI::framebuffer;
 uint32_t *ConsoleUI::lastFrame;
 void *ConsoleUI::drawLastScreen;
@@ -419,12 +420,13 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
         }
 
         // Update the framebuffer and start rendering
-        // On Wii U, frames always come at native size, and the GPU builds the screens at twice the size when needed:
-        // DS screens with high-res 3D, drawing it over them, or with the upscaled filter, and the GBA screen with the
-        // upscaled filter, which looks like the core's upscaling since it's drawn filtered from there; it also does
-        // ghosting, averaging frames with the last ones
+        // On Wii U, frames always come at native size, and the GPU builds the DS screens from them, converting their
+        // colors, at twice the size with high-res 3D, drawing it over them, or with the upscaled filter, else at the
+        // DS's size; it also builds the GBA screen at twice the size with the upscaled filter, which looks like the
+        // core's upscaling since it's drawn filtered from there. Ghosting averages frames with the last ones
         bool hiRes3D = Settings::highRes3D && !gbaMode;
-        bool compose = !gbaMode && (Settings::highRes3D || Settings::screenFilter == 1);
+        bool compose = !gbaMode;
+        bool composeHigh = Settings::highRes3D || Settings::screenFilter == 1;
         bool composeGba = gbaMode && Settings::screenFilter == 1;
         bool shift = false;
         bool ghost = Settings::screenGhost;
@@ -582,8 +584,8 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
         startFrame(0, true);
         HB_SET(HB_UI_STAGE, 3);
         // Build the screens at twice the size once for each new frame
-        if (compose && (update || !composed[0]))
-            composeScreens(topTexture, botTexture, hiResTexture, hiResTop, texPacked);
+        if (compose && (update || !composed[0] || composedHigh != composeHigh))
+            composeScreens(topTexture, botTexture, hiResTexture, hiResTop, texPacked, composeHigh);
         if (composeGba && (update || !composed[0]))
             composeGbaScreen(gbaTexture);
 #if defined(HEARTBEAT) && defined(GPU_TIMELINE)
@@ -608,8 +610,9 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
             drawLastScreen = nullptr;
         }
         else { // DS mode
-            // Draw the DS screens, or the high-res ones built from them, with the last ones for ghosting
-            int width = screensComposed ? 512 : (256 << shift), height = screensComposed ? 384 : (192 << shift);
+            // Draw the DS screens, or the ones built from them, with the last ones for ghosting
+            int width = screensComposed ? (composedHigh ? 512 : 256) : (256 << shift);
+            int height = screensComposed ? (composedHigh ? 384 : 192) : (192 << shift);
             if (showTop) {
                 drawLastScreen = screensComposed ? (ghost ? composedLast[0] : nullptr) : lastTopTexture;
                 drawTexture(screensComposed ? composed[0] : topTexture, 0, 0, width, height, layout.topX, layout.topY,

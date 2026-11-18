@@ -560,46 +560,52 @@ static void drawQuad(GX2Texture *texture, bool filter, GX2Texture *last = nullpt
     GX2SetPixelShader(group.pixelShader);
 }
 
-// Targets for building the high-res screens, two for each screen to keep the last ones for ghosting, with their own
-// context state so the TV's isn't changed, and a quad covering them
+// Targets for building the screens, at twice the size and at the DS's, two for each screen to keep the last ones for
+// ghosting, with their own context state so the TV's isn't changed, and a quad covering them
 GX2ContextState *composeState;
-GX2ColorBuffer composeTargets[2][2];
-GX2Texture composeTextures[2][2];
+GX2ColorBuffer composeTargets[2][2], nativeTargets[2][2];
+GX2Texture composeTextures[2][2], nativeTextures[2][2];
 int composeCurrent = 0;
 alignas(GX2_VERTEX_BUFFER_ALIGNMENT) float composePositions[] = { -1, 1, 1, 1, 1, -1, -1, -1 };
 alignas(GX2_VERTEX_BUFFER_ALIGNMENT) float composeCoords[] = { 0, 0, 1, 0, 1, 1, 0, 1 };
 alignas(GX2_VERTEX_BUFFER_ALIGNMENT) float composeColors[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 
+static bool initTarget(GX2ColorBuffer &target, GX2Texture &texture, int width, int height) {
+    // Create a target, tiled for the GPU, which the UI draws from as a texture
+    memset(&target, 0, sizeof(target));
+    target.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
+    target.surface.width = width;
+    target.surface.height = height;
+    target.surface.depth = 1;
+    target.surface.mipLevels = 1;
+    target.surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+    target.surface.aa = GX2_AA_MODE1X;
+    target.surface.use = (GX2SurfaceUse)(GX2_SURFACE_USE_COLOR_BUFFER | GX2_SURFACE_USE_TEXTURE);
+    target.surface.tileMode = GX2_TILE_MODE_DEFAULT;
+    target.viewNumSlices = 1;
+    GX2CalcSurfaceSizeAndAlignment(&target.surface);
+    GX2InitColorBufferRegs(&target);
+    if (!(target.surface.image = MEMAllocFromDefaultHeapEx(target.surface.imageSize, target.surface.alignment)))
+        return false;
+    memset(&texture, 0, sizeof(texture));
+    texture.surface = target.surface;
+    texture.surface.use = GX2_SURFACE_USE_TEXTURE;
+    texture.viewNumSlices = 1;
+    texture.compMap = 0x00010203;
+    GX2InitTextureRegs(&texture);
+    return true;
+}
+
 static bool initCompose() {
-    // Create the targets, tiled for the GPU, which the UI draws from as textures
+    // Create the targets for both sizes
     composeState = (GX2ContextState*)MEMAllocFromDefaultHeapEx(sizeof(GX2ContextState), GX2_CONTEXT_STATE_ALIGNMENT);
     if (!composeState) return false;
     GX2SetupContextStateEx(composeState, TRUE);
     for (int i = 0; i < 2; i++) {
         for (int j = 0; j < 2; j++) {
-            GX2ColorBuffer &target = composeTargets[i][j];
-            memset(&target, 0, sizeof(target));
-            target.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
-            target.surface.width = 512;
-            target.surface.height = 384;
-            target.surface.depth = 1;
-            target.surface.mipLevels = 1;
-            target.surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
-            target.surface.aa = GX2_AA_MODE1X;
-            target.surface.use = (GX2SurfaceUse)(GX2_SURFACE_USE_COLOR_BUFFER | GX2_SURFACE_USE_TEXTURE);
-            target.surface.tileMode = GX2_TILE_MODE_DEFAULT;
-            target.viewNumSlices = 1;
-            GX2CalcSurfaceSizeAndAlignment(&target.surface);
-            GX2InitColorBufferRegs(&target);
-            if (!(target.surface.image = MEMAllocFromDefaultHeapEx(target.surface.imageSize, target.surface.alignment)))
+            if (!initTarget(composeTargets[i][j], composeTextures[i][j], 512, 384) ||
+                    !initTarget(nativeTargets[i][j], nativeTextures[i][j], 256, 192))
                 return false;
-            GX2Texture &texture = composeTextures[i][j];
-            memset(&texture, 0, sizeof(texture));
-            texture.surface = target.surface;
-            texture.surface.use = GX2_SURFACE_USE_TEXTURE;
-            texture.viewNumSlices = 1;
-            texture.compMap = 0x00010203;
-            GX2InitTextureRegs(&texture);
         }
     }
     DCFlushRange(composePositions, sizeof(composePositions));
@@ -608,14 +614,17 @@ static bool initCompose() {
     return true;
 }
 
-void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop, bool packed) {
-    // Build both high-res screens into the next targets, putting the high-res 3D over the screen it's on, then set the
-    // TV's state up again for drawing; packed screens are the core's frames as they are, which the shader converts
+void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop, bool packed, bool high) {
+    // Build both screens into the next targets, at twice the size if high, putting the high-res 3D over the screen it's
+    // on, then set the TV's state up again for drawing; packed screens are the core's frames as they are, which the
+    // shader converts
     WHBGfxShaderGroup &shaders = packed ? packedGroup : screenGroup;
+    int width = high ? 512 : 256, height = high ? 384 : 192;
     composeCurrent ^= 1;
+    composedHigh = high;
     GX2SetContextState(composeState);
-    GX2SetViewport(0, 0, 512, 384, 0, 1);
-    GX2SetScissor(0, 0, 512, 384);
+    GX2SetViewport(0, 0, width, height, 0, 1);
+    GX2SetScissor(0, 0, width, height);
     GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_NEVER);
     GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
     GX2SetColorControl(GX2_LOGIC_OP_COPY, 0x00, FALSE, TRUE);
@@ -628,7 +637,7 @@ void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResT
     GX2SetAttribBuffer(1, sizeof(composeCoords), 2 * sizeof(float), composeCoords);
     GX2SetAttribBuffer(2, sizeof(composeColors), 4 * sizeof(float), composeColors);
     for (int i = 0; i < 2; i++) {
-        GX2ColorBuffer &target = composeTargets[i][composeCurrent];
+        GX2ColorBuffer &target = (high ? composeTargets : nativeTargets)[i][composeCurrent];
         GX2SetColorBuffer(&target, GX2_RENDER_TARGET_0);
         GX2SetPixelTexture((GX2Texture*)(i ? bottom : top), shaders.pixelShader->samplerVars[0].location);
         GX2SetPixelSampler(&samplers[0], shaders.pixelShader->samplerVars[0].location);
@@ -639,7 +648,7 @@ void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResT
         GX2Invalidate((GX2InvalidateMode)(GX2_INVALIDATE_MODE_COLOR_BUFFER | GX2_INVALIDATE_MODE_TEXTURE),
             target.surface.image, target.surface.imageSize);
         composedLast[i] = composed[i];
-        composed[i] = &composeTextures[i][composeCurrent];
+        composed[i] = &(high ? composeTextures : nativeTextures)[i][composeCurrent];
     }
     WHBGfxBeginRenderTV();
 }
