@@ -80,6 +80,7 @@
 extern const uint8_t shader_wiiu_gsh[];
 extern const uint8_t screen_wiiu_gsh[];
 extern const uint8_t screen_packed_wiiu_gsh[];
+extern const uint8_t screen_gba_wiiu_gsh[];
 extern const uint8_t screen_blend_wiiu_gsh[];
 extern const uint8_t migoomba_maelle_gba[], migoomba_maelle_gba_end[];
 
@@ -104,6 +105,7 @@ bool scanned;
 WHBGfxShaderGroup group;
 WHBGfxShaderGroup screenGroup; // Builds high-res screens, from native ones with high-res 3D over them
 WHBGfxShaderGroup packedGroup; // The same from the core's packed native frames, converting their colors too
+WHBGfxShaderGroup gbaGroup; // Builds the GBA screen from the core's 15-bit frames, converting their colors
 WHBGfxShaderGroup blendGroup; // Draws native screens averaged with the last frame's, for ghosting
 GX2RBuffer posBuffer, texBuffer, colBuffer;
 GX2Sampler samplers[2];
@@ -561,13 +563,15 @@ static void drawQuad(GX2Texture *texture, bool filter, GX2Texture *last = nullpt
 }
 
 // Targets for building the screens, at twice the size and at the DS's, two for each screen to keep the last ones for
-// ghosting, with their own context state so the TV's isn't changed, and a quad covering them
+// ghosting, with their own context state so the TV's isn't changed, and a quad covering them; the GBA screen has its
+// own at its sizes, so filtering at its edges doesn't reach past them
 GX2ContextState *composeState;
-GX2ColorBuffer composeTargets[2][2], nativeTargets[2][2];
-GX2Texture composeTextures[2][2], nativeTextures[2][2];
+GX2ColorBuffer composeTargets[2][2], nativeTargets[2][2], gbaTargets[2][2];
+GX2Texture composeTextures[2][2], nativeTextures[2][2], gbaTextures[2][2];
 int composeCurrent = 0;
 alignas(GX2_VERTEX_BUFFER_ALIGNMENT) float composePositions[] = { -1, 1, 1, 1, 1, -1, -1, -1 };
 alignas(GX2_VERTEX_BUFFER_ALIGNMENT) float composeCoords[] = { 0, 0, 1, 0, 1, 1, 0, 1 };
+alignas(GX2_VERTEX_BUFFER_ALIGNMENT) float gbaCoords[] = { 0, 0, 0.9375f, 0, 0.9375f, 1, 0, 1 }; // 240 of 256 pixels
 alignas(GX2_VERTEX_BUFFER_ALIGNMENT) float composeColors[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 
 static bool initTarget(GX2ColorBuffer &target, GX2Texture &texture, int width, int height) {
@@ -604,12 +608,14 @@ static bool initCompose() {
     for (int i = 0; i < 2; i++) {
         for (int j = 0; j < 2; j++) {
             if (!initTarget(composeTargets[i][j], composeTextures[i][j], 512, 384) ||
-                    !initTarget(nativeTargets[i][j], nativeTextures[i][j], 256, 192))
+                    !initTarget(nativeTargets[i][j], nativeTextures[i][j], 256, 192) ||
+                    !initTarget(gbaTargets[i][j], gbaTextures[i][j], i ? 480 : 240, i ? 320 : 160))
                 return false;
         }
     }
     DCFlushRange(composePositions, sizeof(composePositions));
     DCFlushRange(composeCoords, sizeof(composeCoords));
+    DCFlushRange(gbaCoords, sizeof(gbaCoords));
     DCFlushRange(composeColors, sizeof(composeColors));
     return true;
 }
@@ -653,33 +659,36 @@ void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResT
     WHBGfxBeginRenderTV();
 }
 
-void ConsoleUI::composeGbaScreen(void *gba) {
-    // Build the GBA screen at twice the size into the next target, filling 480x320 of it, then set the TV's state up
-    // again for drawing
+void ConsoleUI::composeGbaScreen(void *gba, bool packed, bool high) {
+    // Build the GBA screen into the next target, at twice the size if high, then set the TV's state up again for
+    // drawing; a packed screen is the core's frame as it is, 256 pixels to a line, which the shader converts
+    WHBGfxShaderGroup &shaders = packed ? gbaGroup : group;
+    int width = high ? 480 : 240, height = high ? 320 : 160;
     composeCurrent ^= 1;
+    composedHigh = high;
     GX2SetContextState(composeState);
-    GX2SetViewport(0, 0, 480, 320, 0, 1);
-    GX2SetScissor(0, 0, 480, 320);
+    GX2SetViewport(0, 0, width, height, 0, 1);
+    GX2SetScissor(0, 0, width, height);
     GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_NEVER);
     GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
     GX2SetColorControl(GX2_LOGIC_OP_COPY, 0x00, FALSE, TRUE);
     GX2SetTargetChannelMasks(GX2_CHANNEL_MASK_RGBA, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0,
         (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0);
-    GX2SetFetchShader(&group.fetchShader);
-    GX2SetVertexShader(group.vertexShader);
-    GX2SetPixelShader(group.pixelShader);
+    GX2SetFetchShader(&shaders.fetchShader);
+    GX2SetVertexShader(shaders.vertexShader);
+    GX2SetPixelShader(shaders.pixelShader);
     GX2SetAttribBuffer(0, sizeof(composePositions), 2 * sizeof(float), composePositions);
-    GX2SetAttribBuffer(1, sizeof(composeCoords), 2 * sizeof(float), composeCoords);
+    GX2SetAttribBuffer(1, sizeof(gbaCoords), 2 * sizeof(float), packed ? gbaCoords : composeCoords);
     GX2SetAttribBuffer(2, sizeof(composeColors), 4 * sizeof(float), composeColors);
-    GX2ColorBuffer &target = composeTargets[0][composeCurrent];
+    GX2ColorBuffer &target = gbaTargets[high][composeCurrent];
     GX2SetColorBuffer(&target, GX2_RENDER_TARGET_0);
-    GX2SetPixelTexture((GX2Texture*)gba, group.pixelShader->samplerVars[0].location);
-    GX2SetPixelSampler(&samplers[0], group.pixelShader->samplerVars[0].location);
+    GX2SetPixelTexture((GX2Texture*)gba, shaders.pixelShader->samplerVars[0].location);
+    GX2SetPixelSampler(&samplers[0], shaders.pixelShader->samplerVars[0].location);
     GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
     GX2Invalidate((GX2InvalidateMode)(GX2_INVALIDATE_MODE_COLOR_BUFFER | GX2_INVALIDATE_MODE_TEXTURE),
         target.surface.image, target.surface.imageSize);
     composedLast[0] = composed[0];
-    composed[0] = &composeTextures[0][composeCurrent];
+    composed[0] = &gbaTextures[high][composeCurrent];
     WHBGfxBeginRenderTV();
 }
 
@@ -732,8 +741,9 @@ static uint32_t testHash(uint32_t i) {
 
 static void shaderTest() {
     // Draw every 18-bit color through the packed screen shader, one per pixel, as a 2D pixel, as a 3D pixel with no
-    // high-res 3D over it, and as high-res 3D over a 3D pixel, with the bits it should ignore set at random, and check
-    // the GPU's colors against the CPU's conversion; the results go to shadertest.txt
+    // high-res 3D over it, and as high-res 3D over a 3D pixel, then every 15-bit color through the GBA screen shader,
+    // eight times over, with the bits they should ignore set at random, and check the GPU's colors against the CPU's
+    // conversion; the results go to shadertest.txt
     const int size = 512;
     std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/maelle/shadertest.txt";
     FILE *file = fopen(path.c_str(), "w");
@@ -761,9 +771,9 @@ static void shaderTest() {
         return;
     }
 
-    const char *names[] = { "2D pixels", "3D pixels without high-res 3D", "High-res 3D over 3D pixels" };
+    const char *names[] = { "2D pixels", "3D pixels without high-res 3D", "High-res 3D over 3D pixels", "GBA pixels" };
     uint32_t failed = 0;
-    for (int pass = 0; pass < 3; pass++) {
+    for (int pass = 0; pass < 4; pass++) {
         // The color under test is always the pixel's index; high-res alphas cycle through 1-63
         for (uint32_t i = 0; i < size * size; i++) {
             uint32_t junk = testHash(i), other = testHash(i + 0x12345);
@@ -775,9 +785,13 @@ static void shaderTest() {
                 native[i] = i | BIT(26) | (junk & 0xFBFC0000);
                 hiRes[i] = other & ~0xFC0000;
             }
-            else {
+            else if (pass == 2) {
                 native[i] = (other & 0x3FFFF) | BIT(26) | (junk & 0xF8FC0000);
                 hiRes[i] = i | ((1 + i % 63) << 18) | (junk & 0xFF000000);
+            }
+            else {
+                native[i] = (i & 0x7FFF) | (junk & 0xFFFF8000);
+                hiRes[i] = other;
             }
         }
         memset(target.surface.image, 0, target.surface.imageSize);
@@ -790,7 +804,9 @@ static void shaderTest() {
             continue;
         }
 
-        // Draw it like composeScreens does, and wait for the GPU
+        // Draw it like composeScreens does, or composeGbaScreen for GBA pixels though across the whole target, and
+        // wait for the GPU
+        WHBGfxShaderGroup &shaders = (pass == 3) ? gbaGroup : packedGroup;
         gx2Mutex.lock();
         GX2SetContextState(composeState);
         GX2SetViewport(0, 0, size, size, 0, 1);
@@ -800,17 +816,19 @@ static void shaderTest() {
         GX2SetColorControl(GX2_LOGIC_OP_COPY, 0x00, FALSE, TRUE);
         GX2SetTargetChannelMasks(GX2_CHANNEL_MASK_RGBA, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0,
             (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0);
-        GX2SetFetchShader(&packedGroup.fetchShader);
-        GX2SetVertexShader(packedGroup.vertexShader);
-        GX2SetPixelShader(packedGroup.pixelShader);
+        GX2SetFetchShader(&shaders.fetchShader);
+        GX2SetVertexShader(shaders.vertexShader);
+        GX2SetPixelShader(shaders.pixelShader);
         GX2SetAttribBuffer(0, sizeof(composePositions), 2 * sizeof(float), composePositions);
         GX2SetAttribBuffer(1, sizeof(composeCoords), 2 * sizeof(float), composeCoords);
         GX2SetAttribBuffer(2, sizeof(composeColors), 4 * sizeof(float), composeColors);
         GX2SetColorBuffer(&target, GX2_RENDER_TARGET_0);
-        GX2SetPixelTexture((GX2Texture*)nativeTexture, packedGroup.pixelShader->samplerVars[0].location);
-        GX2SetPixelSampler(&samplers[0], packedGroup.pixelShader->samplerVars[0].location);
-        GX2SetPixelTexture((GX2Texture*)hiResTexture, packedGroup.pixelShader->samplerVars[1].location);
-        GX2SetPixelSampler(&samplers[0], packedGroup.pixelShader->samplerVars[1].location);
+        GX2SetPixelTexture((GX2Texture*)nativeTexture, shaders.pixelShader->samplerVars[0].location);
+        GX2SetPixelSampler(&samplers[0], shaders.pixelShader->samplerVars[0].location);
+        if (pass < 3) {
+            GX2SetPixelTexture((GX2Texture*)hiResTexture, shaders.pixelShader->samplerVars[1].location);
+            GX2SetPixelSampler(&samplers[0], shaders.pixelShader->samplerVars[1].location);
+        }
         GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
         GX2DrawDone();
         gx2Mutex.unlock();
@@ -818,14 +836,15 @@ static void shaderTest() {
         ConsoleUI::destroyHiResTexture(nativeTexture);
         ConsoleUI::destroyHiResTexture(hiResTexture);
 
-        // Every pixel should be the CPU's 8-bit version of its color, opaque
+        // Every pixel should be the CPU's 8-bit version of its color, opaque, with GBA colors doubled to 6 bits first
         uint32_t wrong = 0;
         for (uint32_t y = 0; y < size; y++) {
             for (uint32_t x = 0; x < size; x++) {
                 uint32_t i = y * size + x;
                 uint32_t got = ((uint32_t*)target.surface.image)[y * target.surface.pitch + x];
-                uint32_t want = (((i >> 0) & 0x3F) * 255 / 63) << 24 | (((i >> 6) & 0x3F) * 255 / 63) << 16 |
-                    (((i >> 12) & 0x3F) * 255 / 63) << 8 | 0xFF;
+                uint32_t c = (pass == 3) ? (((i & 0x1F) << 1) | ((i & 0x3E0) << 2) | ((i & 0x7C00) << 3)) : i;
+                uint32_t want = (((c >> 0) & 0x3F) * 255 / 63) << 24 | (((c >> 6) & 0x3F) * 255 / 63) << 16 |
+                    (((c >> 12) & 0x3F) * 255 / 63) << 8 | 0xFF;
                 if (got == want) continue;
                 if (wrong++ < 10)
                     fprintf(file, "%s: x %u y %u, native %08X high-res %08X: got %08X, expected %08X\n", names[pass],
@@ -1614,6 +1633,11 @@ int runUi(int, void *) {
     WHBGfxInitShaderAttribute(&packedGroup, "tex_coords", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
     WHBGfxInitShaderAttribute(&packedGroup, "vtx_color", 2, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
     WHBGfxInitFetchShader(&packedGroup);
+    WHBGfxLoadGFDShaderGroup(&gbaGroup, 0, screen_gba_wiiu_gsh);
+    WHBGfxInitShaderAttribute(&gbaGroup, "position", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
+    WHBGfxInitShaderAttribute(&gbaGroup, "tex_coords", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
+    WHBGfxInitShaderAttribute(&gbaGroup, "vtx_color", 2, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
+    WHBGfxInitFetchShader(&gbaGroup);
     WHBGfxLoadGFDShaderGroup(&blendGroup, 0, screen_blend_wiiu_gsh);
     WHBGfxInitShaderAttribute(&blendGroup, "position", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
     WHBGfxInitShaderAttribute(&blendGroup, "tex_coords", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);

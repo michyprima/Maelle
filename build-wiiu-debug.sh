@@ -27,8 +27,8 @@
 #   romload      How long loading the ROM into RAM took, in romload.txt
 #   frameart     How long drawing the screen frames took, in frameart.txt
 #   nandlog      Every NAND and SD card command, interrupt and written block in nandlog.txt, for saves that hang
-#   shadertest   Every packed color drawn through the packed screen shader at startup and checked against the CPU's
-#                conversion, with the results in shadertest.txt
+#   shadertest   Every packed color drawn through the packed screen shader, and every GBA color through the GBA one, at
+#                startup and checked against the CPU's conversion, with the results in shadertest.txt
 #   gpucrc       A hash of every frame the GPU 3D renderer finishes in gpucrc.bin, with the emulated frame it was
 #                handed over in, to check that the GPU's output is the same between builds
 set -e

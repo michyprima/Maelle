@@ -1,0 +1,48 @@
+; $MODE = "UniformRegister"
+; $SAMPLER_VARS[0].name = "screen"
+; $SAMPLER_VARS[0].type = "sampler2D"
+; $SAMPLER_VARS[0].location = 0
+; $NUM_SPI_PS_INPUT_CNTL = 2
+; $SPI_PS_INPUT_CNTL[0].SEMANTIC = 0
+; $SPI_PS_INPUT_CNTL[0].DEFAULT_VAL = 1
+; $SPI_PS_INPUT_CNTL[1].SEMANTIC = 1
+; $SPI_PS_INPUT_CNTL[1].DEFAULT_VAL = 1
+
+; GBA screen: R0 has the texture coordinates and R1 the vertex color. The screen texture has the GBA 2D engine's frame
+; as it is, with the channels holding the bytes of each word from the top, and the low 15 bits of each word the 5-bit
+; red, green and blue. Byte values are rounded to whole numbers and bits are split with floor, and 5-bit colors become
+; 8-bit ones as the CPU makes them, doubled to 6 bits and scaled, rounded down, with a margin since 255/63 isn't exact
+; in floats. Each instruction group has a single instruction, since groups can't read the same channel of different
+; registers at once, which the assembler doesn't check.
+00 TEX: ADDR(80) CNT(1) VALID_PIX
+    0  SAMPLE R2, R0.xy00, t0, s0
+01 ALU: ADDR(32) CNT(42)
+    1  z: MULADD R3.z, R2.z, (0x437F0000, 255.0f).x, 0.5f
+    2  w: MULADD R3.w, R2.w, (0x437F0000, 255.0f).x, 0.5f
+    3  z: FLOOR R3.z, R3.z
+    4  w: FLOOR R3.w, R3.w
+    5  x: MUL R4.x, R3.w, (0x3D000000, 0.03125f).x
+    6  x: FLOOR R4.x, R4.x
+    7  y: MULADD R4.y, R4.x, (0xC2000000, -32.0f).x, R3.w
+    8  z: MUL R4.z, R3.z, (0x3E800000, 0.25f).x
+    9  z: FLOOR R4.z, R4.z
+   10  w: MULADD R4.w, R4.z, (0xC0800000, -4.0f).x, R3.z
+   11  x: MUL R5.x, R4.z, (0x3D000000, 0.03125f).x
+   12  x: FLOOR R5.x, R5.x
+   13  z: MULADD R5.z, R5.x, (0xC2000000, -32.0f).x, R4.z
+   14  y: MULADD R5.y, R4.w, (0x41000000, 8.0f).x, R4.x
+   15  x: MULADD R6.x, R4.y, (0x41018618, 8.095238f).x, (0x3A83126F, 0.001f).y
+   16  y: MULADD R6.y, R5.y, (0x41018618, 8.095238f).x, (0x3A83126F, 0.001f).y
+   17  z: MULADD R6.z, R5.z, (0x41018618, 8.095238f).x, (0x3A83126F, 0.001f).y
+   18  x: FLOOR R6.x, R6.x
+   19  y: FLOOR R6.y, R6.y
+   20  z: FLOOR R6.z, R6.z
+   21  x: MUL R6.x, R6.x, (0x3B808081, 0.003921569f).x
+   22  y: MUL R6.y, R6.y, (0x3B808081, 0.003921569f).x
+   23  z: MUL R6.z, R6.z, (0x3B808081, 0.003921569f).x
+   24  x: MUL R6.x, R6.x, R1.x
+   25  y: MUL R6.y, R6.y, R1.y
+   26  z: MUL R6.z, R6.z, R1.z
+   27  w: MOV R6.w, R1.w
+02 EXP_DONE: PIX0, R6
+END_OF_PROGRAM

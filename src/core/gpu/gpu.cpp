@@ -233,8 +233,13 @@ bool Gpu::getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D, bool *top3D,
         ((Settings::highRes3D || Settings::screenFilter == 1) && !hiRes3D);
 
     if (gbaCrop) {
-        // Output the frame in RGB8 format, cropped for GBA
-        if (upscale) {
+        // Output the frame in RGB8 format, cropped for GBA, or hand over the 15-bit one for a caller that converts it
+        // on the GPU, which frees it with freeHiRes3D
+        if (packed) {
+            *packed = buffers.framebuffer;
+            buffers.framebuffer = nullptr;
+        }
+        else if (upscale) {
             // GBA doesn't have 3D, but draw the screen upscaled for consistency
             for (int y = 0; y < 160; y++) {
                 uint32_t *line = &out[y * 240 * 4];
@@ -258,7 +263,24 @@ bool Gpu::getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D, bool *top3D,
         // The DS draws the GBA screen by capturing it to alternating VRAM blocks and then displaying that
         // While not used officially, it's possible to copy images into VRAM before entering GBA mode to use as a border
         // Output the GBA frame, centered, with the current VRAM border around it
-        if (upscale) {
+        if (packed) {
+            // Hand over both screens in the 2D engine's packed format for a caller that converts them on the GPU, with
+            // the 5-bit colors doubled to 6 bits, which the conversion to RGB8 does too
+            uint32_t *frame = newFramebuffer(256 * 192 * 2);
+            for (int y = 0; y < 192; y++) {
+                for (int x = 0; x < 256; x++) {
+                    uint32_t color = (x >= 8 && x < 248 && y >= 16 && y < 176) ? buffers.framebuffer[(y - 16) * 256 +
+                        x - 8] : core->memory.read<uint16_t>(0, base + (y * 256 + x) * 2);
+                    frame[offset + y * 256 + x] = ((color & 0x1F) << 1) | ((color & 0x3E0) << 2) |
+                        ((color & 0x7C00) << 3);
+                }
+            }
+
+            // Clear the secondary display
+            memset(&frame[256 * 192 - offset], 0, 256 * 192 * sizeof(uint32_t));
+            *packed = frame;
+        }
+        else if (upscale) {
             // GBA doesn't have 3D, but draw the screen upscaled for consistency
             for (int y = 0; y < 192; y++) {
                 uint32_t *line = &out[offset * 4 + y * 256 * 4];

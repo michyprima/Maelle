@@ -101,6 +101,7 @@ public:
 
     // When the GPU builds the screens, it also converts the core's packed frames to colors, so the CPU doesn't have to
     static uint32_t *packedData; // The packed frame taken from the core, which the screen textures use, or null
+    static uint32_t *gbaPackedData; // The same for the cropped GBA screen, whose frame has 15-bit colors
 
     // The GPU builds the screens at twice the size once for each new frame into textures of their own, keeping the last
     // ones, and the UI draws those, averaged with the last ones for ghosting
@@ -108,7 +109,7 @@ public:
     static bool screensComposed; // Whether the screens being drawn are those
     static bool composedHigh; // Whether the last screens built are at twice the size, or else at the DS's
     static void composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop, bool packed, bool high);
-    static void composeGbaScreen(void *gba);
+    static void composeGbaScreen(void *gba, bool packed, bool high);
 
     // With ghosting at native size, frames alternate between two halves of the framebuffer, so the last one is kept as
     // it was, and the GPU averages the two
