@@ -79,6 +79,7 @@
 #define NO_INVALIDATE GX2RResourceFlags(GX2R_RESOURCE_DISABLE_CPU_INVALIDATE | GX2R_RESOURCE_DISABLE_GPU_INVALIDATE)
 extern const uint8_t shader_wiiu_gsh[];
 extern const uint8_t screen_wiiu_gsh[];
+extern const uint8_t screen_packed_wiiu_gsh[];
 extern const uint8_t screen_blend_wiiu_gsh[];
 extern const uint8_t migoomba_maelle_gba[], migoomba_maelle_gba_end[];
 
@@ -102,6 +103,7 @@ bool scanned;
 
 WHBGfxShaderGroup group;
 WHBGfxShaderGroup screenGroup; // Builds high-res screens, from native ones with high-res 3D over them
+WHBGfxShaderGroup packedGroup; // The same from the core's packed native frames, converting their colors too
 WHBGfxShaderGroup blendGroup; // Draws native screens averaged with the last frame's, for ghosting
 GX2RBuffer posBuffer, texBuffer, colBuffer;
 GX2Sampler samplers[2];
@@ -606,9 +608,10 @@ static bool initCompose() {
     return true;
 }
 
-void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop) {
+void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop, bool packed) {
     // Build both high-res screens into the next targets, putting the high-res 3D over the screen it's on, then set the
-    // TV's state up again for drawing
+    // TV's state up again for drawing; packed screens are the core's frames as they are, which the shader converts
+    WHBGfxShaderGroup &shaders = packed ? packedGroup : screenGroup;
     composeCurrent ^= 1;
     GX2SetContextState(composeState);
     GX2SetViewport(0, 0, 512, 384, 0, 1);
@@ -618,20 +621,20 @@ void ConsoleUI::composeScreens(void *top, void *bottom, void *hiRes, bool hiResT
     GX2SetColorControl(GX2_LOGIC_OP_COPY, 0x00, FALSE, TRUE);
     GX2SetTargetChannelMasks(GX2_CHANNEL_MASK_RGBA, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0,
         (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0);
-    GX2SetFetchShader(&screenGroup.fetchShader);
-    GX2SetVertexShader(screenGroup.vertexShader);
-    GX2SetPixelShader(screenGroup.pixelShader);
+    GX2SetFetchShader(&shaders.fetchShader);
+    GX2SetVertexShader(shaders.vertexShader);
+    GX2SetPixelShader(shaders.pixelShader);
     GX2SetAttribBuffer(0, sizeof(composePositions), 2 * sizeof(float), composePositions);
     GX2SetAttribBuffer(1, sizeof(composeCoords), 2 * sizeof(float), composeCoords);
     GX2SetAttribBuffer(2, sizeof(composeColors), 4 * sizeof(float), composeColors);
     for (int i = 0; i < 2; i++) {
         GX2ColorBuffer &target = composeTargets[i][composeCurrent];
         GX2SetColorBuffer(&target, GX2_RENDER_TARGET_0);
-        GX2SetPixelTexture((GX2Texture*)(i ? bottom : top), screenGroup.pixelShader->samplerVars[0].location);
-        GX2SetPixelSampler(&samplers[0], screenGroup.pixelShader->samplerVars[0].location);
+        GX2SetPixelTexture((GX2Texture*)(i ? bottom : top), shaders.pixelShader->samplerVars[0].location);
+        GX2SetPixelSampler(&samplers[0], shaders.pixelShader->samplerVars[0].location);
         GX2Texture *screenHiRes = (GX2Texture*)((hiResTop == !i && hiRes) ? hiRes : blankHiRes);
-        GX2SetPixelTexture(screenHiRes, screenGroup.pixelShader->samplerVars[1].location);
-        GX2SetPixelSampler(&samplers[0], screenGroup.pixelShader->samplerVars[1].location);
+        GX2SetPixelTexture(screenHiRes, shaders.pixelShader->samplerVars[1].location);
+        GX2SetPixelSampler(&samplers[0], shaders.pixelShader->samplerVars[1].location);
         GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
         GX2Invalidate((GX2InvalidateMode)(GX2_INVALIDATE_MODE_COLOR_BUFFER | GX2_INVALIDATE_MODE_TEXTURE),
             target.surface.image, target.surface.imageSize);
@@ -675,10 +678,18 @@ void *ConsoleUI::createHiResTexture(uint32_t *data) {
     // Wrap a high-res 3D frame from the core in a texture, using it in place; it has the 2D engine's packed 3D pixels,
     // 512 pixels to a line, which the screen shader unpacks
     if (!data) return blankHiRes;
+    void *texture = createPackedTexture(data, 512, 384);
+    return texture ? texture : blankHiRes;
+}
+
+void *ConsoleUI::createPackedTexture(uint32_t *data, int width, int height) {
+    // Wrap a frame of the 2D engine's packed pixels from the core in a texture, using it in place, with the bytes of
+    // each word in its channels from the top, or return null if its rows don't line up with a texture's; it's
+    // destroyed like a high-res 3D texture
     GX2Texture *texture = new GX2Texture;
     memset(texture, 0, sizeof(GX2Texture));
-    texture->surface.width = 512;
-    texture->surface.height = 384;
+    texture->surface.width = width;
+    texture->surface.height = height;
     texture->surface.depth = 1;
     texture->surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
     texture->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
@@ -687,18 +698,141 @@ void *ConsoleUI::createHiResTexture(uint32_t *data) {
     texture->compMap = 0x00010203;
     GX2CalcSurfaceSizeAndAlignment(&texture->surface);
     GX2InitTextureRegs(texture);
-    if (texture->surface.pitch != 512 || ((uintptr_t)data & (texture->surface.alignment - 1))) {
+    if (texture->surface.pitch != uint32_t(width) || ((uintptr_t)data & (texture->surface.alignment - 1))) {
         delete texture;
-        return blankHiRes;
+        return nullptr;
     }
     texture->surface.image = data;
 
-    // The GPU wrote the frame, but the CPU might have, so flush it and drop any of it the texture cache has
+    // The GPU or the CPU might have written the frame, so flush it and drop any of it the texture cache has
     if (!uiHoldsGx2) gx2Mutex.lock();
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, texture->surface.image, texture->surface.imageSize);
     if (!uiHoldsGx2) gx2Mutex.unlock();
     return texture;
 }
+
+#ifdef SHADER_TEST
+static uint32_t testHash(uint32_t i) {
+    // Mix a pixel's index into bits that look random, for the parts of words the shader should ignore
+    i ^= i >> 16;
+    i *= 0x7FEB352D;
+    i ^= i >> 15;
+    i *= 0x846CA68B;
+    return i ^ (i >> 16);
+}
+
+static void shaderTest() {
+    // Draw every 18-bit color through the packed screen shader, one per pixel, as a 2D pixel, as a 3D pixel with no
+    // high-res 3D over it, and as high-res 3D over a 3D pixel, with the bits it should ignore set at random, and check
+    // the GPU's colors against the CPU's conversion; the results go to shadertest.txt
+    const int size = 512;
+    std::string path = std::string(WHBGetSdCardMountPath()) + "/wiiu/apps/maelle/shadertest.txt";
+    FILE *file = fopen(path.c_str(), "w");
+    if (!file) return;
+    uint32_t *native = (uint32_t*)MEMAllocFromDefaultHeapEx(size * size * 4, 0x1000);
+    uint32_t *hiRes = (uint32_t*)MEMAllocFromDefaultHeapEx(size * size * 4, 0x1000);
+    GX2ColorBuffer target;
+    memset(&target, 0, sizeof(target));
+    target.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
+    target.surface.width = size;
+    target.surface.height = size;
+    target.surface.depth = 1;
+    target.surface.mipLevels = 1;
+    target.surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+    target.surface.aa = GX2_AA_MODE1X;
+    target.surface.use = GX2_SURFACE_USE_COLOR_BUFFER;
+    target.surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
+    target.viewNumSlices = 1;
+    GX2CalcSurfaceSizeAndAlignment(&target.surface);
+    GX2InitColorBufferRegs(&target);
+    target.surface.image = MEMAllocFromDefaultHeapEx(target.surface.imageSize, target.surface.alignment);
+    if (!native || !hiRes || !target.surface.image) {
+        fprintf(file, "Not enough memory\n");
+        fclose(file);
+        return;
+    }
+
+    const char *names[] = { "2D pixels", "3D pixels without high-res 3D", "High-res 3D over 3D pixels" };
+    uint32_t failed = 0;
+    for (int pass = 0; pass < 3; pass++) {
+        // The color under test is always the pixel's index; high-res alphas cycle through 1-63
+        for (uint32_t i = 0; i < size * size; i++) {
+            uint32_t junk = testHash(i), other = testHash(i + 0x12345);
+            if (pass == 0) {
+                native[i] = i | (junk & 0xF8FC0000) | (junk & 0x03000000);
+                hiRes[i] = (other & ~0xFC0000) | ((1 + i % 63) << 18);
+            }
+            else if (pass == 1) {
+                native[i] = i | BIT(26) | (junk & 0xFBFC0000);
+                hiRes[i] = other & ~0xFC0000;
+            }
+            else {
+                native[i] = (other & 0x3FFFF) | BIT(26) | (junk & 0xF8FC0000);
+                hiRes[i] = i | ((1 + i % 63) << 18) | (junk & 0xFF000000);
+            }
+        }
+        memset(target.surface.image, 0, target.surface.imageSize);
+        DCFlushRange(target.surface.image, target.surface.imageSize);
+        void *nativeTexture = ConsoleUI::createPackedTexture(native, size, size);
+        void *hiResTexture = ConsoleUI::createPackedTexture(hiRes, size, size);
+        if (!nativeTexture || !hiResTexture) {
+            fprintf(file, "%s: couldn't make the textures\n", names[pass]);
+            failed++;
+            continue;
+        }
+
+        // Draw it like composeScreens does, and wait for the GPU
+        gx2Mutex.lock();
+        GX2SetContextState(composeState);
+        GX2SetViewport(0, 0, size, size, 0, 1);
+        GX2SetScissor(0, 0, size, size);
+        GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_NEVER);
+        GX2SetAlphaTest(FALSE, GX2_COMPARE_FUNC_ALWAYS, 0.0f);
+        GX2SetColorControl(GX2_LOGIC_OP_COPY, 0x00, FALSE, TRUE);
+        GX2SetTargetChannelMasks(GX2_CHANNEL_MASK_RGBA, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0,
+            (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0, (GX2ChannelMask)0);
+        GX2SetFetchShader(&packedGroup.fetchShader);
+        GX2SetVertexShader(packedGroup.vertexShader);
+        GX2SetPixelShader(packedGroup.pixelShader);
+        GX2SetAttribBuffer(0, sizeof(composePositions), 2 * sizeof(float), composePositions);
+        GX2SetAttribBuffer(1, sizeof(composeCoords), 2 * sizeof(float), composeCoords);
+        GX2SetAttribBuffer(2, sizeof(composeColors), 4 * sizeof(float), composeColors);
+        GX2SetColorBuffer(&target, GX2_RENDER_TARGET_0);
+        GX2SetPixelTexture((GX2Texture*)nativeTexture, packedGroup.pixelShader->samplerVars[0].location);
+        GX2SetPixelSampler(&samplers[0], packedGroup.pixelShader->samplerVars[0].location);
+        GX2SetPixelTexture((GX2Texture*)hiResTexture, packedGroup.pixelShader->samplerVars[1].location);
+        GX2SetPixelSampler(&samplers[0], packedGroup.pixelShader->samplerVars[1].location);
+        GX2DrawEx(GX2_PRIMITIVE_MODE_QUADS, 4, 0, 1);
+        GX2DrawDone();
+        gx2Mutex.unlock();
+        DCInvalidateRange(target.surface.image, target.surface.imageSize);
+        ConsoleUI::destroyHiResTexture(nativeTexture);
+        ConsoleUI::destroyHiResTexture(hiResTexture);
+
+        // Every pixel should be the CPU's 8-bit version of its color, opaque
+        uint32_t wrong = 0;
+        for (uint32_t y = 0; y < size; y++) {
+            for (uint32_t x = 0; x < size; x++) {
+                uint32_t i = y * size + x;
+                uint32_t got = ((uint32_t*)target.surface.image)[y * target.surface.pitch + x];
+                uint32_t want = (((i >> 0) & 0x3F) * 255 / 63) << 24 | (((i >> 6) & 0x3F) * 255 / 63) << 16 |
+                    (((i >> 12) & 0x3F) * 255 / 63) << 8 | 0xFF;
+                if (got == want) continue;
+                if (wrong++ < 10)
+                    fprintf(file, "%s: x %u y %u, native %08X high-res %08X: got %08X, expected %08X\n", names[pass],
+                        x, y, native[i], hiRes[i], got, want);
+            }
+        }
+        fprintf(file, "%s: %u of %u pixels wrong\n", names[pass], wrong, size * size);
+        if (wrong) failed++;
+    }
+    fprintf(file, failed ? "FAILED\n" : "PASSED\n");
+    fclose(file);
+    MEMFreeToDefaultHeap(native);
+    MEMFreeToDefaultHeap(hiRes);
+    MEMFreeToDefaultHeap(target.surface.image);
+}
+#endif
 
 void ConsoleUI::destroyHiResTexture(void *texture) {
     // Clean up a high-res 3D texture, leaving its frame to the caller
@@ -1466,6 +1600,11 @@ int runUi(int, void *) {
     WHBGfxInitShaderAttribute(&screenGroup, "tex_coords", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
     WHBGfxInitShaderAttribute(&screenGroup, "vtx_color", 2, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
     WHBGfxInitFetchShader(&screenGroup);
+    WHBGfxLoadGFDShaderGroup(&packedGroup, 0, screen_packed_wiiu_gsh);
+    WHBGfxInitShaderAttribute(&packedGroup, "position", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
+    WHBGfxInitShaderAttribute(&packedGroup, "tex_coords", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
+    WHBGfxInitShaderAttribute(&packedGroup, "vtx_color", 2, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32);
+    WHBGfxInitFetchShader(&packedGroup);
     WHBGfxLoadGFDShaderGroup(&blendGroup, 0, screen_blend_wiiu_gsh);
     WHBGfxInitShaderAttribute(&blendGroup, "position", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
     WHBGfxInitShaderAttribute(&blendGroup, "tex_coords", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32);
@@ -1559,6 +1698,9 @@ int runUi(int, void *) {
     if (stat(newDir.c_str(), &st) != 0 && stat(oldDir.c_str(), &st) == 0 && rename(oldDir.c_str(), newDir.c_str()) == 0)
         rename((newDir + "/noodsu.ini").c_str(), (newDir + "/maelle.ini").c_str());
 
+#ifdef SHADER_TEST
+    shaderTest();
+#endif
     ConsoleUI::initialize(tvWidth, tvHeight, base, base + "/wiiu/apps/maelle/");
     ConsoleUI::fileBrowser();
 

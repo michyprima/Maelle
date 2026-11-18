@@ -1,0 +1,90 @@
+; $MODE = "UniformRegister"
+; $SAMPLER_VARS[0].name = "screen"
+; $SAMPLER_VARS[0].type = "sampler2D"
+; $SAMPLER_VARS[0].location = 0
+; $SAMPLER_VARS[1].name = "hires"
+; $SAMPLER_VARS[1].type = "sampler2D"
+; $SAMPLER_VARS[1].location = 1
+; $NUM_SPI_PS_INPUT_CNTL = 2
+; $SPI_PS_INPUT_CNTL[0].SEMANTIC = 0
+; $SPI_PS_INPUT_CNTL[0].DEFAULT_VAL = 1
+; $SPI_PS_INPUT_CNTL[1].SEMANTIC = 1
+; $SPI_PS_INPUT_CNTL[1].DEFAULT_VAL = 1
+
+; High-res screen: R0 has the texture coordinates and R1 the vertex color. Both textures hold the 2D engine's packed
+; pixels, with the channels holding the bytes of each word from the top. The screen texture has the native frame: bit
+; 26 marks pixels that show 3D, and the low 18 bits are the 6-bit red, green and blue. The high-res texture has the 3D
+; frame as the 2D engine's packed 3D pixels: bit 26, then 6-bit alpha and the top of blue, then the rest of blue and
+; the top of green, then the rest of green and red. Where the screen shows 3D and the high-res pixel has alpha, the
+; high-res color replaces the screen's. Byte values are rounded to whole numbers and bits are split with floor, and
+; 6-bit colors become 8-bit ones as the CPU's table makes them, rounded down, with a margin since 255/63 isn't exact in
+; floats. Each instruction group has a single instruction, since groups can't read the same channel of different
+; registers at once, which the assembler doesn't check.
+00 TEX: ADDR(128) CNT(2) VALID_PIX
+    0  SAMPLE R2, R0.xy00, t0, s0
+    1  SAMPLE R3, R0.xy00, t1, s1
+01 ALU: ADDR(32) CNT(93)
+    2  x: MULADD R11.x, R2.x, (0x437F0000, 255.0f).x, 0.5f
+    3  y: MULADD R11.y, R2.y, (0x437F0000, 255.0f).x, 0.5f
+    4  z: MULADD R11.z, R2.z, (0x437F0000, 255.0f).x, 0.5f
+    5  w: MULADD R11.w, R2.w, (0x437F0000, 255.0f).x, 0.5f
+    6  x: FLOOR R11.x, R11.x
+    7  y: FLOOR R11.y, R11.y
+    8  z: FLOOR R11.z, R11.z
+    9  w: FLOOR R11.w, R11.w
+   10  x: MULADD R4.x, R3.y, (0x437F0000, 255.0f).x, 0.5f
+   11  y: MULADD R4.y, R3.z, (0x437F0000, 255.0f).x, 0.5f
+   12  z: MULADD R4.z, R3.w, (0x437F0000, 255.0f).x, 0.5f
+   13  x: FLOOR R4.x, R4.x
+   14  y: FLOOR R4.y, R4.y
+   15  z: FLOOR R4.z, R4.z
+   16  x: MUL R5.x, R4.x, 0.25f
+   17  x: FLOOR R5.x, R5.x
+   18  y: MULADD R5.y, R5.x, (0xC0800000, -4.0f).x, R4.x
+   19  z: MUL R5.z, R4.y, (0x3D800000, 0.0625f).x
+   20  z: FLOOR R5.z, R5.z
+   21  w: MULADD R5.w, R5.z, (0xC1800000, -16.0f).x, R4.y
+   22  x: MUL R6.x, R4.z, (0x3C800000, 0.015625f).x
+   23  x: FLOOR R6.x, R6.x
+   24  y: MULADD R6.y, R6.x, (0xC2800000, -64.0f).x, R4.z
+   25  z: MULADD R6.z, R5.y, (0x41800000, 16.0f).x, R5.z
+   26  w: MULADD R6.w, R5.w, 4.0f, R6.x
+   27  x: MUL R12.x, R11.y, 0.25f
+   28  x: FLOOR R12.x, R12.x
+   29  y: MULADD R12.y, R12.x, (0xC0800000, -4.0f).x, R11.y
+   30  z: MUL R12.z, R11.z, (0x3D800000, 0.0625f).x
+   31  z: FLOOR R12.z, R12.z
+   32  w: MULADD R12.w, R12.z, (0xC1800000, -16.0f).x, R11.z
+   33  x: MUL R13.x, R11.w, (0x3C800000, 0.015625f).x
+   34  x: FLOOR R13.x, R13.x
+   35  y: MULADD R13.y, R13.x, (0xC2800000, -64.0f).x, R11.w
+   36  z: MULADD R13.z, R12.y, (0x41800000, 16.0f).x, R12.z
+   37  w: MULADD R13.w, R12.w, 4.0f, R13.x
+   38  x: MUL R14.x, R11.x, 0.25f
+   39  x: FLOOR R14.x, R14.x
+   40  y: MUL R14.y, R14.x, 0.5f
+   41  y: FLOOR R14.y, R14.y
+   42  z: MULADD R14.z, R14.y, (0xC0000000, -2.0f).x, R14.x
+   43  x: SETGE R8.x, R5.x, 0.5f
+   44  x: MUL R8.x, R8.x, R14.z
+   45  x: ADD R9.x, R6.y, -R13.y
+   46  y: ADD R9.y, R6.w, -R13.w
+   47  z: ADD R9.z, R6.z, -R13.z
+   48  x: MULADD R9.x, R9.x, R8.x, R13.y
+   49  y: MULADD R9.y, R9.y, R8.x, R13.w
+   50  z: MULADD R9.z, R9.z, R8.x, R13.z
+   51  x: MULADD R10.x, R9.x, (0x40818618, 4.047619f).x, (0x3A83126F, 0.001f).y
+   52  y: MULADD R10.y, R9.y, (0x40818618, 4.047619f).x, (0x3A83126F, 0.001f).y
+   53  z: MULADD R10.z, R9.z, (0x40818618, 4.047619f).x, (0x3A83126F, 0.001f).y
+   54  x: FLOOR R10.x, R10.x
+   55  y: FLOOR R10.y, R10.y
+   56  z: FLOOR R10.z, R10.z
+   57  x: MUL R10.x, R10.x, (0x3B808081, 0.003921569f).x
+   58  y: MUL R10.y, R10.y, (0x3B808081, 0.003921569f).x
+   59  z: MUL R10.z, R10.z, (0x3B808081, 0.003921569f).x
+   60  x: MUL R10.x, R10.x, R1.x
+   61  y: MUL R10.y, R10.y, R1.y
+   62  z: MUL R10.z, R10.z, R1.z
+   63  w: MOV R10.w, R1.w
+02 EXP_DONE: PIX0, R10
+END_OF_PROGRAM

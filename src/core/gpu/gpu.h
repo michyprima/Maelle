@@ -52,7 +52,8 @@ public:
     void saveState(FILE *file);
     void loadState(FILE *file);
 
-    bool getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D = nullptr, bool *top3D = nullptr);
+    bool getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D = nullptr, bool *top3D = nullptr,
+        uint32_t **packed = nullptr);
     uint32_t frameNumber = 0; // Frames finished, counting ones that weren't queued, to number frames
     uint32_t lastFrameId = 0; // The number of the frame getFrame last gave
     bool frontendGhosting = false; // Whether the caller averages frames itself for ghosting, so getFrame doesn't

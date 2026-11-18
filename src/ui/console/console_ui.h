@@ -99,11 +99,14 @@ public:
     static void *blankHiRes; // A blank texture for screens without high-res 3D, which shows their native 3D
     static bool hiResTop; // Whether the 3D is on the top screen
 
+    // When the GPU builds the screens, it also converts the core's packed frames to colors, so the CPU doesn't have to
+    static uint32_t *packedData; // The packed frame taken from the core, which the screen textures use, or null
+
     // The GPU builds the screens at twice the size once for each new frame into textures of their own, keeping the last
     // ones, and the UI draws those, averaged with the last ones for ghosting
     static void *composed[2], *composedLast[2];
     static bool screensComposed; // Whether the screens being drawn are those
-    static void composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop);
+    static void composeScreens(void *top, void *bottom, void *hiRes, bool hiResTop, bool packed);
     static void composeGbaScreen(void *gba);
 
     // With ghosting at native size, frames alternate between two halves of the framebuffer, so the last one is kept as
@@ -142,6 +145,7 @@ public:
     static void releaseTexture(void *texture);
     static void drawFrames(void *tv, void *gamepad);
     static void *createHiResTexture(uint32_t *data);
+    static void *createPackedTexture(uint32_t *data, int width, int height);
     static void destroyHiResTexture(void *texture);
     static void drawTexture(void *texture, float tx, float ty, float tw, float th, float x, float y,
         float w, float h, bool filter = true, int rotation = 0, uint32_t color = 0xFFFFFFFF);

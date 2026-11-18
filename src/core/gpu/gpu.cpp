@@ -218,10 +218,11 @@ uint16_t Gpu::rgb6ToRgb5(uint32_t color) {
     return BIT(15) | (b << 10) | (g << 5) | r;
 }
 
-bool Gpu::getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D, bool *top3D) {
+bool Gpu::getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D, bool *top3D, uint32_t **packed) {
     // Check if a new frame is ready
     if (!ready.load())
         return false;
+    if (packed) *packed = nullptr;
 
     // Get the next queued buffers
     Buffers &buffers = framebuffers.front();
@@ -282,8 +283,13 @@ bool Gpu::getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D, bool *top3D)
         }
     }
     else {
-        // Output the full frame in RGB8 format
-        if (upscale) {
+        // Output the full frame in RGB8 format, or hand over the packed one for a caller that converts it on the GPU,
+        // which frees it with freeHiRes3D
+        if (packed) {
+            *packed = buffers.framebuffer;
+            buffers.framebuffer = nullptr;
+        }
+        else if (upscale) {
             if (buffers.hiRes3D) {
                 // Draw the screens upscaled, replacing any 3D pixels with high-res output
                 // Both screens use the same high-res lines, since 3D can be on either of them
@@ -348,7 +354,7 @@ bool Gpu::getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D, bool *top3D)
         freeFramebuffer(buffers.hiRes3D);
     }
 
-    if (Settings::screenGhost && !frontendGhosting) {
+    if (Settings::screenGhost && !frontendGhosting && !(packed && *packed)) {
         // Get the size of the output framebuffer
         static uint32_t prev[256 * 192 * 8];
         uint32_t width = (gbaCrop ? 240 : 256) << upscale;
