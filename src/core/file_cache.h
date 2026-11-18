@@ -1,5 +1,5 @@
 /*
-    Copyright 2019-2026 Hydr8gon
+    Copyright 2026 michyprima
 
     This file is part of Maelle.
 
