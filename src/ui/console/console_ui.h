@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -173,6 +174,10 @@ public:
     static std::string displayDebugText();
 #endif
     static uint32_t getInputPress();
+    static uint32_t readInputEarly();
+    static void earlyInput();
+    static std::atomic<uint32_t> keysTaken; // Buttons the UI takes from the game, for the pointer or slot 2 accessories
+    static uint32_t slot2Taken;
 
     static void initialize(int width, int height, std::string root, std::string prefix);
     static void mainLoop(MenuTouch (*specialTouch)() = nullptr, ScreenLayout *touchLayout = nullptr);

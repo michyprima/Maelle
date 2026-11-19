@@ -1147,12 +1147,89 @@ uint32_t extToVpad(uint32_t hold, bool pro) {
     return result;
 }
 
+// The controllers' last reads, made by the emulator thread just before each frame so games get presses sooner, or by the
+// UI when there's no new one; the UI takes each into its own copies, so both use the same samples
+struct Pads {
+    VPADStatus vpad;
+    VPADReadError vpadError;
+    VPADTouchData touch;
+    uint32_t extHeld[4];
+    float extStick[4][2];
+    KPADStatus kpad[4];
+    bool kpadRead[4];
+};
+static Pads pads;
+static bool padsFresh = false;
+static std::mutex padsMutex;
+
+static void readPads() {
+    // Read the GamePad and the Pro Controllers and Classic Controllers on every channel
+    // Channels without new data keep their last state, and disconnected ones are cleared
+    // The emulator thread can read more often than the GamePad sends, like when fast-forwarding, so the GamePad keeps
+    // its last state when there's no new sample, and is cleared when it's gone
+    VPADStatus status;
+    VPADRead(VPAD_CHAN_0, &status, 1, &pads.vpadError);
+    if (pads.vpadError == VPAD_READ_SUCCESS)
+        pads.vpad = status;
+    else if (pads.vpadError != VPAD_READ_NO_SAMPLES)
+        memset(&pads.vpad, 0, sizeof(pads.vpad));
+    VPADGetTPCalibratedPoint(VPAD_CHAN_0, &pads.touch, &pads.vpad.tpNormal);
+    for (int i = 0; i < 4; i++) {
+        KPADStatus &status = pads.kpad[i];
+        KPADError error;
+        if (!(pads.kpadRead[i] = KPADReadEx((KPADChan)i, &status, 1, &error))) {
+            if (error == KPAD_ERROR_INVALID_CONTROLLER) {
+                pads.extHeld[i] = 0;
+                pads.extStick[i][0] = pads.extStick[i][1] = 0;
+            }
+            continue;
+        }
+        if (status.extensionType == WPAD_EXT_PRO_CONTROLLER) {
+            pads.extHeld[i] = extToVpad(status.pro.hold, true);
+            pads.extStick[i][0] = status.pro.rightStick.x;
+            pads.extStick[i][1] = status.pro.rightStick.y;
+        }
+        else if (status.extensionType == WPAD_EXT_CLASSIC || status.extensionType == WPAD_EXT_MPLUS_CLASSIC) {
+            pads.extHeld[i] = extToVpad(status.classic.hold, false);
+            pads.extStick[i][0] = status.classic.rightStick.x;
+            pads.extStick[i][1] = status.classic.rightStick.y;
+        }
+        else {
+            pads.extHeld[i] = 0;
+            pads.extStick[i][0] = pads.extStick[i][1] = 0;
+        }
+    }
+}
+
+uint32_t ConsoleUI::readInputEarly() {
+    // Read the controllers for the emulator thread, returning the mappable keys held
+    std::lock_guard<std::mutex> guard(padsMutex);
+    readPads();
+    padsFresh = true;
+    uint32_t held = pads.vpad.hold;
+    for (int i = 0; i < 4; i++)
+        held |= pads.extHeld[i];
+    return held & 0x7FFFFFFF;
+}
+
 void scanInput() {
     // Scan for input once per frame
     if (scanned) return;
     scanned = true;
+    // Take the emulator thread's read if there's a new one, or read the controllers here
     VPADReadError vpadError;
-    VPADRead(VPAD_CHAN_0, &vpad, 1, &vpadError);
+    {
+        std::lock_guard<std::mutex> guard(padsMutex);
+        if (!padsFresh) readPads();
+        padsFresh = false;
+        vpad = pads.vpad;
+        vpadError = pads.vpadError;
+        touch = pads.touch;
+        memcpy(extHeld, pads.extHeld, sizeof(extHeld));
+        memcpy(extStick, pads.extStick, sizeof(extStick));
+        memcpy(kpad, pads.kpad, sizeof(kpad));
+        memcpy(kpadRead, pads.kpadRead, sizeof(kpadRead));
+    }
 #ifdef DRC_DEBUG
     lastVpadError = vpadError;
 #endif
@@ -1174,35 +1251,6 @@ void scanInput() {
         ScreenLayout::splitDisplays = gamepad;
         ConsoleUI::relayout();
         gamepadFrames = 0;
-    }
-    VPADGetTPCalibratedPoint(VPAD_CHAN_0, &touch, &vpad.tpNormal);
-
-    // Read Pro Controllers and Classic Controllers on every channel
-    // Channels without new data keep their last state, and disconnected ones are cleared
-    for (int i = 0; i < 4; i++) {
-        KPADStatus &status = kpad[i];
-        KPADError error;
-        if (!(kpadRead[i] = KPADReadEx((KPADChan)i, &status, 1, &error))) {
-            if (error == KPAD_ERROR_INVALID_CONTROLLER) {
-                extHeld[i] = 0;
-                extStick[i][0] = extStick[i][1] = 0;
-            }
-            continue;
-        }
-        if (status.extensionType == WPAD_EXT_PRO_CONTROLLER) {
-            extHeld[i] = extToVpad(status.pro.hold, true);
-            extStick[i][0] = status.pro.rightStick.x;
-            extStick[i][1] = status.pro.rightStick.y;
-        }
-        else if (status.extensionType == WPAD_EXT_CLASSIC || status.extensionType == WPAD_EXT_MPLUS_CLASSIC) {
-            extHeld[i] = extToVpad(status.classic.hold, false);
-            extStick[i][0] = status.classic.rightStick.x;
-            extStick[i][1] = status.classic.rightStick.y;
-        }
-        else {
-            extHeld[i] = 0;
-            extStick[i][0] = extStick[i][1] = 0;
-        }
     }
 }
 

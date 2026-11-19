@@ -36,13 +36,36 @@ public:
     void releaseScreen();
     void update();
 
-    uint16_t readKeyInput() { return keyInput; }
-    uint16_t readExtKeyIn() { return extKeyIn; }
+    uint16_t readKeyInput() {
+#ifdef FRAME_LOG
+        if (watchKeys && (keyInput & watchKeys) != watchKeys) noteKeyRead();
+#endif
+        return keyInput;
+    }
+    uint16_t readExtKeyIn() {
+#ifdef FRAME_LOG
+        if (watchPen && !(extKeyIn & BIT(6))) noteKeyRead();
+#endif
+        return extKeyIn;
+    }
     uint16_t readKeyCnt(int cpu) { return keyCnt[cpu]; }
     void writeKeyCnt(int cpu, uint16_t mask, uint16_t value);
 
+#ifdef FRAME_LOG
+    // Pressed keys the frame log waits for the game to read, and when it first did, for measuring input lag
+    volatile uint16_t watchKeys = 0;
+    volatile bool watchPen = false;
+    volatile uint32_t readTick = 0, readFrame = 0, readCount = 0;
+    // Keys newly pressed when the emulator thread reads the controllers itself, for the UI to log
+    volatile uint32_t pressTick = 0, pressFrame = 0, pressKeys = 0, pressCount = 0;
+#endif
+
 private:
     Core *core;
+
+#ifdef FRAME_LOG
+    void noteKeyRead();
+#endif
 
     uint16_t keyInput = 0x03FF;
     uint16_t extKeyIn = 0x007F;

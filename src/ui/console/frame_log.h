@@ -29,6 +29,10 @@ namespace FrameLog {
     void emulatorFrame(uint32_t finished, uint32_t polygons);
     void uiFrame(uint32_t frameId);
     void audioBuffer(uint32_t dry, uint32_t fill);
+    void keyPress(uint32_t keys, uint32_t frame, uint32_t tick = 0);
+    void keyRead(uint32_t tick, uint32_t frame);
+    void swapped();
+    void inputCost(uint32_t start);
     void write(const char *path);
 #ifdef AUDIO_CAPTURE
     void audioProduced(uint32_t sample);

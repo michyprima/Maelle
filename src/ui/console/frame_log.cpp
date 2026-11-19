@@ -24,6 +24,7 @@
 #include <string>
 #include <coreinit/core.h>
 #include <coreinit/time.h>
+#include <gx2/event.h>
 
 #include "frame_log.h"
 #include "../../core/file_lock.h"
@@ -31,9 +32,12 @@
 namespace FrameLog {
     // An entry has a type, and for the emulator, when the frame finished, when its display wait ended, and its polygons;
     // for the UI, the time, and the ID of the new frame it got or 0; for audio, the time, the samples repeated so far
-    // because the buffer ran dry, and how many samples the buffer had
+    // because the buffer ran dry, and how many samples the buffer had; for input, when keys were sent to the core with
+    // the frame it was on, when the game first read them, and after each swap, the swap and flip counts and the last
+    // flip's time
     enum { TYPE_START = 1, TYPE_EMULATOR = 2, TYPE_UI = 3, TYPE_AUDIO = 4, TYPE_PRODUCED = 5, TYPE_OUTPUT = 6,
-        TYPE_MARK = 7, TYPE_WRITE = 8, TYPE_LOST = 9, TYPE_FINAL = 10 };
+        TYPE_MARK = 7, TYPE_WRITE = 8, TYPE_LOST = 9, TYPE_FINAL = 10, TYPE_PRESS = 11, TYPE_READ = 12,
+        TYPE_SWAP = 13, TYPE_INPUT_COST = 14 };
     struct Entry {
         uint32_t type, time, value, polygons;
     };
@@ -159,6 +163,26 @@ namespace FrameLog {
 
     void audioBuffer(uint32_t dry, uint32_t fill) {
         audio.add({ TYPE_AUDIO, uint32_t(OSGetSystemTick()), dry, fill });
+    }
+
+    void keyPress(uint32_t keys, uint32_t frame, uint32_t tick) {
+        ui.add({ TYPE_PRESS, tick ? tick : uint32_t(OSGetSystemTick()), frame, keys });
+    }
+
+    void keyRead(uint32_t tick, uint32_t frame) {
+        ui.add({ TYPE_READ, tick, frame, 0 });
+    }
+
+    void inputCost(uint32_t start) {
+        // How long the emulator thread spent reading the controllers before a frame
+        emulator.add({ TYPE_INPUT_COST, start, uint32_t(OSGetSystemTick()) - start, 0 });
+    }
+
+    void swapped() {
+        uint32_t swaps, flips;
+        OSTime lastFlip, lastVsync;
+        GX2GetSwapStatus(&swaps, &flips, &lastFlip, &lastVsync);
+        ui.add({ TYPE_SWAP, uint32_t(lastFlip), swaps, flips });
     }
 
     void write(const char *path) {

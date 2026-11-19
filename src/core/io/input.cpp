@@ -17,6 +17,10 @@
     along with Maelle. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#ifdef FRAME_LOG
+#include <coreinit/time.h>
+#endif
+
 #include "../core.h"
 
 void Input::saveState(FILE *file) {
@@ -46,6 +50,18 @@ void Input::update() {
     }
     lastKeys = keys;
 }
+
+#ifdef FRAME_LOG
+void Input::noteKeyRead() {
+    // Note when the game first read a watched key as pressed, and the frame that could first show it
+    readTick = OSGetSystemTick();
+    readFrame = core->gpu.frameNumber;
+    watchKeys = 0;
+    watchPen = false;
+    __sync_synchronize();
+    readCount = readCount + 1;
+}
+#endif
 
 void Input::writeKeyCnt(int cpu, uint16_t mask, uint16_t value) {
     // Write to one of the KEYCNT registers

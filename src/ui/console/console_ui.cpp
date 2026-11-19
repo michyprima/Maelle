@@ -117,6 +117,8 @@ std::condition_variable ConsoleUI::cond;
 std::mutex ConsoleUI::mutex;
 
 int ConsoleUI::fpsLimiterBackup = 0;
+std::atomic<uint32_t> ConsoleUI::keysTaken(0);
+uint32_t ConsoleUI::slot2Taken = 0;
 std::mutex ConsoleUI::displayMutex;
 std::condition_variable ConsoleUI::displayCond;
 int ConsoleUI::displayTicks = 0;
@@ -824,6 +826,8 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
             pressed &= ~(pointerKeys | keyBinds[INPUT_POINTER_TOUCH]);
             held &= ~(pointerKeys | keyBinds[INPUT_POINTER_TOUCH]);
         }
+        keysTaken.store(slot2Taken | ((stickPointer && !gbaMode && core->slot2.getDevice() != SLOT2_PADDLE) ?
+            (pointerKeys | keyBinds[INPUT_POINTER_TOUCH]) : 0));
 #ifdef AUDIO_CAPTURE
         // Mark the audio capture when L, R and Y are pressed
         uint32_t markCombo = keyBinds[INPUT_L] | keyBinds[INPUT_R] | keyBinds[INPUT_Y];
@@ -853,11 +857,33 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
             else if (!(held & keyBinds[i]))
                 core->input.releaseKey(i);
         }
+#ifdef FRAME_LOG
+        // Time new presses of the keys games read from KEYINPUT, and when the game first read them
+        static uint32_t lastPress = 0;
+        if (core->input.pressCount != lastPress) {
+            lastPress = core->input.pressCount;
+            FrameLog::keyPress(core->input.pressKeys, core->input.pressFrame, core->input.pressTick);
+        }
+        static uint32_t lastRead = 0;
+        if (core->input.readCount != lastRead) {
+            lastRead = core->input.readCount;
+            FrameLog::keyRead(core->input.readTick, core->input.readFrame);
+        }
+#endif
 
         // Scan for touch input, falling back to a special function if provided
         MenuTouch touch = getInputTouch();
         if (!touch.pressed && specialTouch)
             touch = (*specialTouch)();
+#ifdef FRAME_LOG
+        static bool lastPen = false;
+        bool pen = touch.pressed || pointerTouch;
+        if (pen && !lastPen) {
+            FrameLog::keyPress(BIT(10), core->gpu.frameNumber);
+            core->input.watchPen = true;
+        }
+        lastPen = pen;
+#endif
 
         if (touch.pressed) {
             // Determine the touch position relative to the emulated touch screen
@@ -897,6 +923,9 @@ void ConsoleUI::mainLoop(MenuTouch (*specialTouch)(), ScreenLayout *touchLayout)
         HB_TIMER(hbEnd);
         endFrame();
         HB_ADD_US(HB_UI_END_US, hbEnd);
+#ifdef FRAME_LOG
+        FrameLog::swapped();
+#endif
 
         // Restore the FPS limiter when pausing or releasing fast-forward hold
         if ((fpsLimiterBackup && hotkeyPressed(INPUT_MENU, pressed, held)) ||
@@ -1018,6 +1047,7 @@ void ConsoleUI::updateSlot2(uint32_t &pressed, uint32_t &held) {
     }
     pressed &= ~taken;
     held &= ~taken;
+    slot2Taken = taken;
 }
 
 bool ConsoleUI::updatePointer(uint32_t held, ScreenLayout *gamepad) {
@@ -2831,6 +2861,11 @@ void ConsoleUI::runCore() {
             waitForDisplay();
 #ifdef FRAME_LOG
             FrameLog::emulatorFrame(finished, core->gpu3D.polygonCountOut);
+            uint32_t inputStart = OSGetSystemTick();
+#endif
+            earlyInput();
+#ifdef FRAME_LOG
+            FrameLog::inputCost(inputStart);
 #endif
             EP_ADD(EP_DISPLAY, display);
 #if defined(PROFILE_EMU) && defined(HEARTBEAT)
@@ -2838,6 +2873,34 @@ void ConsoleUI::runCore() {
 #endif
         }
     }
+}
+
+void ConsoleUI::earlyInput() {
+    // Give the game the keys as they are right before its frame, instead of after the UI draws, which games mostly
+    // read just after; presses go in when they're new and releases whenever, like the UI does it
+    static uint32_t last = 0;
+    uint32_t held = readInputEarly() & ~keysTaken.load();
+    uint32_t pressed = held & ~last;
+    last = held;
+    for (int i = INPUT_A; i < INPUT_MENU; i++) {
+        if (pressed & keyBinds[i])
+            core->input.pressKey(i);
+        else if (!(held & keyBinds[i]))
+            core->input.releaseKey(i);
+    }
+#ifdef FRAME_LOG
+    uint16_t newKeys = 0;
+    for (int i = INPUT_A; i <= INPUT_L; i++)
+        if (pressed & keyBinds[i]) newKeys |= BIT(i);
+    if (newKeys) {
+        core->input.pressTick = OSGetSystemTick();
+        core->input.pressFrame = core->gpu.frameNumber;
+        core->input.pressKeys = newKeys;
+        core->input.watchKeys = newKeys & 0x3FF;
+        __sync_synchronize();
+        core->input.pressCount = core->input.pressCount + 1;
+    }
+#endif
 }
 
 void ConsoleUI::displayTick() {
