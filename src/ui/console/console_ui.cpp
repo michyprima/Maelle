@@ -2360,7 +2360,7 @@ void ConsoleUI::jitSelfTest() {
     // like the interpreter, since fast timing would otherwise let it check less often
     // Nothing can press buttons during the test, so it has to boot the game directly or it would only wait in a menu
     int saved[] = { Settings::threaded2D, Settings::threaded3D, Settings::emulateAudio, Settings::frameskip, Settings::jit,
-        Settings::hardware3D, Settings::directBoot, Settings::fpsLimiter, Settings::wifi };
+        Settings::hardware3D, Settings::directBoot, Settings::fpsLimiter, Settings::wifi, Settings::screenGhost };
     Jit::testing = true;
     Settings::threaded2D = 0;
     Settings::threaded3D = 0;
@@ -2370,6 +2370,7 @@ void ConsoleUI::jitSelfTest() {
     Settings::directBoot = 1;
     Settings::fpsLimiter = 0;
     Settings::wifi = 0;
+    Settings::screenGhost = 0; // Ghosting blends with the last frame either core output, so the screens would differ
     Rtc::fixedTime = std::time(nullptr); // Both cores must read the same clock
     Core *cores[2] = {};
     try {
@@ -2392,6 +2393,7 @@ void ConsoleUI::jitSelfTest() {
         Settings::directBoot = saved[6];
         Settings::fpsLimiter = saved[7];
         Settings::wifi = saved[8];
+        Settings::screenGhost = saved[9];
         Jit::testing = false;
         Rtc::fixedTime = 0;
     };
