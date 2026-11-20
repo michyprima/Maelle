@@ -93,7 +93,7 @@ static const uint32_t
     STATE_SIZE = 0x8000,
     EVENTS = 0x20000, EVENT_SLOT = 0x100, // Copied: the event queue, pointing to a slot for the first event
     LIMIT = 0x21000, GLOBAL = 0x22000, DTCM_REG = 0x23000, MATH = 0x23800, WORDS_SIZE = 0x4000, // Copied
-    CACHE_AREA = 0x30000, CACHE = CACHE_AREA + 0x1000, // Live: the code changed flag, then the block cache
+    CACHE_AREA = 0x1000000, CACHE = CACHE_AREA + 0x1000, // Live: the code changed flag, then the block cache
     STACK = 0x60000, STACK_TOP = 0x7FF00, END = 0x80000,
     COND_TABLE = 0x200000, MODE_BANKS = COND_TABLE + 0x400, // Fixed
     FAKE_HANDLERS = 0x3E0000, FAKE = 0x3F0000, FAKE_MEMORY = 0x3F0800, FAKE_MSR = 0x3F1800, FAKE_RESTORE = 0x3F1840, FAKE_FETCH = 0x3F1880, FAKE_CP15 = 0x3F18C0, FAKE_INTERLEAVE = 0x3F2000, FAKE_POLL = 0x3F2008, FAKE_SEND = 0x3F2010,
@@ -530,7 +530,7 @@ static void startEngine(Engine &en, bool arm7) {
     memset(en.words, 0, WORDS_SIZE);
     bool ok = uc_mem_map_ptr(uc, ARM_STATE, STATE_SIZE, DATA, en.state) == UC_ERR_OK &&
         uc_mem_map_ptr(uc, EVENTS, WORDS_SIZE, DATA, en.words) == UC_ERR_OK &&
-        uc_mmio_map(uc, CACHE_AREA, 0x11000, readCache, &en, writeFixed, (void*)names[0]) == UC_ERR_OK &&
+        uc_mmio_map(uc, CACHE_AREA, 0x1000 + Jit::CACHE_SIZE * 16, readCache, &en, writeFixed, (void*)names[0]) == UC_ERR_OK &&
         uc_mmio_map(uc, READ_MAP, 0x400000, readMap, en.readMap, writeFixed, (void*)names[1]) == UC_ERR_OK &&
         uc_mmio_map(uc, WRITE_MAP, 0x400000, readMap, en.writeMap, writeFixed, (void*)names[1]) == UC_ERR_OK &&
         uc_mem_map(uc, STACK, END + 0x1000 - STACK, DATA) == UC_ERR_OK &&

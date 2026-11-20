@@ -188,14 +188,20 @@ private:
 
     // The entry before the cache holds a flag that's set when code changes, so it's next to the cache
     // Running code stops at the next instruction when the flag is set, in case its own code changed
-    static const int CACHE_SIZE = 0x1000;
+    // Indexed by the address over 2, so THUMB blocks a halfword apart, common in ARM7 code, don't share an entry; ARM code
+    // only fills even entries, so it gets half of them
+    static const int CACHE_BITS = 16, CACHE_SIZE = 1 << CACHE_BITS;
     JitCacheEntry cacheData[CACHE_SIZE + 1] = {};
     static const uint32_t NO_KEY = 2; // A key no code has
     static uint32_t cacheKey(uint32_t address, bool thumb) { return address + (thumb ? 3 : 4); } // The program counter there, with bit 0 for THUMB
     JitCacheEntry &cacheEntry(uint32_t key) { return cache[(key >> 1) & (CACHE_SIZE - 1)]; }
     JitCacheEntry *cache = &cacheData[1];
     uint32_t &codeChanged = cacheData[0].key;
-    bool wramCached = false; // Whether the cache might have any blocks from WRAM addresses
+    // Entries that blocks from WRAM addresses were cached in, which the DSi's launcher remaps thousands of times, so
+    // only they are emptied then; past the limit, which a DS game's ARM7 code in WRAM reaches, the whole cache is
+    static const size_t MAX_WRAM_ENTRIES = 0x400;
+    std::vector<uint32_t> wramEntries;
+    bool wramFull = false;
     static const int NO_CODE_SIZE = 16;
     uint32_t noCodePages[NO_CODE_SIZE] = {}; // Guest pages recently found to have nothing to compile, plus 1, by low bits
 
@@ -320,4 +326,5 @@ private:
     void readReg(PpcEmitter &e, int rt, int reg, uint32_t pc);
     void writeReg(PpcEmitter &e, int rs, int reg);
     void clearCache();
+    void clearWramCache();
 };

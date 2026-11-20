@@ -193,7 +193,20 @@ void Jit::clearCache() {
     memset(cache, 0, CACHE_SIZE * sizeof(JitCacheEntry));
     for (int i = 0; i < CACHE_SIZE; i++)
         cache[i].key = NO_KEY;
-    wramCached = false;
+    wramEntries.clear();
+    wramFull = false;
+}
+
+void Jit::clearWramCache() {
+    // Empty only the entries that blocks from WRAM addresses were cached in, unless there were too many to track
+    if (wramFull) return clearCache();
+    for (size_t i = 0; i < wramEntries.size(); i++) {
+        JitCacheEntry &entry = cache[wramEntries[i]];
+        if (((entry.key - 3) >> 24) != 0x03) continue; // Replaced since
+        entry = JitCacheEntry();
+        entry.key = NO_KEY;
+    }
+    wramEntries.clear();
 }
 
 void Jit::mapChanged(uint32_t start) {
@@ -206,7 +219,8 @@ void Jit::mapChanged(uint32_t start) {
     memset(noCodePages, 0, sizeof(noCodePages));
 
     // The DSi's launcher remaps WRAM thousands of times while starting a title, and only addresses there can be affected
-    if ((start >> 24) != 0x03 || wramCached) clearCache();
+    if ((start >> 24) != 0x03) clearCache();
+    else clearWramCache();
     codeChanged = 1;
 
     // Linked jumps might go to code for the old mapping, so send them all through the dispatcher again
@@ -658,7 +672,10 @@ bool Jit::run(const uint32_t *limit) {
     entry.key = cacheKey(address, thumb);
     entry.code = block->code ? block->code : codeDispatchMiss; // Generated code jumps to it without looking
     entry.block = block;
-    if ((address >> 24) == 0x03) wramCached = true;
+    if ((address >> 24) == 0x03 && !wramFull) {
+        wramEntries.push_back(&entry - cache);
+        wramFull = wramEntries.size() >= MAX_WRAM_ENTRIES;
+    }
     execute(block, limit);
     return true;
 }

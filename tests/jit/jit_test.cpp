@@ -42,7 +42,7 @@ enum { NK_NONE, NK_ALU, NK_BRANCH, NK_TRANSFER, NK_BRANCH_REG, NK_HALF, NK_BLOCK
 
 // Addresses in the emulator
 // The code changed flag is the size of a cache entry before the cache, which is 32 bytes on a Mac for its 64-bit pointers
-static const uint32_t ARM_STATE = 0x10000, CACHE_FLAG = 0x50000, CACHE = CACHE_FLAG + sizeof(JitCacheEntry), EVENTS = 0x70000, LIMIT = 0x71000,
+static const uint32_t ARM_STATE = 0x10000, CACHE_FLAG = 0x100000, CACHE = CACHE_FLAG + sizeof(JitCacheEntry), EVENTS = 0x70000, LIMIT = 0x71000,
     GLOBAL = 0x72000, STACK = 0x7F000, END = 0x80000, READ_MAP = 0x400000, WRITE_MAP = 0x800000,
     FAKE = 0x3F0000, FAKE_MEMORY = 0x3F0800, FAKE_HANDLER = 0x3F1000, FAKE_INTERLEAVE = 0x3F2000, FAKE_MSR = 0x3F1800, FAKE_RESTORE = 0x3F1840, MODE_BANKS = 0x3F3000, MATH = 0x3F3800, DTCM_REG = 0x3F4000, CODE = 0x10000000;
 // The math registers as a big-endian host lays them out: three 64-bit values, the two control registers and the dirty flags
@@ -639,7 +639,7 @@ static void runCase(Case &c) {
     // Entries without a block hold a key no code has, as the JIT leaves them, since the dispatcher only compares keys
     static bool cacheEmptied = false;
     if (!cacheEmptied) {
-        for (uint32_t i = 0; i < 0x1000; i++) writeBe(CACHE + i * 16, Jit::NO_KEY);
+        for (uint32_t i = 0; i < Jit::CACHE_SIZE; i++) writeBe(CACHE + i * 16, Jit::NO_KEY);
         cacheEmptied = true;
     }
     for (uint32_t at: usedEntries) { writeBe(at, Jit::NO_KEY); writeBe(at + 4, 0); }
@@ -648,7 +648,7 @@ static void runCase(Case &c) {
         if (!b->code) { fail("block has no code"); return; }
         if (!c.useCache) continue;
         uint32_t key = Jit::cacheKey(b->address, b->thumb);
-        uint32_t at = CACHE + ((key >> 1) & 0xFFF) * 16;
+        uint32_t at = CACHE + (&jit.cacheEntry(key) - jit.cache) * 16;
         writeBe(at, key);
         writeBe(at + 4, emuCode(b->code));
         usedEntries.push_back(at);

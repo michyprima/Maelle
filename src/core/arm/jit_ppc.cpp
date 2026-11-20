@@ -535,7 +535,7 @@ void Jit::emitStubs(PpcEmitter &e) {
     e.lwz(3, offCpsr, R_ARM);
     e.lwz(4, offPc, R_ARM);
     e.rlwimi(4, 3, 27, 31, 31); // Cache key: the program counter with the THUMB bit
-    e.rlwinm(6, 4, 3, 16, 27); // Cache index * 16
+    e.rlwinm(6, 4, 3, 28 - CACHE_BITS, 27); // Cache index * 16
     e.add(6, 6, R_CACHE);
     e.lwz(7, 0, 6);
     e.lwz(8, 4, 6);
