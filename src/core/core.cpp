@@ -212,6 +212,7 @@ Core::Core(std::string ndsRom, std::string gbaRom, int id, int ndsRomFd, int gba
     tasks[CAM_LINE] = std::bind(&DsiCamera::transferLine, &dsiCamera);
     tasks[DSP_UPDATE] = std::bind(&DsiDsp::update, &dsiDsp);
     tasks[DSP_HLE_FINISH] = std::bind(&DsiDsp::finishHle, &dsiDsp);
+    tasks[ARM7_VCOUNT_WAKE] = std::bind(&Memory::endVCountWait, &memory);
 
     // Schedule initial tasks for NDS mode
     schedule(RESET_CYCLES, 0x7FFFFFFF);

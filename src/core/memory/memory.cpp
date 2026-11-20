@@ -165,6 +165,7 @@ void Memory::allocRam(bool dsi) {
 
 void Memory::loadState(FILE *file) {
     // Read DS state data from the file, after making room in case it's from DSi mode
+    pollSeen = 0;
     allocRam(core->dsiMode);
     fread(ram, 1, core->dsiMode ? 0x1000000 : 0x400000, file);
     fread(wram, 1, sizeof(wram), file);
@@ -1012,6 +1013,11 @@ template <typename T> T Memory::readFallback(bool arm7, uint32_t address) {
         }
     }
     else { // ARM7
+        // Any access other than a VCOUNT read ends what looked like a wait on it, see readVCount7
+        if (sizeof(T) == 2 && address == 0x4000006)
+            return readVCount7();
+        pollSeen = 0;
+
         switch (address & 0xFF000000) {
         case 0x4000000: // I/O registers
 #ifdef ROM_TEST
@@ -1136,6 +1142,7 @@ template <typename T> void Memory::writeFallback(bool arm7, uint32_t address, T 
     // Align the address
     address &= ~(sizeof(T) - 1);
     uint8_t *data = nullptr;
+    if (arm7) pollSeen = 0;
 
     // Send 32-bit GXFIFO writes straight to the 3D engine, since games stream lots of them
     if (sizeof(T) == 4 && !arm7 && (address & ~0x3F) == 0x4000400)
@@ -3071,12 +3078,61 @@ void Memory::writeScfgClk(uint16_t mask, uint16_t value) {
 }
 
 void Memory::updateDsiTiming() {
-    // DSi software, which runs the ARM9 at 133MHz, gets the ARM7 at full speed outside main RAM, as measured on a DSi
+    // DSi software runs the ARM9 at 133MHz, and all software gets the ARM7 at full speed outside main RAM, as measured
+    // on a DSi; at half speed, Fossil Fighters Champions' ARM7 took so long over one alarm that the next was already due,
+    // and the timer it set then interrupted it faster than it could handle, which froze its microphone screens
     // Both count the ARM9's code cache, which the DS's ARM9 has too; without it, the ARM9 ran ahead of the ARM7 often
     // enough that Tokyo Beat Down read the V-blank count before the ARM7 changed it, and drew half a frame
     bool dsi = fastArm9();
     core->jit.setHalfCycles(dsi);
     if (!core->cp15.codeCache) core->cp15.codeFlush();
     core->cp15.codeCache = true;
-    core->interpreter[1].fullSpeedWram = dsi;
+    core->interpreter[1].fullSpeedWram = true;
+}
+
+uint16_t Memory::readVCount7() {
+    // Read VCOUNT for the ARM7, which can only change when a task runs; with fast timing, a loop that reads it three
+    // times in a row with the same result, the same registers and flags, the same time in between and no other memory
+    // access through here is waiting for it to change, and would go around the same way until a task runs, so the
+    // ARM7 sleeps until then instead, or until an interrupt for it, which a loop with interrupts on would take
+    // Mario Kart's ARM7 waits for lines to pass like this while loading, which took a quarter of its work there
+    uint16_t value = core->gpu.readVCount();
+    if (!Settings::fastTiming || core->gbaMode) return value;
+    Interpreter &arm7 = core->interpreter[1];
+    uint32_t regs[16];
+    for (int i = 0; i < 15; i++)
+        regs[i] = arm7.getRegister(i);
+    regs[15] = arm7.getCpsr();
+    uint32_t now = core->globalCycles;
+
+    if (pollSeen && value == pollValue && !memcmp(regs, pollRegs, sizeof(regs))) {
+        // The same read again: the first repeat gives the time around, and the next one with the same time confirms it
+        uint32_t step = now - pollCycles;
+        pollCycles = now;
+        if (pollSeen == 1 || step != pollStep) {
+            pollStep = step;
+            pollSeen = 2;
+            return value;
+        }
+        uint32_t next = core->events[0].cycles;
+        if (int32_t(next - now) > int32_t(step)) {
+            pollSeen = 0;
+            core->schedule(ARM7_VCOUNT_WAKE, next - now);
+            arm7.halt(1);
+        }
+        return value;
+    }
+
+    // Otherwise start over from this read
+    memcpy(pollRegs, regs, sizeof(regs));
+    pollValue = value;
+    pollCycles = now;
+    pollSeen = 1;
+    return value;
+}
+
+void Memory::endVCountWait() {
+    // Wake the ARM7 from a wait on VCOUNT when the task it was waiting for runs, unless an interrupt already did
+    if (core->interpreter[1].halted & BIT(1))
+        core->interpreter[1].unhalt(1);
 }

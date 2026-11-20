@@ -125,6 +125,7 @@ enum SchedTask {
     CAM_LINE,
     DSP_UPDATE,
     DSP_HLE_FINISH,
+    ARM7_VCOUNT_WAKE,
     MAX_TASKS
 };
 

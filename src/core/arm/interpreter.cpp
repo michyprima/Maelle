@@ -397,8 +397,10 @@ void Interpreter::sendInterrupt(int bit) {
         core->vblankSyncEnd = core->globalCycles + Core::VBLANK_WINDOW;
 
     // Trigger an interrupt if the conditions are met, or unhalt the CPU even if interrupts are disabled
-    // The ARM9 additionally needs IME to be set for it to unhalt, but the ARM7 doesn't care
+    // The ARM9 additionally needs IME to be set for it to unhalt, but the ARM7 doesn't care, and it ends a wait on
+    // VCOUNT, see Memory::readVCount7
     if (ie & irf) {
+        if (arm7 && (halted & BIT(1))) unhalt(1);
         if (ime && !(cpsr & BIT(7)))
             core->schedule(SchedTask(ARM9_INTERRUPT + arm7), (arm7 && !core->gbaMode) + 1);
         else if (ime || arm7)

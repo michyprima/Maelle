@@ -148,9 +148,17 @@ public:
     void writeCardPowerOffDelay(uint16_t mask, uint16_t value);
     void prepareTitle(bool dsiTitle);
     void cardPowerOff();
+    void endVCountWait();
 
 private:
     Core *core;
+
+    // The last ARM7 reads of VCOUNT with nothing else read or written in between, for waits on it to skip ahead
+    uint32_t pollRegs[16] = {};
+    uint32_t pollCycles = 0, pollStep = 0;
+    uint16_t pollValue = 0;
+    uint8_t pollSeen = 0;
+    uint16_t readVCount7();
     uint32_t gbaBiosAddr = 0;
 
     uint8_t bios9[0x10000] = {}; // 64KB ARM9 BIOS

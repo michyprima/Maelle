@@ -36,7 +36,7 @@ public:
     HleBios *bios = nullptr;
     uint32_t entryAddr = 0;
     uint8_t halted = 0;
-    bool fullSpeedWram = false; // Whether the ARM7 only counts its cycles double in main RAM, which is for DSi software
+    bool fullSpeedWram = false; // Whether the ARM7 only counts its cycles double in main RAM, set once the core starts
     bool fullSpeedItcm = false; // Whether the ARM9 counts its cycles half in its instruction TCM, see Cartridge::loadRom
 #ifdef STATE_DEBUG
     uint32_t wakes = 0; // Times the CPU has been woken from halting
@@ -68,6 +68,8 @@ public:
 
     bool isThumb() { return cpsr & BIT(5); }
     uint32_t getPC() { return *registers[15]; }
+    uint32_t getRegister(int i) { return *registers[i]; }
+    uint32_t getCpsr() { return cpsr; }
     int handleHleIrq();
     std::string compare(Interpreter &other);
 
@@ -120,8 +122,8 @@ private:
         // The ARM7 runs at half speed, so each cycle counts as two, except in its BIOS, whose bus has no wait states;
         // timed delays there, like the ones the DSi's software waits with while shutting down, take as long as on
         // hardware. Its WRAM and the DSi's new WRAM have none either, which a DSi showed with tests/hardware's speed
-        // test, and for DSi software they count the same way, since it depends on how long the ARM7 takes to answer
-        // the ARM9
+        // test, so they count the same way once the core starts, since software depends on how long the ARM7 takes to
+        // answer the ARM9, and on its own handlers finishing in time
         return (pc < 0x10000 || (fullSpeedWram && !mainRam(pc))) ? cycles : (cycles << 1);
     }
     static bool mainRam(uint32_t address) { return (address >> 24) == 0x02 || (address >> 24) == 0x0C; }
