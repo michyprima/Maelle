@@ -190,7 +190,7 @@ private:
     // Running code stops at the next instruction when the flag is set, in case its own code changed
     // Indexed by the address over 2, so THUMB blocks a halfword apart, common in ARM7 code, don't share an entry; ARM code
     // only fills even entries, so it gets half of them
-    static const int CACHE_BITS = 16, CACHE_SIZE = 1 << CACHE_BITS;
+    static const int CACHE_BITS = 15, CACHE_SIZE = 1 << CACHE_BITS;
     JitCacheEntry cacheData[CACHE_SIZE + 1] = {};
     static const uint32_t NO_KEY = 2; // A key no code has
     static uint32_t cacheKey(uint32_t address, bool thumb) { return address + (thumb ? 3 : 4); } // The program counter there, with bit 0 for THUMB
