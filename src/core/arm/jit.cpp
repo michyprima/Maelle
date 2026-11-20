@@ -695,7 +695,7 @@ int Jit::interleave(const uint32_t *limit) {
             return 0;
         }
         if (!Interpreter::runArm7Behind(*core) || codeChanged) return 0;
-        core->sliceLimit = core->interpreter[1].cycles + Core::FAST_SLICE;
+        core->sliceLimit = core->interpreter[1].cycles + core->sliceSize();
         return 1;
     }
     if (limit != &core->interpreter[1].cycles)

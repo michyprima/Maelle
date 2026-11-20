@@ -235,7 +235,7 @@ template <bool dsi> void Interpreter::runCoreNdsFast(Core &core) {
             if (core.globalCycles >= arm9.cycles) {
                 // Run compiled ARM9 code if possible, which lets the ARM7 catch up in between and leaves the state as
                 // it would be at the top of this loop, or fall back to the interpreter
-                core.sliceLimit = arm7.cycles + Core::FAST_SLICE;
+                core.sliceLimit = arm7.cycles + core.sliceSize();
                 if (core.jit.enabled && core.jit.run(&core.sliceLimit)) continue;
                 if (arm9.pipelineStale) arm9.refillPipeline();
                 bool half = dsi || (arm9.fullSpeedItcm && itcm(*arm9.registers[15]));
@@ -393,6 +393,8 @@ void Interpreter::unhalt(int bit) {
 void Interpreter::sendInterrupt(int bit) {
     // Set the interrupt's request bit
     irf |= BITL(bit);
+    if (arm7 && bit == 0 && (ie & BIT(0)))
+        core->vblankSyncEnd = core->globalCycles + Core::VBLANK_WINDOW;
 
     // Trigger an interrupt if the conditions are met, or unhalt the CPU even if interrupts are disabled
     // The ARM9 additionally needs IME to be set for it to unhalt, but the ARM7 doesn't care
