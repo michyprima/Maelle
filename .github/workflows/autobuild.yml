@@ -5,6 +5,11 @@ on:
     branches:
     - master
 
+# A newer push waits for the older one, so the preview release always ends on the latest commit
+concurrency:
+  group: autobuild
+  cancel-in-progress: false
+
 jobs:
   build-wiiu:
     runs-on: ubuntu-latest
@@ -23,4 +28,35 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: maelle-wiiu
-        path: maelle.wuhb
+        path: |
+          maelle.wuhb
+          maelle.elf
+
+  preview:
+    needs: build-wiiu
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+    - name: Download
+      uses: actions/download-artifact@v4
+      with:
+        name: maelle-wiiu
+    - name: Publish
+      # One "preview" pre-release that follows master: the tag is moved to this commit and the files replaced.
+      # The tag doesn't start with "v", so the release workflow ignores it.
+      run: |
+        SHORT=$(echo $GITHUB_SHA | cut -c1-7)
+        NOTES="Automatic build of $SHORT ($(date -u +%Y-%m-%d)), replaced on every push to master. Not a stable release."
+        gh api -X PATCH repos/$GH_REPO/git/refs/tags/preview -f sha=$GITHUB_SHA -F force=true ||
+          gh api repos/$GH_REPO/git/refs -f ref=refs/tags/preview -f sha=$GITHUB_SHA
+        if gh release view preview > /dev/null 2>&1; then
+          gh release edit preview --prerelease --title "Preview ($SHORT)" --notes "$NOTES"
+          gh release upload preview maelle.wuhb maelle.elf --clobber
+        else
+          gh release create preview maelle.wuhb maelle.elf --prerelease --latest=false --verify-tag \
+            --title "Preview ($SHORT)" --notes "$NOTES"
+        fi
