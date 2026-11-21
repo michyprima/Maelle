@@ -20,6 +20,7 @@
 #                of where its core was during slow frames in trace.bin
 #   nostrips     frametime without the GPU 3D renderer drawing flat polygons a row at a time, to compare frame times
 #   frameslots   frametime without the samples, which slow the emulator down, for truer times
+#   nopool       frametime without the GPU 3D renderer's pool of textures, to time creating and freeing them
 #   framelog     The time of every emulator and UI frame in framelog.bin, cheap enough to measure dropped frames
 #                and what a change costs; tests/framelog/report.py sums it up and compares two of them
 #   audiocap     framelog, plus the audio the emulator made and the audio played in audio-produced.pcm and
@@ -36,7 +37,7 @@ cd "$(dirname "$0")"
 export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro} DEVKITPPC=${DEVKITPPC:-/opt/devkitpro/devkitPPC}
 BASE='-g -Ofast -fno-allow-store-data-races -flto -ffunction-sections -DESPRESSO -mcpu=750 -meabi -mhard-float $(INCLUDE) -D__WIIU__ -D__WUT__ -DENDIAN_BIG -DNO_FDOPEN -DLOG_LEVEL=0'
 
-[ $# -gt 0 ] || { sed -n '2,30p' "$0"; exit 1; }
+[ $# -gt 0 ] || { sed -n '2,34p' "$0"; exit 1; }
 for variant in "$@"; do
     case $variant in
         heartbeat) flags='-DHEARTBEAT'; name=maelle-hb; title='Maelle Heartbeat' ;;
@@ -55,6 +56,7 @@ for variant in "$@"; do
         frametime) flags='-DHEARTBEAT -DPROFILE_EMU -DSLOW_GPU_REPORT'; name=maelle-frametime; title='Maelle Frame Times' ;;
         nostrips) flags='-DHEARTBEAT -DPROFILE_EMU -DGPU_NO_STRIPS'; name=maelle-nostrips; title='Maelle No Strips' ;;
         frameslots) flags='-DHEARTBEAT -DPROFILE_EMU -DNO_FRAME_SAMPLES'; name=maelle-frameslots; title='Maelle Frame Slots' ;;
+        nopool) flags='-DHEARTBEAT -DPROFILE_EMU -DSLOW_GPU_REPORT -DGPU_NO_TEXTURE_POOL'; name=maelle-nopool; title='Maelle No Texture Pool' ;;
         framelog) flags='-DFRAME_LOG'; name=maelle-framelog; title='Maelle Frame Log' ;;
         audiocap) flags='-DFRAME_LOG -DAUDIO_CAPTURE'; name=maelle-audiocap; title='Maelle Audio Capture' ;;
         romload) flags='-DROM_LOAD_TEST'; name=maelle-romload; title='Maelle ROM Load' ;;

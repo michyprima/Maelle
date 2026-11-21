@@ -49,9 +49,7 @@ static OSThread *emuThread = nullptr;
 #ifdef ROM_TEST
 #include "../../core/rom_test.h"
 #endif
-#ifdef STATE_DEBUG
 #include "gpu3d_wiiu.h"
-#endif
 
 #ifdef PROFILE_SAMPLER
 #include "sampler.h"
@@ -2662,6 +2660,7 @@ bool ConsoleUI::createCore() {
             delete core;
         }
         core = nullptr;
+        dropGpu3DTextures();
         Cartridge::dropKeptRoms(ndsPath, gbaPath);
         Cartridge::ramFallback.store(false);
 

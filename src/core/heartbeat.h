@@ -73,6 +73,17 @@ enum HeartbeatSlot {
     HB_3D_WIREFRAME, // Polygons with alpha 0, drawn as wireframe
     HB_GPU_TEXTURES, // Textures cached by the GPU 3D renderer
     HB_GPU_TEXTURE_KB, // Kilobytes of textures cached by the GPU 3D renderer
+    HB_GPU_TEX_POOL_KB, // Kilobytes of textures the GPU 3D renderer keeps to decode into again
+    HB_GPU_TEX_HASH_US, // Within textures, in time base ticks: hashing texture data to see if it changed
+    HB_GPU_TEX_DECODE_US, // Within textures, in time base ticks: decoding them
+    HB_GPU_TEX_SETUP_US, // Within textures, in time base ticks: setting up new ones with GX2
+    HB_GPU_TEX_ALLOC_US, // Within textures, in time base ticks: allocating new ones' memory
+    HB_GPU_TEX_EXPIRE_US, // Before the polygons, in time base ticks: letting go of textures not used lately, freeing some
+    HB_GPU_TEX_POOL_LIMIT_KB, // Kilobytes the pool of textures may hold, from the memory left
+    HB_GPU_TEX_POOLED, // Textures taken from the pool to decode into
+    HB_GPU_TEX_ALLOCS, // Textures created
+    HB_GPU_TEX_FREES, // Textures freed
+    HB_GPU_TEX_DECODES, // Textures decoded
     HB_GPU_PRIOR_US, // Within drawing with GPU_TIMELINE, in total: when the GPU finished work queued before this frame's
     HB_GPU_MAIN_SUBMIT_US, // When the polygons were submitted
     HB_GPU_MAIN_DONE_US, // When the GPU finished the polygons

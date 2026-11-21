@@ -118,4 +118,11 @@ bool freeTopRom(void *rom) {
     return found;
 }
 
+size_t freeHeapBytes() {
+    __malloc_lock(_REENT);
+    size_t above = romLow - heapBreak;
+    __malloc_unlock(_REENT);
+    return above + mallinfo().fordblks;
+}
+
 #endif // __WIIU__

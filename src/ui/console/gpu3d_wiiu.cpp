@@ -43,6 +43,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <malloc.h>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -63,6 +64,7 @@ char gpu3dDraw[512];
 #include "../../core/settings.h"
 #include "../../core/worker_thread.h"
 #include "../../core/file_lock.h"
+#include "../../core/memory/rom_heap.h"
 
 extern const uint8_t gpu3d_color_gsh[], gpu3d_modulate_gsh[], gpu3d_decal_gsh[], gpu3d_modtrans_gsh[], gpu3d_edge_gsh[],
     gpu3d_fog_gsh[], gpu3d_aa_gsh[], gpu3d_toon_gsh[], gpu3d_pack_gsh[], gpu3d_clear_gsh[], gpu3d_fill_gsh[], gpu3d_copy_gsh[];
@@ -181,6 +183,13 @@ private:
     GpuVertex *vertices = nullptr;
     uint16_t *edgeIndices = nullptr; // The vertices of solid polygons' edges, for finding cracks between polygons
 
+    // Textures no longer used are kept by size to be decoded into again, instead of freed and allocated; up to a quarter of
+    // the memory malloc has left when a game's first frame is drawn, after its ROM has taken its share, so games that change
+    // textures all the time rarely need a new one, while the memory a busy scene leaves behind is still there for anything else
+    std::unordered_map<uint32_t, std::vector<GX2Texture*>> pool;
+    uint32_t poolBytes = 0, poolLimit = 0;
+    bool poolSized = false;
+
     // Decoded textures are kept between frames, and decoded again when the data they came from changes
     struct CachedTexture {
         GX2Texture *texture;
@@ -219,7 +228,11 @@ private:
     void renderFrame(Gpu3DRenderer *renderer);
     GX2Texture *getTexture(Gpu3DRenderer *renderer, _Polygon *polygon);
     GX2Texture *lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon, uint64_t key);
+    GX2Texture *newTexture(_Polygon *polygon);
+    void releaseTexture(GX2Texture *texture);
     void freeTextures();
+public:
+    void dropTextures();
 };
 
 bool Gpu3DWiiU::init() {
@@ -531,18 +544,14 @@ void Gpu3DWiiU::run() {
 }
 
 void Gpu3DWiiU::freeTextures() {
-    // Free textures that haven't been used for a couple of seconds, which the GPU has finished with
-    uint32_t bytes = 0;
+    // Let go of textures that haven't been used for a couple of seconds, which the GPU has finished with
+    HB_TICK_TIMER(hbExpire);
     for (auto it = textures.begin(); it != textures.end();) {
         if (frameCount - it->second.frame > 120) {
-            if (it->second.texture) {
-                MEMFreeToDefaultHeap(it->second.texture->surface.image);
-                delete it->second.texture;
-            }
+            if (it->second.texture) releaseTexture(it->second.texture);
             it = textures.erase(it);
         }
         else {
-            if (it->second.texture) bytes += it->second.texture->surface.imageSize;
             it++;
         }
     }
@@ -552,9 +561,104 @@ void Gpu3DWiiU::freeTextures() {
         else
             it++;
     }
+
+    // Size the pool once a game is running; finding malloc's free memory walks all its free blocks, which is slow
+#ifndef GPU_NO_TEXTURE_POOL
+    // Debug builds can leave it out, to time creating and freeing textures
+    if (!poolSized) {
+        poolLimit = std::min<size_t>(freeHeapBytes() / 4, UINT32_MAX);
+        poolSized = true;
+    }
+#endif
+    HB_ADD_TICKS(HB_GPU_TEX_EXPIRE_US, hbExpire);
+#ifdef HEARTBEAT
+    uint32_t bytes = 0;
+    for (auto &entry: textures)
+        if (entry.second.texture) bytes += entry.second.texture->surface.imageSize;
     HB_SET(HB_GPU_TEXTURES, textures.size());
     HB_SET(HB_GPU_TEXTURE_KB, bytes >> 10);
-    (void)bytes;
+    HB_SET(HB_GPU_TEX_POOL_KB, poolBytes >> 10);
+    HB_SET(HB_GPU_TEX_POOL_LIMIT_KB, poolLimit >> 10);
+#endif
+}
+
+GX2Texture *Gpu3DWiiU::newTexture(_Polygon *polygon) {
+    // Reuse a texture of the size from the pool if there is one
+    auto it = pool.find((polygon->sizeS << 16) | polygon->sizeT);
+    if (it != pool.end() && !it->second.empty()) {
+        GX2Texture *texture = it->second.back();
+        it->second.pop_back();
+        poolBytes -= texture->surface.imageSize;
+        HB_INC(HB_GPU_TEX_POOLED);
+        return texture;
+    }
+
+    // Otherwise create one
+    HB_TICK_TIMER(hbSetup);
+    GX2Texture *texture = new GX2Texture;
+    memset(texture, 0, sizeof(GX2Texture));
+    texture->surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
+    texture->surface.width = polygon->sizeS;
+    texture->surface.height = polygon->sizeT;
+    texture->surface.depth = 1;
+    texture->surface.mipLevels = 1;
+    texture->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+    texture->surface.aa = GX2_AA_MODE1X;
+    texture->surface.use = GX2_SURFACE_USE_TEXTURE;
+    texture->surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
+    texture->viewNumSlices = 1;
+    texture->compMap = 0x00010203;
+    GX2CalcSurfaceSizeAndAlignment(&texture->surface);
+    GX2InitTextureRegs(texture);
+    HB_ADD_TICKS(HB_GPU_TEX_SETUP_US, hbSetup);
+
+    // Textures come from malloc's memory, like the ROM, so the pool can be sized from what's left of it
+    HB_TICK_TIMER(hbAlloc);
+    texture->surface.image = memalign(texture->surface.alignment, texture->surface.imageSize);
+    HB_ADD_TICKS(HB_GPU_TEX_ALLOC_US, hbAlloc);
+    if (!texture->surface.image) {
+        delete texture;
+        return nullptr;
+    }
+    HB_INC(HB_GPU_TEX_ALLOCS);
+    return texture;
+}
+
+void Gpu3DWiiU::releaseTexture(GX2Texture *texture) {
+    // Put a texture no longer used in the pool, or free it if that's full
+    if (poolBytes + texture->surface.imageSize <= poolLimit) {
+        pool[(texture->surface.width << 16) | texture->surface.height].push_back(texture);
+        poolBytes += texture->surface.imageSize;
+        return;
+    }
+    free(texture->surface.image);
+    delete texture;
+    HB_INC(HB_GPU_TEX_FREES);
+}
+
+void Gpu3DWiiU::dropTextures() {
+    // Free every texture when a game is closed, so their memory is there for the next game's ROM; nothing is drawing,
+    // since there's no core, and the GPU finished with each frame before it was handed back
+    while (busy.load()) std::this_thread::yield();
+    for (auto &entry: textures) {
+        if (entry.second.texture) {
+            free(entry.second.texture->surface.image);
+            delete entry.second.texture;
+        }
+    }
+    textures.clear();
+    texelHashes.clear();
+    for (auto &sizes: pool) {
+        for (GX2Texture *texture: sizes.second) {
+            free(texture->surface.image);
+            delete texture;
+        }
+    }
+    pool.clear();
+    poolBytes = 0;
+    poolSized = false;
+    lastTextureKey = 0;
+    lastTexture = nullptr;
 }
 
 GX2Texture *Gpu3DWiiU::getTexture(Gpu3DRenderer *renderer, _Polygon *polygon) {
@@ -584,6 +688,7 @@ GX2Texture *Gpu3DWiiU::lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon,
     uint32_t texelChanges = memory.textureMapChanges, paletteChanges = memory.paletteMapChanges;
     bool texelsChanged = !cached.texture || cached.texelChanges != texelChanges;
     if (!texelsChanged && cached.paletteChanges == paletteChanges) return cached.texture;
+    HB_TICK_TIMER(hbHash);
     cached.texelChanges = texelChanges;
     cached.paletteChanges = paletteChanges;
     uint64_t texelHash = cached.texelHash;
@@ -600,31 +705,15 @@ GX2Texture *Gpu3DWiiU::lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon,
         cached.bases = shared.bases;
     }
     uint64_t paletteHash = renderer->hashTexture(polygon, true, cached.bases);
+    HB_ADD_TICKS(HB_GPU_TEX_HASH_US, hbHash);
     if (cached.texture && cached.texelHash == texelHash && cached.paletteHash == paletteHash) return cached.texture;
     cached.texelHash = texelHash;
     cached.paletteHash = paletteHash;
 
-    // Create the texture the first time
+    // Get a texture the first time, from the pool or new
     GX2Texture *texture = cached.texture;
     if (!texture) {
-        texture = new GX2Texture;
-        memset(texture, 0, sizeof(GX2Texture));
-        texture->surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
-        texture->surface.width = polygon->sizeS;
-        texture->surface.height = polygon->sizeT;
-        texture->surface.depth = 1;
-        texture->surface.mipLevels = 1;
-        texture->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
-        texture->surface.aa = GX2_AA_MODE1X;
-        texture->surface.use = GX2_SURFACE_USE_TEXTURE;
-        texture->surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
-        texture->viewNumSlices = 1;
-        texture->compMap = 0x00010203;
-        GX2CalcSurfaceSizeAndAlignment(&texture->surface);
-        GX2InitTextureRegs(texture);
-        texture->surface.image = MEMAllocFromDefaultHeapEx(texture->surface.imageSize, texture->surface.alignment);
-        if (!texture->surface.image) {
-            delete texture;
+        if (!(texture = newTexture(polygon))) {
             textures.erase(key);
             return nullptr;
         }
@@ -632,7 +721,10 @@ GX2Texture *Gpu3DWiiU::lookUpTexture(Gpu3DRenderer *renderer, _Polygon *polygon,
     }
 
     // Decode the texture into it, with rows at its pitch
+    HB_TICK_TIMER(hbDecode);
     renderer->decodeTexture(polygon, (uint32_t*)texture->surface.image, texture->surface.pitch);
+    HB_ADD_TICKS(HB_GPU_TEX_DECODE_US, hbDecode);
+    HB_INC(HB_GPU_TEX_DECODES);
 
     // Invalidating it adds a GPU command, so that waits until the frame is drawn while holding GX2
     updated.push_back(texture);
@@ -2071,10 +2163,16 @@ void Gpu3DWiiU::renderFrame(Gpu3DRenderer *renderer) {
 
 } // namespace
 
+static Gpu3DWiiU *gpu3DWiiU = nullptr;
+
 void initGpu3D() {
     // Make the GPU renderer available to the core if it could be set up
     Gpu3DWiiU *gpu3D = new Gpu3DWiiU();
     if (gpu3D->init())
-        Gpu3DRenderer::hardware = gpu3D;
+        Gpu3DRenderer::hardware = gpu3DWiiU = gpu3D;
+}
+
+void dropGpu3DTextures() {
+    if (gpu3DWiiU) gpu3DWiiU->dropTextures();
 }
 

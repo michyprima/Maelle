@@ -26,3 +26,6 @@
 // allocated while a game runs never ends up above a ROM; freeing a ROM then leaves one free block for the next one
 uint8_t *allocTopRom(size_t size);
 bool freeTopRom(void *rom);
+
+// The memory malloc can still give out: what's free inside its memory, and between it and the lowest ROM
+size_t freeHeapBytes();

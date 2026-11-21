@@ -34,3 +34,6 @@ extern char gpu3dDraw[512]; // The last draw sent, in GPU timeline builds, which
 FILE *openHangReport(const char *reason);
 
 void initGpu3D();
+
+// Frees the textures the GPU 3D renderer keeps, once a game's core is gone
+void dropGpu3DTextures();

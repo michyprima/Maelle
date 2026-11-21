@@ -1947,6 +1947,15 @@ int logHeartbeat(int, void *) {
             per(HB_GPU_POSTLOOP_US, gpuFrames), textureUs, int(per(HB_GPU_BUILD_US, gpuFrames)) -
             int(per(HB_GPU_PRELOOP_US, gpuFrames) + setupUs + vertexUs + fanUs + sendUs + per(HB_GPU_POSTLOOP_US, gpuFrames) +
             textureUs));
+        fprintf(file, "   gpu textures per frame: hash %u, decode %u, expire %u us | in total: decoded %u, from pool %u, "
+            "created %u in %u us (GX2 setup %u, memory %u), freed %u | pool %u of %u KB\n", perTicks(HB_GPU_TEX_HASH_US, gpuFrames),
+            perTicks(HB_GPU_TEX_DECODE_US, gpuFrames), perTicks(HB_GPU_TEX_EXPIRE_US, gpuFrames),
+            v[HB_GPU_TEX_DECODES] - last[HB_GPU_TEX_DECODES], v[HB_GPU_TEX_POOLED] - last[HB_GPU_TEX_POOLED],
+            v[HB_GPU_TEX_ALLOCS] - last[HB_GPU_TEX_ALLOCS],
+            uint32_t(OSTicksToMicroseconds(v[HB_GPU_TEX_SETUP_US] - last[HB_GPU_TEX_SETUP_US] + v[HB_GPU_TEX_ALLOC_US] - last[HB_GPU_TEX_ALLOC_US])),
+            uint32_t(OSTicksToMicroseconds(v[HB_GPU_TEX_SETUP_US] - last[HB_GPU_TEX_SETUP_US])),
+            uint32_t(OSTicksToMicroseconds(v[HB_GPU_TEX_ALLOC_US] - last[HB_GPU_TEX_ALLOC_US])),
+            v[HB_GPU_TEX_FREES] - last[HB_GPU_TEX_FREES], v[HB_GPU_TEX_POOL_KB], v[HB_GPU_TEX_POOL_LIMIT_KB]);
         fprintf(file, "   2D lines drawn by the emulator per frame: A %u, B %u | cores: 2D %u, geometry %u | "
             "ROM misses %u, waited %u us\n", per(HB_2D_EMU_LINES_A, frames), per(HB_2D_EMU_LINES_B, frames),
             v[HB_2D_CORE], v[HB_GEOM_CORE], v[HB_ROM_MISSES] - last[HB_ROM_MISSES],
