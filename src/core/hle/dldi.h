@@ -43,6 +43,7 @@ public:
     void patchRom(uint8_t *rom, uint32_t offset, uint32_t size);
     bool isPatched() { return patched; }
     void setPatched() { patched = true; }
+    void setHomebrew(bool value) { homebrew = value; }
 
     int startup();
     int isInserted();
@@ -54,5 +55,6 @@ public:
 private:
     Core *core;
     std::atomic<bool> patched{false};
+    bool homebrew = false;
     FILE *sdImage = nullptr;
 };

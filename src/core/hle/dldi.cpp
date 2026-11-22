@@ -29,6 +29,10 @@ Dldi::~Dldi() {
 }
 
 void Dldi::patchRom(uint8_t *rom, uint32_t offset, uint32_t size) {
+    // Leave commercial games alone; Final Fantasy Crystal Chronicles: Ring of Fates checksums the DLDI header it
+    // carries and locks every menu option if it's been patched, as flashcart loaders do
+    if (!homebrew) return;
+
     // Scan the ROM for DLDI drivers and patch them if found
     for (uint32_t i = 0; i < size; i += 4) {
         // Check for the DLDI magic number

@@ -745,10 +745,16 @@ bool CartridgeNds::loadRom() {
     }
 
     // Try to load the ROM into RAM if enabled; otherwise fall back to file-based loading
-    if (!Cartridge::loadRom()) {
+    if (!Cartridge::loadRom())
         return false;
-    }
-    else if (Settings::romInRam && takeKeptRom()) {
+
+    // Only patch DLDI drivers in homebrew, which melonDS tells by an ARM9 binary before the secure area's end or a
+    // game code of ####, before anything is read that could be patched
+    uint8_t header[0x24];
+    readRomFile(romFile, header, 0, sizeof(header));
+    core->dldi.setHomebrew(U8TO32(header, 0x20) < 0x4000 || !memcmp(&header[0x0C], "####", 4));
+
+    if (Settings::romInRam && takeKeptRom()) {
         // The ROM is already in RAM from the last core
     }
     else if (Settings::romInRam) {
