@@ -722,8 +722,9 @@ void CartridgeNds::loadState(FILE *file) {
     fread(&nandStatus, sizeof(nandStatus), 1, file);
     fread(nandBuffer, 1, sizeof(nandBuffer), file);
 
-    // The write enable latch isn't kept in states, so start without it, as after power-up
+    // The write enable latch and protection aren't kept in states, so start without them, as after power-up
     writeEnable = false;
+    writeProtect = 0;
 
     // Don't overwrite the save file right away; wait until it's modified
     saveDirty = false;
@@ -1274,9 +1275,19 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
         auxAddress[cpu] = 0;
         auxSpiData[cpu] = 0;
 
-        // Write enable and disable set the latch that FLASH erase and page program need (GBATEK)
+        // Write enable and disable set the latch that every write, program and erase needs (GBATEK)
         if (value == 0x06) writeEnable = true;
         else if (value == 0x04) writeEnable = false;
+    }
+    else if (auxCommand[cpu] == 0x05) {
+        // Read the status register, the same way for every save type
+        auxSpiData[cpu] = readSaveStatus();
+    }
+    else if (auxCommand[cpu] == 0x01) {
+        // Write the status register, which only sets EEPROM and FRAM protection, if writing was enabled (GBATEK)
+        if (auxWriteCount[cpu] == 1 && writeEnable && saveSize < 0x40000)
+            writeProtect = value & 0x8C;
+        auxSpiData[cpu] = 0;
     }
     else {
         // Incredibly naive save type detection, based on commands that might be sent
@@ -1335,9 +1346,10 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                     auxSpiData[cpu] = 0;
                 }
                 else {
-                    // On writes 3+, read data from the save and send it back
-                    auxSpiData[cpu] = (auxAddress[cpu] < 0x200) ? save[auxAddress[cpu]] : 0;
-                    auxAddress[cpu]++;
+                    // On writes 3+, read data from the save and send it back, wrapping around at the end (ST M95040
+                    // datasheet)
+                    auxSpiData[cpu] = save[auxAddress[cpu] & 0x1FF];
+                    auxAddress[cpu] = (auxAddress[cpu] + 1) & 0x1FF;
                 }
                 break;
 
@@ -1348,9 +1360,10 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                     auxSpiData[cpu] = 0;
                 }
                 else {
-                    // On writes 3+, read data from the save and send it back
-                    auxSpiData[cpu] = (auxAddress[cpu] < 0x200) ? save[auxAddress[cpu]] : 0;
-                    auxAddress[cpu]++;
+                    // On writes 3+, read data from the save and send it back, wrapping around at the end (ST M95040
+                    // datasheet)
+                    auxSpiData[cpu] = save[auxAddress[cpu] & 0x1FF];
+                    auxAddress[cpu] = (auxAddress[cpu] + 1) & 0x1FF;
                 }
                 break;
 
@@ -1361,15 +1374,16 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                     auxSpiData[cpu] = 0;
                 }
                 else {
-                    // On writes 3+, write data to the save
-                    if (auxAddress[cpu] < 0x200) {
+                    // On writes 3+, write data to the save if writing was enabled and the address isn't protected,
+                    // wrapping around within the 16 byte page (GBATEK; ST M95040 datasheet)
+                    if (writeEnable && !isWriteProtected(auxAddress[cpu] & 0x1FF)) {
                         mutex.lock();
-                        save[auxAddress[cpu]] = value;
+                        save[auxAddress[cpu] & 0x1FF] = value;
                         saveDirty = true;
                         mutex.unlock();
                     }
 
-                    auxAddress[cpu]++;
+                    auxAddress[cpu] = (auxAddress[cpu] & ~0xF) | ((auxAddress[cpu] + 1) & 0xF);
                     auxSpiData[cpu] = 0;
                 }
                 break;
@@ -1381,15 +1395,16 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                     auxSpiData[cpu] = 0;
                 }
                 else {
-                    // On writes 3+, write data to the save
-                    if (auxAddress[cpu] < 0x200) {
+                    // On writes 3+, write data to the save if writing was enabled and the address isn't protected,
+                    // wrapping around within the 16 byte page (GBATEK; ST M95040 datasheet)
+                    if (writeEnable && !isWriteProtected(auxAddress[cpu] & 0x1FF)) {
                         mutex.lock();
-                        save[auxAddress[cpu]] = value;
+                        save[auxAddress[cpu] & 0x1FF] = value;
                         saveDirty = true;
                         mutex.unlock();
                     }
 
-                    auxAddress[cpu]++;
+                    auxAddress[cpu] = (auxAddress[cpu] & ~0xF) | ((auxAddress[cpu] + 1) & 0xF);
                     auxSpiData[cpu] = 0;
                 }
                 break;
@@ -1411,8 +1426,8 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                     auxSpiData[cpu] = 0;
                 }
                 else {
-                    // On writes 4+, read data from the save and send it back
-                    auxSpiData[cpu] = (auxAddress[cpu] < uint32_t(saveSize)) ? save[auxAddress[cpu]] : 0;
+                    // On writes 4+, read data from the save and send it back, ignoring address bits past its size
+                    auxSpiData[cpu] = save[auxAddress[cpu] & (saveSize - 1)];
                     auxAddress[cpu]++;
                 }
                 break;
@@ -1425,10 +1440,12 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                     auxSpiData[cpu] = 0;
                 }
                 else {
-                    // On writes 4+, write data to the save
-                    if (auxAddress[cpu] < uint32_t(saveSize)) {
+                    // On writes 4+, write data to the save if writing was enabled and the address isn't protected,
+                    // ignoring address bits past its size (GBATEK)
+                    uint32_t address = auxAddress[cpu] & (saveSize - 1);
+                    if (writeEnable && !isWriteProtected(address)) {
                         mutex.lock();
-                        save[auxAddress[cpu]] = value;
+                        save[address] = value;
                         saveDirty = true;
                         mutex.unlock();
                     }
@@ -1483,9 +1500,9 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 }
                 else {
                     // On writes 5+, write data to the save
-                    // Page program can only change bits from 1 to 0, while page write erases the bytes first; page
-                    // program is ignored unless writing was enabled (GBATEK)
-                    if (auxCommand[cpu] == 0x0A || writeEnable) {
+                    // Page program can only change bits from 1 to 0, while page write erases the bytes first; both
+                    // are ignored unless writing was enabled (GBATEK)
+                    if (writeEnable) {
                         growFlashSave(auxAddress[cpu]);
                         if (auxAddress[cpu] < uint32_t(saveSize)) {
                             mutex.lock();
@@ -1568,6 +1585,27 @@ void CartridgeNds::growFlashSave(uint32_t address) {
             resizeSave(size, false);
             return;
         }
+    }
+}
+
+uint8_t CartridgeNds::readSaveStatus() {
+    // Report the write enable latch and EEPROM and FRAM protection, with the bits each type fixes; writes finish
+    // right away, so the chip is never busy (GBATEK)
+    uint8_t status = writeEnable << 1;
+    if (saveSize == 0x200) // EEPROM 0.5KB has its unused bits set
+        status |= 0xF0 | (writeProtect & 0x0C);
+    else if (saveSize > 0 && saveSize < 0x40000) // EEPROM 8KB-128KB and FRAM
+        status |= writeProtect;
+    return status;
+}
+
+bool CartridgeNds::isWriteProtected(uint32_t address) {
+    // EEPROM and FRAM can protect their upper quarter, upper half, or all of their memory (GBATEK)
+    switch ((writeProtect >> 2) & 0x3) {
+    case 1: return address >= uint32_t(saveSize) / 4 * 3;
+    case 2: return address >= uint32_t(saveSize) / 2;
+    case 3: return true;
+    default: return false;
     }
 }
 
