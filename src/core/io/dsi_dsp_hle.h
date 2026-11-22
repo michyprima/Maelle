@@ -36,7 +36,7 @@ public:
     static DspUcode *create(Core *core, DsiDsp *dsp, uint8_t **pages, uint32_t id);
     virtual ~DspUcode() {}
     virtual void saveState(FILE *file);
-    virtual void loadState(FILE *file);
+    virtual void loadState(FILE *file, uint32_t version);
 
     uint32_t getId() { return (kind << 16) | (uint16_t)version; }
     void start();
@@ -125,7 +125,7 @@ public:
     AacUcode(Core *core, DsiDsp *dsp, uint8_t **pages, int version): DspUcode(core, dsp, pages, AAC, version) {}
     ~AacUcode();
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
     void writeCmd(int i, uint16_t value);
 
 private:
@@ -148,7 +148,7 @@ class G711Ucode: public DspUcode {
 public:
     G711Ucode(Core *core, DsiDsp *dsp, uint8_t **pages, int version): DspUcode(core, dsp, pages, G711, version) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
     void writeCmd(int i, uint16_t value);
 
 private:
@@ -168,7 +168,7 @@ class GraphicsUcode: public DspUcode {
 public:
     GraphicsUcode(Core *core, DsiDsp *dsp, uint8_t **pages, int version): DspUcode(core, dsp, pages, GRAPHICS, version) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
     void writeCmd(int i, uint16_t value);
 
 private:

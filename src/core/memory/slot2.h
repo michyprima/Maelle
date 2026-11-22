@@ -43,7 +43,7 @@ public:
     Slot2(Core *core): core(core) {}
     ~Slot2() { delete[] ram; }
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void init();
     int getDevice() { return device; }

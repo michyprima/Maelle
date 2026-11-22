@@ -31,7 +31,7 @@ class DivSqrt {
 public:
     DivSqrt(Core *core): core(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     uint16_t readDivCnt() { if (divDirty) divide(); return divCnt; }
     uint32_t readDivNumerL() { return divNumer; }

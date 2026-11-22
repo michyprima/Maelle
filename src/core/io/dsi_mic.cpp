@@ -37,7 +37,7 @@ void DsiMic::saveState(FILE *file) {
     fwrite(&sndExCnt, sizeof(sndExCnt), 1, file);
 }
 
-void DsiMic::loadState(FILE *file) {
+void DsiMic::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     fread(fifo, 2, sizeof(fifo) / 2, file);

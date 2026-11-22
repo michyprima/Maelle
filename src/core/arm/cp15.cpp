@@ -29,7 +29,7 @@ void Cp15::saveState(FILE *file) {
     fwrite(&codeTurn, sizeof(codeTurn), 1, file);
 }
 
-void Cp15::loadState(FILE *file) {
+void Cp15::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     uint32_t ctrl, dtcm, itcm;
     fread(&ctrl, sizeof(ctrl), 1, file);

@@ -31,7 +31,7 @@ class Ipc {
 public:
     Ipc(Core *core): core(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     uint16_t readIpcSync(bool arm7) { return ipcSync[arm7]; }
     uint16_t readIpcFifoCnt(bool arm7) { return ipcFifoCnt[arm7]; }

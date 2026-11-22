@@ -28,7 +28,7 @@ class Aes {
 public:
     Aes(Core *core);
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
     void update();
 
     uint32_t readCnt() { return aesCnt; }

@@ -55,7 +55,7 @@ void Spi::saveState(FILE *file) {
     fwrite(&tscChangedY, sizeof(tscChangedY), 1, file);
 }
 
-void Spi::loadState(FILE *file) {
+void Spi::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(&writeCount, sizeof(writeCount), 1, file);
     fread(&address, sizeof(address), 1, file);

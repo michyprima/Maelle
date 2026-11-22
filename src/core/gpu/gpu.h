@@ -50,7 +50,7 @@ public:
     void init();
     void enterGbaMode();
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     bool getFrame(uint32_t *out, bool gbaCrop, uint32_t **hiRes3D = nullptr, bool *top3D = nullptr,
         uint32_t **packed = nullptr);

@@ -49,7 +49,7 @@ void DivSqrt::saveState(FILE *file) {
     fwrite(&sqrtParam, sizeof(sqrtParam), 1, file);
 }
 
-void DivSqrt::loadState(FILE *file) {
+void DivSqrt::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(&divCnt, sizeof(divCnt), 1, file);
     fread(&divNumer, sizeof(divNumer), 1, file);

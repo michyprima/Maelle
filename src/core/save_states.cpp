@@ -22,7 +22,12 @@
 #include "file_lock.h"
 
 const char *SaveStates::stateTag = "NOOD";
-const uint32_t SaveStates::stateVersion = 23;
+const uint32_t SaveStates::stateVersion = 24;
+
+// States from older versions back to this one still load; what they lack gets the values it has after power-up
+// To add to a component's state, bump stateVersion, write the new values in saveState, and in loadState read them only
+// if the version is at least the new one, setting them as after power-up otherwise
+const uint32_t SaveStates::oldestVersion = 23;
 
 void SaveStates::setPath(std::string path, bool gba) {
     // Set the NDS or GBA state path
@@ -69,8 +74,8 @@ StateResult SaveStates::checkState() {
         if (tag[i] != stateTag[i])
             return STATE_FORMAT_FAIL;
 
-    // Check if the state version matches
-    if (version != stateVersion)
+    // Check if the state version is one that can be loaded
+    if (version < oldestVersion || version > stateVersion)
         return STATE_VERSION_FAIL;
     return STATE_SUCCESS;
 }
@@ -129,54 +134,56 @@ bool SaveStates::saveState() {
 
 bool SaveStates::loadState() {
     std::lock_guard<FileLock> guard(fileLock());
-    // Open the state file and read past the header
+    // Open the state file and read past the header, keeping the version that components read their state for
     FILE *file = openFile("rb");
     if (!file) return false;
-    fseek(file, 8, SEEK_SET);
+    uint32_t version;
+    fseek(file, 4, SEEK_SET);
+    fread(&version, sizeof(uint32_t), 1, file);
 
     // Drop compiled code, since memory is about to change underneath it
     core->jit.reset();
     core->jit7.reset();
 
     // Load the state of every component
-    core->loadState(file);
-    core->aes.loadState(file);
-    core->cartridgeGba.loadState(file);
-    core->cartridgeNds.loadState(file);
-    core->cp15.loadState(file);
-    core->divSqrt.loadState(file);
-    core->dma[0].loadState(file);
-    core->dma[1].loadState(file);
-    core->gpu.loadState(file);
-    core->gpu2D[0].loadState(file);
-    core->gpu2D[1].loadState(file);
-    core->gpu3D.loadState(file);
-    core->gpu3DRenderer.loadState(file);
-    core->hleBios[0].loadState(file);
-    core->hleBios[1].loadState(file);
-    core->hleBios[2].loadState(file);
-    core->i2c.loadState(file);
-    core->interpreter[0].loadState(file);
-    core->interpreter[1].loadState(file);
-    core->input.loadState(file);
-    core->ipc.loadState(file);
-    core->memory.loadState(file);
-    core->ndma[0].loadState(file);
-    core->ndma[1].loadState(file);
-    core->rtc.loadState(file);
-    core->sdMmc.loadState(file);
-    core->sdio.loadState(file);
-    core->dsiWifi.loadState(file);
-    core->dsiMic.loadState(file);
-    core->dsiGpio.loadState(file);
-    core->dsiCamera.loadState(file);
-    core->dsiDsp.loadState(file);
-    core->spi.loadState(file);
-    core->spu.loadState(file);
-    core->timers[0].loadState(file);
-    core->timers[1].loadState(file);
-    core->wifi.loadState(file);
-    core->slot2.loadState(file);
+    core->loadState(file, version);
+    core->aes.loadState(file, version);
+    core->cartridgeGba.loadState(file, version);
+    core->cartridgeNds.loadState(file, version);
+    core->cp15.loadState(file, version);
+    core->divSqrt.loadState(file, version);
+    core->dma[0].loadState(file, version);
+    core->dma[1].loadState(file, version);
+    core->gpu.loadState(file, version);
+    core->gpu2D[0].loadState(file, version);
+    core->gpu2D[1].loadState(file, version);
+    core->gpu3D.loadState(file, version);
+    core->gpu3DRenderer.loadState(file, version);
+    core->hleBios[0].loadState(file, version);
+    core->hleBios[1].loadState(file, version);
+    core->hleBios[2].loadState(file, version);
+    core->i2c.loadState(file, version);
+    core->interpreter[0].loadState(file, version);
+    core->interpreter[1].loadState(file, version);
+    core->input.loadState(file, version);
+    core->ipc.loadState(file, version);
+    core->memory.loadState(file, version);
+    core->ndma[0].loadState(file, version);
+    core->ndma[1].loadState(file, version);
+    core->rtc.loadState(file, version);
+    core->sdMmc.loadState(file, version);
+    core->sdio.loadState(file, version);
+    core->dsiWifi.loadState(file, version);
+    core->dsiMic.loadState(file, version);
+    core->dsiGpio.loadState(file, version);
+    core->dsiCamera.loadState(file, version);
+    core->dsiDsp.loadState(file, version);
+    core->spi.loadState(file, version);
+    core->spu.loadState(file, version);
+    core->timers[0].loadState(file, version);
+    core->timers[1].loadState(file, version);
+    core->wifi.loadState(file, version);
+    core->slot2.loadState(file, version);
     fclose(file);
 
     // Pick which CPUs run again now that their halt states are loaded; the core picked it before loading them, from

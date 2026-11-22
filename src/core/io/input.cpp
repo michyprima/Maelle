@@ -29,7 +29,7 @@ void Input::saveState(FILE *file) {
     fwrite(&lastKeys, sizeof(lastKeys), 1, file);
 }
 
-void Input::loadState(FILE *file) {
+void Input::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(keyCnt, 2, sizeof(keyCnt) / 2, file);
     fread(&lastKeys, sizeof(lastKeys), 1, file);

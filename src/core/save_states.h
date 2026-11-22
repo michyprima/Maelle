@@ -53,6 +53,7 @@ private:
 
     static const char *stateTag;
     static const uint32_t stateVersion;
+    static const uint32_t oldestVersion;
 
     FILE *openFile(const char *mode);
 };

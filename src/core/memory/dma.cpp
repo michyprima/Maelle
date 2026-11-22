@@ -30,7 +30,7 @@ void Dma::saveState(FILE *file) {
     fwrite(dmaCnt, 4, sizeof(dmaCnt) / 4, file);
 }
 
-void Dma::loadState(FILE *file) {
+void Dma::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(srcAddrs, 4, sizeof(srcAddrs) / 4, file);
     fread(dstAddrs, 4, sizeof(dstAddrs) / 4, file);

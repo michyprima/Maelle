@@ -58,7 +58,7 @@ void Gpu2D::saveState(FILE *file) {
     fwrite(&masterBright, sizeof(masterBright), 1, file);
 }
 
-void Gpu2D::loadState(FILE *file) {
+void Gpu2D::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(winHFlip, sizeof(bool), sizeof(winHFlip) / sizeof(bool), file);
     fread(winVFlag, sizeof(bool), sizeof(winVFlag) / sizeof(bool), file);

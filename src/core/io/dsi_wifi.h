@@ -33,7 +33,7 @@ class DsiWifi {
 public:
     DsiWifi(Core *core): core(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
     void reset();
 
     bool readIrq() { return irq; }

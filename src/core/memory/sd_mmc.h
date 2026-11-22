@@ -32,7 +32,7 @@ public:
     SdMmc(Core *core, bool sdio): core(core), sdio(sdio) {}
     ~SdMmc();
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     uint32_t *init();
     void readBlock();

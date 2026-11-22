@@ -35,7 +35,7 @@ public:
 
     DsiCamera(Core *core): core(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void start();
     void frameStart();

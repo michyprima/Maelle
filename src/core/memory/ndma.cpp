@@ -38,7 +38,7 @@ void Ndma::saveState(FILE *file) {
     fwrite(ndmaCnt, 4, sizeof(ndmaCnt) / 4, file);
 }
 
-void Ndma::loadState(FILE *file) {
+void Ndma::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     fread(srcAddrs, 4, sizeof(srcAddrs) / 4, file);

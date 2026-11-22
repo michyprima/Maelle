@@ -84,7 +84,7 @@ void SdMmc::saveState(FILE *file) {
     SaveStates::writeFifo(dataFifo32, file);
 }
 
-void SdMmc::loadState(FILE *file) {
+void SdMmc::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     fread(&cardStatus, sizeof(cardStatus), 1, file);

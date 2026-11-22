@@ -78,7 +78,7 @@ class Gpu2D {
 public:
     Gpu2D(Core *core, bool engine);
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void reloadRegisters();
     void updateWindows(int line);

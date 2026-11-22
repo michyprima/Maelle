@@ -48,7 +48,7 @@ public:
 
     Cp15(Core *core): core(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     uint32_t read(uint8_t cn, uint8_t cm, uint8_t cp);
     void write(uint8_t cn, uint8_t cm, uint8_t cp, uint32_t value);

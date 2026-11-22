@@ -124,7 +124,7 @@ void Gpu3DRenderer::saveState(FILE *file) {
     fwrite(&alphaTestRef, sizeof(alphaTestRef), 1, file);
 }
 
-void Gpu3DRenderer::loadState(FILE *file) {
+void Gpu3DRenderer::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(&disp3DCnt, sizeof(disp3DCnt), 1, file);
     int overflow = 0;

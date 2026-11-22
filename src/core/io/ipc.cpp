@@ -28,7 +28,7 @@ void Ipc::saveState(FILE *file) {
     SaveStates::writeFifo(fifos[1], file);
 }
 
-void Ipc::loadState(FILE *file) {
+void Ipc::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(ipcSync, 2, sizeof(ipcSync) / 2, file);
     fread(ipcFifoCnt, 2, sizeof(ipcFifoCnt) / 2, file);

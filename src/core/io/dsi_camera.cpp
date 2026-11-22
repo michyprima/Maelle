@@ -73,7 +73,7 @@ void DsiCamera::saveState(FILE *file) {
     fwrite(&barLine, sizeof(barLine), 1, file);
 }
 
-void DsiCamera::loadState(FILE *file) {
+void DsiCamera::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file; the picture being sent isn't kept, so the rest of the frame comes from the
     // latest one
     if (!core->dsiMode) return;

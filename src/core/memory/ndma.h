@@ -27,7 +27,7 @@ class Ndma {
 public:
     Ndma(Core *core, bool arm7): core(core), arm7(arm7) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void trigger(uint8_t type);
     void setDrq(uint8_t type);

@@ -135,7 +135,7 @@ void Gpu3D::saveState(FILE *file) {
     SaveStates::writeFifo(fifo, file);
 }
 
-void Gpu3D::loadState(FILE *file) {
+void Gpu3D::loadState(FILE *file, uint32_t) {
     // Read state data from the file, after any queued commands have run
     sync();
     fread(&state, sizeof(state), 1, file);

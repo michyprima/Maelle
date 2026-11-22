@@ -44,7 +44,7 @@ public:
 
     Interpreter(Core *core, bool arm7);
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void init();
     void directBoot();

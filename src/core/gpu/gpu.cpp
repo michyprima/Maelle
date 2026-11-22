@@ -141,7 +141,7 @@ void Gpu::saveState(FILE *file) {
     fwrite(fifoLines[vCount < 192 ? vCount : 0], 2, 256, file);
 }
 
-void Gpu::loadState(FILE *file) {
+void Gpu::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(dispStat, 2, sizeof(dispStat) / 2, file);
     fread(&vCount, sizeof(vCount), 1, file);

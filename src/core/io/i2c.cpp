@@ -30,7 +30,7 @@ void I2c::saveState(FILE *file) {
     fwrite(&mcuVolume, sizeof(mcuVolume), 1, file);
 }
 
-void I2c::loadState(FILE *file) {
+void I2c::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     fread(&writeCount, sizeof(writeCount), 1, file);

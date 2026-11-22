@@ -45,7 +45,7 @@ public:
     ~Spi();
 
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     bool loadFirmware();
     void directBoot();

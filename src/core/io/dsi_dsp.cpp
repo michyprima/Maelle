@@ -59,7 +59,7 @@ void DsiDsp::saveState(FILE *file) {
     teakra->DoSavestate(&state);
 }
 
-void DsiDsp::loadState(FILE *file) {
+void DsiDsp::loadState(FILE *file, uint32_t version) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     fread(readFifo, 2, sizeof(readFifo) / 2, file);
@@ -82,7 +82,7 @@ void DsiDsp::loadState(FILE *file) {
     stopUcode();
     if (id != (uint32_t)-1) {
         ucode = DspUcode::create(core, this, pages, id);
-        ucode->loadState(file);
+        ucode->loadState(file, version);
     }
 
     // Read the processor's state if it was in use, or put it back as it starts

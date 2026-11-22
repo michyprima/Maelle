@@ -63,7 +63,7 @@ void DsiWifi::saveState(FILE *file) {
     fwrite(&connected, sizeof(connected), 1, file);
 }
 
-void DsiWifi::loadState(FILE *file) {
+void DsiWifi::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     for (int i = 0; i < 9; i++)

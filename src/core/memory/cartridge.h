@@ -174,7 +174,7 @@ class CartridgeNds: public Cartridge {
 public:
     CartridgeNds(Core *core): Cartridge(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void directBoot();
     void powerReset();
@@ -267,7 +267,7 @@ public:
 
     CartridgeGba(Core *core): Cartridge(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     uint8_t *getRom(uint32_t address);
     bool isEeprom(uint32_t address);

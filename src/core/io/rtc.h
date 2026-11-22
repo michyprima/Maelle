@@ -33,7 +33,7 @@ public:
 
     Rtc(Core *core): core(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void enableGpRtc() { gpRtc = true; }
     void reset();

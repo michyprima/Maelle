@@ -163,7 +163,7 @@ void Memory::allocRam(bool dsi) {
     ramSize = size;
 }
 
-void Memory::loadState(FILE *file) {
+void Memory::loadState(FILE *file, uint32_t) {
     // Read DS state data from the file, after making room in case it's from DSi mode
     pollSeen = 0;
     allocRam(core->dsiMode);

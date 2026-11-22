@@ -102,7 +102,7 @@ void DspUcode::saveState(FILE *file) {
     fwrite(&finishParam, sizeof(finishParam), 1, file);
 }
 
-void DspUcode::loadState(FILE *file) {
+void DspUcode::loadState(FILE *file, uint32_t) {
     // Read the state shared by all programs from the file
     fread(&exited, sizeof(exited), 1, file);
     fread(cmd, 2, 3, file);
@@ -458,9 +458,9 @@ void AacUcode::saveState(FILE *file) {
     fwrite(params, 2, 10, file);
 }
 
-void AacUcode::loadState(FILE *file) {
+void AacUcode::loadState(FILE *file, uint32_t version) {
     // Read the AAC program's state from the file
-    DspUcode::loadState(file);
+    DspUcode::loadState(file, version);
     fread(&cmdState, sizeof(cmdState), 1, file);
     fread(&paramCount, sizeof(paramCount), 1, file);
     fread(params, 2, 10, file);
@@ -590,9 +590,9 @@ void G711Ucode::saveState(FILE *file) {
     fwrite(params, 2, 8, file);
 }
 
-void G711Ucode::loadState(FILE *file) {
+void G711Ucode::loadState(FILE *file, uint32_t version) {
     // Read the G.711 program's state from the file
-    DspUcode::loadState(file);
+    DspUcode::loadState(file, version);
     fread(&cmdState, sizeof(cmdState), 1, file);
     fread(params, 2, 8, file);
 }
@@ -729,9 +729,9 @@ void GraphicsUcode::saveState(FILE *file) {
     fwrite(params, 2, 14, file);
 }
 
-void GraphicsUcode::loadState(FILE *file) {
+void GraphicsUcode::loadState(FILE *file, uint32_t version) {
     // Read the graphics program's state from the file
-    DspUcode::loadState(file);
+    DspUcode::loadState(file, version);
     fread(&cmdState, sizeof(cmdState), 1, file);
     fread(&cmdIndex, sizeof(cmdIndex), 1, file);
     fread(params, 2, 14, file);

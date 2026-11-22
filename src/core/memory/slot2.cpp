@@ -37,7 +37,7 @@ void Slot2::saveState(FILE *file) {
     if (ram) fwrite(ram, 1, 0x800000, file);
 }
 
-void Slot2::loadState(FILE *file) {
+void Slot2::loadState(FILE *file, uint32_t) {
     // Read state data from the file, skipping the expansion RAM if the state was made with another accessory
     int saved = SLOT2_NONE;
     fread(&saved, sizeof(saved), 1, file);

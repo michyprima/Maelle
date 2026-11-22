@@ -176,7 +176,7 @@ public:
     Gpu3D(Core *core): core(core) {}
     ~Gpu3D();
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void runCommands();
     void swapBuffers();

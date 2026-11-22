@@ -117,7 +117,7 @@ void Spu::saveState(FILE *file) {
     SaveStates::writeFifo(gbaFifos[1], file);
 }
 
-void Spu::loadState(FILE *file) {
+void Spu::loadState(FILE *file, uint32_t) {
     // Read state data from the file, reading channel data from memory until the next batch fetches ahead
     memset(fetchCount, 0, sizeof(fetchCount));
     fread(&batchEnd, sizeof(batchEnd), 1, file);

@@ -32,7 +32,7 @@ public:
 
     DsiGpio(Core *core): core(core), headphones(headphonesIn.load()) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void update();
     bool readHeadphones() { return headphones; }

@@ -68,7 +68,7 @@ public:
     Memory(Core *core);
     ~Memory();
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
     void allocRam(bool dsi);
 
     bool loadBios9();

@@ -32,7 +32,7 @@ void DsiGpio::saveState(FILE *file) {
     fwrite(&gpioWifi, sizeof(gpioWifi), 1, file);
 }
 
-void DsiGpio::loadState(FILE *file) {
+void DsiGpio::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     fread(&headphones, sizeof(headphones), 1, file);

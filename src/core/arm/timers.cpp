@@ -28,7 +28,7 @@ void Timers::saveState(FILE *file) {
     fwrite(tmCntH, 2, sizeof(tmCntH) / 2, file);
 }
 
-void Timers::loadState(FILE *file) {
+void Timers::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(timers, 2, sizeof(timers) / 2, file);
     fread(shifts, 1, sizeof(shifts), file);

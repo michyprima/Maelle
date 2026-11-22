@@ -53,7 +53,7 @@ void Interpreter::saveState(FILE *file) {
     fwrite(&postFlg, sizeof(postFlg), 1, file);
 }
 
-void Interpreter::loadState(FILE *file) {
+void Interpreter::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(pipeline, 4, sizeof(pipeline) / 4, file);
     fread(registersUsr, 4, sizeof(registersUsr) / 4, file);

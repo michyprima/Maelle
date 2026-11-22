@@ -98,7 +98,7 @@ void Wifi::saveState(FILE *file) {
     fwrite(&channel, sizeof(channel), 1, file);
 }
 
-void Wifi::loadState(FILE *file) {
+void Wifi::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(&scheduled, sizeof(scheduled), 1, file);
     fread(&wModeWep, sizeof(wModeWep), 1, file);

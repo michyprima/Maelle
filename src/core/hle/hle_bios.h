@@ -33,7 +33,7 @@ public:
     HleBios(Core *core, bool arm7, int (HleBios::**swiTable)(uint32_t**)):
         core(core), arm7(arm7), swiTable(swiTable) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     int execute(uint8_t vector, uint32_t **registers);
     void checkWaitFlags();

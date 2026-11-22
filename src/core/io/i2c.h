@@ -27,7 +27,7 @@ class I2c {
 public:
     I2c(Core *core): core(core) {}
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     uint8_t readData() { return i2cData; }
     uint8_t readCnt() { return i2cCnt; }

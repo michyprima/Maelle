@@ -686,9 +686,11 @@ void CartridgeNds::saveState(FILE *file) {
     fwrite(&nandWriteLen, sizeof(nandWriteLen), 1, file);
     fwrite(&nandStatus, sizeof(nandStatus), 1, file);
     fwrite(nandBuffer, 1, sizeof(nandBuffer), file);
+    fwrite(&writeEnable, sizeof(writeEnable), 1, file);
+    fwrite(&writeProtect, sizeof(writeProtect), 1, file);
 }
 
-void CartridgeNds::loadState(FILE *file) {
+void CartridgeNds::loadState(FILE *file, uint32_t version) {
     // Read state data from the file
     // Make room for the state's save first, in case it's larger than the one loaded, or there wasn't one
     int size;
@@ -722,9 +724,16 @@ void CartridgeNds::loadState(FILE *file) {
     fread(&nandStatus, sizeof(nandStatus), 1, file);
     fread(nandBuffer, 1, sizeof(nandBuffer), file);
 
-    // The write enable latch and protection aren't kept in states, so start without them, as after power-up
-    writeEnable = false;
-    writeProtect = 0;
+    // States before version 24 don't have the write enable latch and protection, so start without them, as after
+    // power-up
+    if (version >= 24) {
+        fread(&writeEnable, sizeof(writeEnable), 1, file);
+        fread(&writeProtect, sizeof(writeProtect), 1, file);
+    }
+    else {
+        writeEnable = false;
+        writeProtect = 0;
+    }
 
     // Don't overwrite the save file right away; wait until it's modified
     saveDirty = false;
@@ -1971,7 +1980,7 @@ void CartridgeGba::saveState(FILE *file) {
     fwrite(&flashErase, sizeof(flashErase), 1, file);
 }
 
-void CartridgeGba::loadState(FILE *file) {
+void CartridgeGba::loadState(FILE *file, uint32_t) {
     // Read state data from the file, making room for the state's save first, in case it's larger than the one loaded
     int size;
     fread(&size, sizeof(size), 1, file);

@@ -462,7 +462,7 @@ void Core::saveState(FILE *file) {
         fwrite(&events[i], sizeof(events[i]), 1, file);
 }
 
-void Core::loadState(FILE *file) {
+void Core::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(&dsiMode, sizeof(dsiMode), 1, file);
     fread(&gbaMode, sizeof(gbaMode), 1, file);

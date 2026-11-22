@@ -50,7 +50,7 @@ void Rtc::saveState(FILE *file) {
     fwrite(fout, 1, sizeof(fout), file);
 }
 
-void Rtc::loadState(FILE *file) {
+void Rtc::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(&csCur, sizeof(csCur), 1, file);
     fread(&sckCur, sizeof(sckCur), 1, file);

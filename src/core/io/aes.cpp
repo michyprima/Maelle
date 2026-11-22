@@ -66,7 +66,7 @@ void Aes::saveState(FILE *file) {
     SaveStates::writeFifo(readFifo, file);
 }
 
-void Aes::loadState(FILE *file) {
+void Aes::loadState(FILE *file, uint32_t) {
     // Read DSi state data from the file
     if (!core->dsiMode) return;
     fread(&scheduled, sizeof(scheduled), 1, file);

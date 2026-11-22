@@ -36,7 +36,7 @@ public:
     DsiDsp(Core *core): core(core) {}
     ~DsiDsp();
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void update();
     void finishHle();

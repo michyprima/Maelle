@@ -48,7 +48,7 @@ public:
     void stopNetwork();
     WifiAp *getAp() { return ap; }
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     void addConnection(Core *core);
     void remConnection(Core *core);

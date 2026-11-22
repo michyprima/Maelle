@@ -37,7 +37,7 @@ public:
     ~Spu();
 
     void saveState(FILE *file);
-    void loadState(FILE *file);
+    void loadState(FILE *file, uint32_t version);
 
     uint32_t *getSamples(int count);
     bool ringLow();

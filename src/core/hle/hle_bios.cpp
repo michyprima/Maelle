@@ -64,7 +64,7 @@ void HleBios::saveState(FILE *file) {
     fwrite(&waitFlags, sizeof(waitFlags), 1, file);
 }
 
-void HleBios::loadState(FILE *file) {
+void HleBios::loadState(FILE *file, uint32_t) {
     // Read state data from the file
     fread(&waitFlags, sizeof(waitFlags), 1, file);
 }
