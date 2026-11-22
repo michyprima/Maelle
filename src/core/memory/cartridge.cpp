@@ -1291,6 +1291,8 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 break;
 
             case 0x03: // EEPROM 0.5KB: Read from lower memory
+                // Until the type is known, read as a blank chip would
+                auxSpiData[cpu] = 0xFF;
                 // Only EEPROM 0.5KB has a 1 byte address, so a read that ends after it with 1 data byte must be from one
                 // Other types need more address bytes, so a read that short would get no data from them
                 if (auxWriteCount[cpu] == 2 && !(auxSpiCnt[cpu] & BIT(6))) {
