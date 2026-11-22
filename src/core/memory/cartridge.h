@@ -221,6 +221,7 @@ private:
     uint8_t burstLeft = 0, burstDone = 0;
     void scheduleWord(bool cpu);
     void checkWord();
+    void growFlashSave(uint32_t address);
     bool encrypted[2] = {}, dsiKey[2] = {};
 
     uint8_t auxCommand[2] = {};
@@ -229,6 +230,7 @@ private:
 
     uint16_t auxSpiCnt[2] = {};
     uint8_t auxSpiData[2] = {};
+    bool writeEnable = false;
     uint32_t romCtrl[2] = {};
     uint64_t romCmdOut[2] = {};
 

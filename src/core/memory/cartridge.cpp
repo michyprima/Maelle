@@ -722,6 +722,9 @@ void CartridgeNds::loadState(FILE *file) {
     fread(&nandStatus, sizeof(nandStatus), 1, file);
     fread(nandBuffer, 1, sizeof(nandBuffer), file);
 
+    // The write enable latch isn't kept in states, so start without it, as after power-up
+    writeEnable = false;
+
     // Don't overwrite the save file right away; wait until it's modified
     saveDirty = false;
     saveStale = true;
@@ -1270,6 +1273,10 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
         auxCommand[cpu] = value;
         auxAddress[cpu] = 0;
         auxSpiData[cpu] = 0;
+
+        // Write enable and disable set the latch that FLASH erase and page program need (GBATEK)
+        if (value == 0x06) writeEnable = true;
+        else if (value == 0x04) writeEnable = false;
     }
     else {
         // Incredibly naive save type detection, based on commands that might be sent
@@ -1286,6 +1293,7 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 break;
 
             case 0x0A: // FLASH 512KB: Page write
+            case 0xDB: case 0xD8: // FLASH 512KB: Page and sector erase, which EEPROMs don't have
                 LOG_INFO("Detected FLASH 512KB save type\n");
                 resizeSave(0x80000, false);
                 break;
@@ -1452,7 +1460,22 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 }
                 break;
 
+            case 0x0B: // Fast read data bytes
+                if (auxWriteCount[cpu] < 5) {
+                    // On writes 2-4, set the 3 byte address to read from, then take a dummy byte on write 5
+                    if (auxWriteCount[cpu] < 4)
+                        auxAddress[cpu] |= value << ((3 - auxWriteCount[cpu]) * 8);
+                    auxSpiData[cpu] = 0;
+                }
+                else {
+                    // On writes 6+, read data from the save and send it back
+                    auxSpiData[cpu] = (auxAddress[cpu] < uint32_t(saveSize)) ? save[auxAddress[cpu]] : 0xFF;
+                    auxAddress[cpu]++;
+                }
+                break;
+
             case 0x0A: // Page write
+            case 0x02: // Page program
                 if (auxWriteCount[cpu] < 4) {
                     // On writes 2-4, set the 3 byte address to write to
                     auxAddress[cpu] |= value << ((3 - auxWriteCount[cpu]) * 8);
@@ -1460,26 +1483,42 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
                 }
                 else {
                     // On writes 5+, write data to the save
-                    // Commands don't reveal the FLASH size, so grow the save if a game writes past the end of it
-                    if (auxAddress[cpu] >= uint32_t(saveSize)) {
-                        for (int size: { 0x80000, 0x100000, 0x800000 }) {
-                            if (auxAddress[cpu] < uint32_t(size)) {
-                                LOG_INFO("Detected FLASH %dKB save type\n", size / 0x400);
-                                resizeSave(size, false);
-                                break;
-                            }
+                    // Page program can only change bits from 1 to 0, while page write erases the bytes first; page
+                    // program is ignored unless writing was enabled (GBATEK)
+                    if (auxCommand[cpu] == 0x0A || writeEnable) {
+                        growFlashSave(auxAddress[cpu]);
+                        if (auxAddress[cpu] < uint32_t(saveSize)) {
+                            mutex.lock();
+                            save[auxAddress[cpu]] = (auxCommand[cpu] == 0x02) ? (save[auxAddress[cpu]] & value) : value;
+                            saveDirty = true;
+                            mutex.unlock();
                         }
-                    }
-
-                    if (auxAddress[cpu] < uint32_t(saveSize)) {
-                        mutex.lock();
-                        save[auxAddress[cpu]] = value;
-                        saveDirty = true;
-                        mutex.unlock();
                     }
 
                     auxAddress[cpu]++;
                     auxSpiData[cpu] = 0;
+                }
+                break;
+
+            case 0xDB: // Page erase
+            case 0xD8: // Sector erase
+                if (auxWriteCount[cpu] < 4) {
+                    // On writes 2-4, set the 3 byte address in the 256 byte page or 64KB sector to erase
+                    auxAddress[cpu] |= value << ((3 - auxWriteCount[cpu]) * 8);
+                    auxSpiData[cpu] = 0;
+
+                    // Once the address is set, erase to 0xFF if writing was enabled (GBATEK)
+                    if (auxWriteCount[cpu] == 3 && writeEnable) {
+                        uint32_t size = (auxCommand[cpu] == 0xDB) ? 0x100 : 0x10000;
+                        uint32_t start = auxAddress[cpu] & ~(size - 1);
+                        growFlashSave(start);
+                        if (start < uint32_t(saveSize)) {
+                            mutex.lock();
+                            memset(&save[start], 0xFF, std::min(size, uint32_t(saveSize) - start));
+                            saveDirty = true;
+                            mutex.unlock();
+                        }
+                    }
                 }
                 break;
 
@@ -1504,10 +1543,32 @@ void CartridgeNds::writeAuxSpiData(bool cpu, uint8_t value) {
     }
 
     // Keep track of the write count
-    if (auxSpiCnt[cpu] & BIT(6)) // Keep chip selected
+    if (auxSpiCnt[cpu] & BIT(6)) { // Keep chip selected
         auxWriteCount[cpu]++;
-    else // Deselect chip
+    }
+    else { // Deselect chip
+        // Writing has to be enabled again after each write, program or erase (GBATEK)
+        if (auxWriteCount[cpu] > 0) {
+            switch (auxCommand[cpu]) {
+            case 0x01: case 0x02: case 0x0A: case 0xDB: case 0xD8:
+                writeEnable = false;
+                break;
+            }
+        }
         auxWriteCount[cpu] = 0;
+    }
+}
+
+void CartridgeNds::growFlashSave(uint32_t address) {
+    // Commands don't reveal the FLASH size, so grow the save if a game goes past the end of it
+    if (address < uint32_t(saveSize)) return;
+    for (int size: { 0x80000, 0x100000, 0x800000 }) {
+        if (address < uint32_t(size)) {
+            LOG_INFO("Detected FLASH %dKB save type\n", size / 0x400);
+            resizeSave(size, false);
+            return;
+        }
+    }
 }
 
 void CartridgeNds::writeRomCtrl(bool cpu, uint32_t mask, uint32_t value) {
