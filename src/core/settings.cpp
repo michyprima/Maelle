@@ -115,15 +115,15 @@ bool Settings::load(std::string path) {
     // Open the settings file or set defaults if it doesn't exist, with system files in the bios folder
     FILE *file = fopen((basePath + "/maelle.ini").c_str(), "r");
     if (!file) {
-        gbaBiosPath = basePath + "/bios/gba_bios.bin";
-        ndsBios9Path = basePath + "/bios/bios9.bin";
-        ndsBios7Path = basePath + "/bios/bios7.bin";
-        ndsFirmPath = basePath + "/bios/firmware.bin";
-        dsiBios9Path = basePath + "/bios/bios9i.bin";
-        dsiBios7Path = basePath + "/bios/bios7i.bin";
-        dsiFirmPath = basePath + "/bios/firmwarei.bin";
-        dsiNandPath = basePath + "/bios/nand.bin";
-        sdImagePath = basePath + "/sd.img";
+        gbaBiosPath = basePath + "bios/gba_bios.bin";
+        ndsBios9Path = basePath + "bios/bios9.bin";
+        ndsBios7Path = basePath + "bios/bios7.bin";
+        ndsFirmPath = basePath + "bios/firmware.bin";
+        dsiBios9Path = basePath + "bios/bios9i.bin";
+        dsiBios7Path = basePath + "bios/bios7i.bin";
+        dsiFirmPath = basePath + "bios/firmwarei.bin";
+        dsiNandPath = basePath + "bios/nand.bin";
+        sdImagePath = basePath + "sd.img";
         save();
         return false;
     }
