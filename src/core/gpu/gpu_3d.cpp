@@ -1648,6 +1648,43 @@ void Gpu3D::swapBuffersCmd(uint32_t param) {
     // Set the W-buffering toggle
     // The geometry engine is halted when the command is taken from the FIFO, until buffers swap on next V-blank
     savedPolygon.wBuffer = param & BIT(1);
+
+    // No polygons are added until then, so the list is sorted now, which also leaves it sorted in a state saved before
+    // the swap; the last vertex list is placed on the screen first, since sorting needs its Y coordinates
+    processVertices();
+    sortPolygons(param & BIT(0));
+}
+
+void Gpu3D::sortPolygons(bool manual) {
+    // The DS renders solid polygons first and then translucent ones (GBATEK), each sorted by their bottom Y and then
+    // their top Y, keeping their order where those are the same, as melonDS does; translucent polygons keep the order
+    // they were sent in instead if bit 0 of SWAP_BUFFERS asks for manual sorting (GBATEK). Games can send the same
+    // polygons in another order from frame to frame, like Pokemon Black 2's street lamps while talking, so without this
+    // translucent polygons that overlap blended differently between frames
+    // Wire-frame polygons (alpha 0) count as solid, and Y is taken at native resolution so high-res 3D sorts the same
+    if (polygonCountIn < 2) return;
+    bool resShift = Settings::highRes3D;
+    static uint64_t keys[sizeof(polygons1) / sizeof(_Polygon)];
+    bool sorted = true;
+    for (int i = 0; i < polygonCountIn; i++) {
+        _Polygon &p = polygonsIn[i];
+        int top = 192, bottom = 0;
+        for (int j = 0; j < p.size; j++) {
+            int y = verticesIn[p.vertices + j].y >> resShift;
+            top = std::min(top, y);
+            bottom = std::max(bottom, y);
+        }
+        bool translucent = (p.alpha > 0 && p.alpha < 0x3F) || p.textureFmt == 1 || p.textureFmt == 6;
+        uint64_t key = translucent ? (manual ? 0x20000 : (0x10000 | (bottom << 8) | top)) : ((bottom << 8) | top);
+        keys[i] = (key << 16) | i; // The index keeps equal keys in their order
+        sorted &= (i == 0 || keys[i] > keys[i - 1]);
+    }
+    if (sorted) return;
+    std::sort(keys, keys + polygonCountIn);
+    static _Polygon copy[sizeof(polygons1) / sizeof(_Polygon)];
+    memcpy(copy, polygonsIn, polygonCountIn * sizeof(_Polygon));
+    for (int i = 0; i < polygonCountIn; i++)
+        polygonsIn[i] = copy[keys[i] & 0xFFFF];
 }
 
 void Gpu3D::viewportCmd(uint32_t param) {

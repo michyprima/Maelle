@@ -336,6 +336,7 @@ private:
     bool isDistantDot(Vertex *vertices, int size);
 
     void processVertices();
+    void sortPolygons(bool manual);
     void addVertex();
     void addPolygon();
 
