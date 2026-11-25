@@ -243,14 +243,15 @@ public:
     static const uint32_t FAST_SLICE = 1024;
     uint32_t sliceLimit = 0;
 
-    // For a moment after the ARM7 gets a V-blank interrupt, the slices are much shorter, so that its handler runs in
-    // step with the ARM9; the SDK's handler counts V-blanks in shared RAM, and games like Phantom Hourglass read the
-    // count a few hundred cycles after V-blank to decide whether to start the next frame, so the ARM9 reading it before
-    // the ARM7 had a turn made them skip frames
-    static const uint32_t VBLANK_SLICE = 128;
-    static const uint32_t VBLANK_WINDOW = 2048;
-    uint32_t vblankSyncEnd = 0;
-    uint32_t sliceSize() const { return int32_t(vblankSyncEnd - globalCycles) > 0 ? VBLANK_SLICE : FAST_SLICE; }
+    // For a moment after the ARM7 gets a V-blank or IPC FIFO interrupt, the slices are much shorter, so that its handler
+    // runs in step with the ARM9; the SDK's handler counts V-blanks in shared RAM, and games like Phantom Hourglass read
+    // the count a few hundred cycles after V-blank to decide whether to start the next frame, so the ARM9 reading it
+    // before the ARM7 had a turn made them skip frames; with full slices after IPC FIFO interrupts, Phantom Hourglass's
+    // ARM9 also refilled its streamed music about 5 ms off the playing position, which clicked
+    static const uint32_t SYNC_SLICE = 128;
+    static const uint32_t SYNC_WINDOW = 2048;
+    uint32_t syncEnd = 0;
+    uint32_t sliceSize() const { return int32_t(syncEnd - globalCycles) > 0 ? SYNC_SLICE : FAST_SLICE; }
 
     // Compiled ARM7 code stops before reaching this, which is just before the ARM9 is due
     uint32_t arm7Limit = 0;

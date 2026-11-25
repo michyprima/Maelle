@@ -469,7 +469,7 @@ void Core::loadState(FILE *file, uint32_t) {
     fread(&dsiMode, sizeof(dsiMode), 1, file);
     fread(&gbaMode, sizeof(gbaMode), 1, file);
     fread(&globalCycles, sizeof(globalCycles), 1, file);
-    vblankSyncEnd = globalCycles;
+    syncEnd = globalCycles;
 
     // Reset the scheduler and refill it with loaded events
     events.clear();

@@ -393,8 +393,8 @@ void Interpreter::unhalt(int bit) {
 void Interpreter::sendInterrupt(int bit) {
     // Set the interrupt's request bit
     irf |= BITL(bit);
-    if (arm7 && bit == 0 && (ie & BIT(0)))
-        core->vblankSyncEnd = core->globalCycles + Core::VBLANK_WINDOW;
+    if (arm7 && (bit == 0 || bit == 18) && (ie & BITL(bit))) // V-blank, IPC receive FIFO not empty
+        core->syncEnd = core->globalCycles + Core::SYNC_WINDOW;
 
     // Trigger an interrupt if the conditions are met, or unhalt the CPU even if interrupts are disabled
     // The ARM9 additionally needs IME to be set for it to unhalt, but the ARM7 doesn't care, and it ends a wait on
