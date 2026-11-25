@@ -72,6 +72,7 @@ It's licensed under the GPL version 3, like NooDS.
 #### Wi-Fi
 - Online play in DS and DSi mode through the Wii U's internet connection, with an emulated access point
 - Nintendo WFC games connect to replacement services such as Wiimmfi, through an editable DNS Server setting
+- Save sync with a real DSi over the home network, through the Maelle Sync app for the DSi (see Usage)
 
 #### Interface
 - Simpler settings menu, split into tabs switched with L and R
@@ -135,10 +136,30 @@ System files go in `sd:/wiiu/apps/maelle/bios/`, and their paths can be changed 
 Save types are automatically detected, but this may not always be accurate. If you run something
 and it has issues with saving, the save type can be changed in the pause menu.
 
+### Syncing saves with a DSi
+Maelle Sync (`maelle-sync.nds`, in the releases next to `maelle.wuhb`) is a DSi app that syncs DS game saves between a
+real DSi and Maelle over your home network, so you can carry on a game on either one.
+
+1. Put `maelle-sync.nds` on the DSi's SD card and start it from [TWiLight Menu++](https://github.com/DS-Homebrew/TWiLightMenu)
+   in DSi mode. It connects with the Wi-Fi settings saved in the DSi's System Settings, including WPA2 networks.
+2. In Maelle, open Settings > Maelle > Sync Saves with DSi. Any open game is closed first, so its save is written.
+3. The DSi finds Maelle by itself on the same network. If it doesn't, type the address shown on Maelle's screen; the
+   DSi remembers it.
+4. The DSi lists the games both sides have, matched by game code and ROM header, and which way each save will go. A save
+   changed on only one side since the last sync goes to the other; when both changed, you choose. Any way can be
+   changed before syncing.
+
+Saves are read from where each side keeps them: on the DSi, as nds-bootstrap does (a `saves` folder next to the ROM, or
+beside it); in Maelle, next to the ROM or in the saves folder if that setting is on. A replaced save is kept as
+`.sav.bak`. DS cartridge games are synced; DSiWare and GBA saves aren't yet.
+
 ### Building
 Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) and its `wiiu-dev` and `gba-dev` packages, the latter
 for MiGoomba. Clone with `--recursive`, or run `git submodule update --init` after cloning, then run `make -j$(nproc)` in
 the project root directory to start building. `./build-wiiu-debug.sh` builds variants for debugging and measuring.
+
+Maelle Sync, the DSi app, also needs devkitPro's `libnds`, `calico`, `default-arm7`, `dswifi`, `libfat-nds` and
+`ndstool` packages; build it with `make -C savesync/dsi`. `savesync/README.md` describes how it works and how to test it.
 
 ### References
 * [GBATEK](https://problemkaputt.de/gbatek.htm) - The main information source for all things DS and GBA

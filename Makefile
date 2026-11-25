@@ -11,7 +11,7 @@ include $(DEVKITPRO)/wut/share/wut_rules
 
 NAME := maelle
 BUILD := build-wiiu
-SRCS := src src/core src/core/arm src/core/gpu src/core/hle src/core/io src/core/memory src/core/net src/core/teakra src/ui src/ui/console
+SRCS := src src/core src/core/arm src/core/gpu src/core/hle src/core/io src/core/memory src/core/net src/core/teakra src/ui src/ui/console savesync/common
 SLIRP := src/core/net/libslirp
 SLIRPSRCS := $(SLIRP)/src $(SLIRP)/glib
 FAAD := src/core/faad2

@@ -16,3 +16,8 @@ sd.img
 /tests/rom/build/
 /tests/gpu3d/build/
 .DS_Store
+/savesync/*/build/
+/savesync/*/*.nds
+/savesync/*/*.elf
+/savesync/host/maelle-sync-host
+/savesync/host/core-test

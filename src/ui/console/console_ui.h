@@ -124,6 +124,7 @@ public:
     static int frameColor; // The screen frame's color, or 0 for none
     static int gameLanguage; // The language games see, or 0 for the system's
     static std::string nickname; // The name games see in UTF-8, or empty for the Mii's
+    static std::string syncId; // This Wii U's ID for save sync with a DSi, made the first time it's used
     static int micInput; // Whether games hear the GamePad's microphone
     static int stickPointer; // Whether the right stick moves a pointer on the touch screen, and when it hides
     static int keyBinds[INPUT_MAX];
@@ -187,6 +188,7 @@ public:
     static void stopCore();
     static void closeCore();
     static void stopNetwork();
+    static void stopSync();
 
 private:
     static void *fileTextures[2];
@@ -244,6 +246,7 @@ private:
     static bool hotkeyPressed(int input, uint32_t pressed, uint32_t held);
     static void settingsMenu();
     static void aboutMenu();
+    static void syncMenu();
     static void pauseMenu();
     static int launchOptions(bool gba);
     static int saveTypeMenu(bool gba);

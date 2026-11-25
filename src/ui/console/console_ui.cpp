@@ -309,6 +309,7 @@ void ConsoleUI::initialize(int width, int height, std::string root, std::string 
         Setting("screenFrame", &frameColor, false),
         Setting("gameLanguage", &gameLanguage, false),
         Setting("nickname", &nickname, true),
+        Setting("syncId", &syncId, true),
         Setting("micInput", &micInput, false),
         Setting("stickPointer", &stickPointer, false),
         Setting("defaultFolder", &defaultFolder, true),
@@ -1894,7 +1895,7 @@ void ConsoleUI::settingsMenu() {
             settings.push_back(MenuItem(name, choices[value % choices.size()]));
             values.push_back({ &value, (int)choices.size() });
         };
-        int nicknameIndex = -1, dnsIndex = -1, aboutIndex = -1;
+        int nicknameIndex = -1, dnsIndex = -1, syncIndex = -1, aboutIndex = -1;
 
         switch (tab) {
         case TAB_EMULATION:
@@ -1991,6 +1992,9 @@ void ConsoleUI::settingsMenu() {
             add("Menu Theme", menuTheme, theme);
             add("Show FPS Counter", showFpsCounter, toggle);
             add("Select Last ROM", selectLastRom, selectLast);
+            syncIndex = settings.size();
+            settings.push_back(MenuItem("Sync Saves with DSi"));
+            values.push_back({ nullptr, 0 });
             aboutIndex = settings.size();
             settings.push_back(MenuItem("About Maelle"));
             values.push_back({ nullptr, 0 });
@@ -2043,6 +2047,9 @@ void ConsoleUI::settingsMenu() {
                         Settings::wfcDns = std::to_string(parts[0]) + "." + std::to_string(parts[1]) + "." +
                             std::to_string(parts[2]) + "." + std::to_string(parts[3]);
                 }
+            }
+            else if (index == syncIndex) {
+                syncMenu();
             }
             else if (index == aboutIndex) {
                 aboutMenu();
@@ -2294,8 +2301,12 @@ void ConsoleUI::pauseMenu() {
             return;
         }
         else if (pressed & defaultKeys[INPUT_X]) {
-            // Open the settings menu
+            // Open the settings menu, going to the file browser if syncing saves closed the game
             settingsMenu();
+            if (!core) {
+                fileBrowser();
+                return;
+            }
         }
     }
 }
@@ -2811,6 +2822,7 @@ void ConsoleUI::stopNetwork() {
     // End the network thread of a stopped core, for exits where the rest of the core can't be deleted since threads
     // on cores 0 and 1 are suspended in the background
     if (core) core->wifi.stopNetwork();
+    stopSync();
 }
 
 void ConsoleUI::stopCore() {

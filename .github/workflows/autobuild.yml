@@ -22,8 +22,14 @@ jobs:
     - name: Install the GBA library and tools
       # The image has devkitARM already; MiGoomba also needs libgba, and gbafix from gba-tools
       run: dkp-pacman -Sy --noconfirm --needed libgba gba-tools
+    - name: Install the DS libraries and tools
+      # For Maelle Sync, the DSi app in savesync/dsi: libnds with calico, which drive the DSi's Wi-Fi with WPA2, and the
+      # default ARM7 program ndstool puts in the ROM
+      run: dkp-pacman -S --noconfirm --needed libnds calico default-arm7 dswifi libfat-nds ndstool
     - name: Compile
       run: make -j$(nproc) VERSION=$(echo $GITHUB_SHA | cut -c1-7)
+    - name: Compile the DSi sync app
+      run: make -C savesync/dsi -j$(nproc) DEVKITARM=$DEVKITPRO/devkitARM && cp savesync/dsi/maelle-sync.nds .
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
@@ -31,6 +37,7 @@ jobs:
         path: |
           maelle.wuhb
           maelle.elf
+          maelle-sync.nds
 
   preview:
     needs: build-wiiu
@@ -55,8 +62,8 @@ jobs:
           gh api repos/$GH_REPO/git/refs -f ref=refs/tags/preview -f sha=$GITHUB_SHA
         if gh release view preview > /dev/null 2>&1; then
           gh release edit preview --prerelease --title "Preview ($SHORT)" --notes "$NOTES"
-          gh release upload preview maelle.wuhb maelle.elf --clobber
+          gh release upload preview maelle.wuhb maelle.elf maelle-sync.nds --clobber
         else
-          gh release create preview maelle.wuhb maelle.elf --prerelease --latest=false --verify-tag \
+          gh release create preview maelle.wuhb maelle.elf maelle-sync.nds --prerelease --latest=false --verify-tag \
             --title "Preview ($SHORT)" --notes "$NOTES"
         fi
