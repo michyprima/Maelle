@@ -1877,17 +1877,27 @@ bool ConsoleUI::fileBrowser() {
         uint32_t pressed = menu("Maelle", files, index, "Settings", "Exit", true,
             "Set Default", defaultKeys[INPUT_SELECT]);
 
-        // Open the launch options of a selected ROM, and launch it if one was chosen
+        // Open the launch options, and launch what was chosen; a selected NDS or GBA ROM adds its own options, while
+        // booting the system firmware is always offered, even on a folder or in an empty one
         bool launch = (pressed & defaultKeys[INPUT_A]);
-        if ((pressed & defaultKeys[INPUT_SELECT]) && !files.empty()) {
-            const std::string &name = files[index].file;
-            bool gba = (name.find(".gba", name.length() - 4) != std::string::npos);
-            if (gba || name.find(".nds", name.length() - 4) != std::string::npos) {
-                int saveSize = launchOptions(gba);
-                if (saveSize >= 0) {
-                    Cartridge::setLaunchSave(curPath + "/" + name, saveSize);
-                    launch = true;
+        if (pressed & defaultKeys[INPUT_SELECT]) {
+            std::string name = files.empty() ? "" : files[index].file;
+            bool gba = (name.find(".gba", name.length() - std::min<size_t>(name.length(), 4)) != std::string::npos);
+            bool nds = (name.find(".nds", name.length() - std::min<size_t>(name.length(), 4)) != std::string::npos);
+            int saveSize = launchOptions(gba, gba || nds);
+            if (saveSize == LAUNCH_FIRMWARE) {
+                // Boot the firmware with no cartridge inserted, keeping the browser where it was if that fails
+                ndsPath = "";
+                gbaPath = "";
+                if (createCore()) {
+                    startCore();
+                    return true;
                 }
+                continue;
+            }
+            if (saveSize >= 0) {
+                Cartridge::setLaunchSave(curPath + "/" + name, saveSize);
+                launch = true;
             }
         }
 
@@ -2490,15 +2500,20 @@ void ConsoleUI::pauseMenu() {
     }
 }
 
-int ConsoleUI::launchOptions(bool gba) {
-    // Show what a ROM can be launched with, returning the save size to use, or -1 to go back without launching
-    std::vector<MenuItem> items = { MenuItem("Run with Save Type...") };
+int ConsoleUI::launchOptions(bool gba, bool rom) {
+    // Show what can be launched, returning the save size to run a ROM with, LAUNCH_FIRMWARE to boot the system
+    // firmware without a cartridge, or -1 to go back without launching
+    std::vector<MenuItem> items;
+    if (rom) items.push_back(MenuItem("Run with Save Type..."));
+    items.push_back(MenuItem("Boot System Firmware"));
     int index = 0;
     while (true) {
         uint32_t pressed = menu("Launch Options", items, index);
         if (pressed & defaultKeys[INPUT_B])
             return -1;
         if (pressed & defaultKeys[INPUT_A]) {
+            if (index == (int)items.size() - 1)
+                return LAUNCH_FIRMWARE;
             int saveSize = saveTypeMenu(gba);
             if (saveSize >= 0) return saveSize;
         }

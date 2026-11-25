@@ -257,7 +257,8 @@ private:
     static void aboutMenu();
     static void syncMenu();
     static void pauseMenu();
-    static int launchOptions(bool gba);
+    static const int LAUNCH_FIRMWARE = -2;
+    static int launchOptions(bool gba, bool rom);
     static int saveTypeMenu(bool gba);
 
     static bool createCore();
