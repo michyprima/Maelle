@@ -1782,7 +1782,7 @@ int runUi(int, void *) {
 #ifdef SHADER_TEST
     shaderTest();
 #endif
-    ConsoleUI::initialize(tvWidth, tvHeight, base, base + "/wiiu/apps/maelle/");
+    ConsoleUI::initialize(tvWidth, tvHeight, base, base + "/wiiu/apps/maelle");
     ConsoleUI::fileBrowser();
 
     // Run the emulator until it exits, then close the game while the app still has the foreground
