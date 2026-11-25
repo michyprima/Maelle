@@ -80,6 +80,7 @@ public:
     void updateMap7(uint32_t start, uint32_t end);
     void updateNwramSlots(const uint32_t *window, int shift, uint8_t oldSlot, uint8_t newSlot);
     void forgetCleanLines();
+    void watchSound(int unit, uint32_t address, uint32_t size);
     void updateVram(bool all = false);
 
     template <typename T> T read(bool arm7, uint32_t address, bool tcm = true);
@@ -220,6 +221,11 @@ private:
 
     uint32_t ramMask();
     void updateRamSize();
+
+    // Main RAM pages holding running sound capture buffers, by offset into main RAM, which stay out of the maps so CPU
+    // accesses to them make the sound due first
+    uint32_t soundStart[2] = {}, soundEnd[2] = {};
+    bool soundWatched(uint32_t address);
 
     template <typename T> T readFallback(bool arm7, uint32_t address);
     template <typename T> void writeFallback(bool arm7, uint32_t address, T value, bool tcm);

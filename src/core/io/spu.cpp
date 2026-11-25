@@ -163,6 +163,7 @@ void Spu::loadState(FILE *file, uint32_t) {
     fread(sndCapLen, 2, sizeof(sndCapLen) / 2, file);
     SaveStates::readFifo(gbaFifos[0], file);
     SaveStates::readFifo(gbaFifos[1], file);
+    watchCapture();
 }
 
 void Spu::readRing(uint32_t *out, int count) {
@@ -513,7 +514,9 @@ void Spu::runSamples() {
     mixSamples(SPU_BATCH);
     batchEnd = core->globalCycles + SPU_BATCH * 512 * 2;
     batchDone = 0;
+    mixing = true;
     prefetch();
+    mixing = false;
 }
 
 void Spu::prefetch() {
@@ -557,11 +560,11 @@ template <typename T> T Spu::readData(int channel, uint32_t address) {
     return core->memory.read<T>(1, address);
 }
 
-void Spu::syncSamples() {
-    // Make the samples due before the ARM7's current time, which is the only CPU with access to the sound registers
-    // A halted ARM7 keeps the time it stopped at, so anything reaching them then is at the current time
-    Interpreter &arm7 = core->interpreter[1];
-    uint32_t now = arm7.halted ? core->globalCycles : arm7.cycles;
+void Spu::syncSamples(bool arm7) {
+    // Make the samples due before a CPU's current time, the ARM7's for the sound registers, which only it can reach
+    // A halted CPU keeps the time it stopped at, so anything reaching the sound then is at the current time
+    Interpreter &cpu = core->interpreter[arm7];
+    uint32_t now = cpu.halted ? core->globalCycles : cpu.cycles;
     if (now <= batchEnd - (SPU_BATCH - 1 - batchDone) * 512 * 2) return;
     uint32_t due = (now > batchEnd) ? SPU_BATCH : (SPU_BATCH - 1 - (batchEnd - now) / (512 * 2));
     mixSamples(due);
@@ -583,10 +586,30 @@ static inline int32_t scale128(int32_t value, int factor) {
 void Spu::mixSamples(uint32_t due) {
     // Mix the batch's samples up to the given one, a channel at a time over all of them so each channel's settings are
     // worked out once; with capture on, a sample at a time instead, since capture writes memory that a channel can read
+    // The sound's own reads and writes of capture buffers mustn't make samples due while they're being made
+    if (mixing) return;
+    mixing = true;
     while (batchDone < due) {
         uint32_t count = ((sndCapCnt[0] | sndCapCnt[1]) & BIT(7)) ? 1 : (due - batchDone);
         mixChannels(count);
         batchDone += count;
+    }
+    mixing = false;
+}
+
+void Spu::syncCapture(bool arm7) {
+    // Make the samples due before a CPU reads or writes a capture buffer, since software processes captured sound in
+    // place right behind the capture position; samples made late would otherwise write over what it already processed,
+    // as Phantom Hourglass does with its echo, which then never dies away
+    if (!mixing) syncSamples(arm7);
+}
+
+void Spu::watchCapture() {
+    // Have the memory send CPU accesses to running capture buffers here first; a stopped capture's buffer is let go
+    // only when its registers are written, since a one-shot capture stops while samples are being made
+    for (int i = 0; i < 2; i++) {
+        uint32_t size = (sndCapCnt[i] & BIT(7)) ? std::max<uint32_t>(1, sndCapLen[i]) * 4 : 0;
+        core->memory.watchSound(i, sndCapDad[i], size);
     }
 }
 
@@ -1180,6 +1203,7 @@ void Spu::writeSndCapCnt(int channel, uint8_t value) {
 
     // Write to one of the SNDCAPCNT registers
     sndCapCnt[channel] = (value & 0x8F);
+    watchCapture();
 }
 
 void Spu::writeSndCapDad(int channel, uint32_t mask, uint32_t value) {
@@ -1191,12 +1215,14 @@ void Spu::writeSndCapDad(int channel, uint32_t mask, uint32_t value) {
     // Restart the capture
     sndCapCurrent[channel] = sndCapDad[channel];
     sndCapTimers[channel] = soundTmr[1 + (channel << 1)];
+    watchCapture();
 }
 
 void Spu::writeSndCapLen(int channel, uint16_t mask, uint16_t value) {
     syncSamples();
     // Write to one of the SNDCAPLEN registers
     sndCapLen[channel] = (sndCapLen[channel] & ~mask) | (value & mask);
+    watchCapture();
 }
 
 uint8_t Spu::readGbaSoundCntL(int channel) {

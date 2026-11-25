@@ -319,7 +319,8 @@ void Memory::updateMap9(uint32_t start, uint32_t end, bool tcm) {
             [[fallthrough]];
 
         case 0x2000000: // Main RAM
-            read = write = &ram[address & ramMask()];
+            if (!soundWatched(address))
+                read = write = &ram[address & ramMask()];
             break;
 
         case 0x3000000: // Shared WRAM
@@ -488,7 +489,8 @@ void Memory::updateMap7(uint32_t start, uint32_t end) {
                 [[fallthrough]];
 
             case 0x2000000: // Main RAM
-                read = write = &ram[address & ramMask()];
+                if (!soundWatched(address))
+                    read = write = &ram[address & ramMask()];
                 break;
 
             case 0x3000000: // WRAM
@@ -908,6 +910,12 @@ template <typename T> T Memory::readFallback(bool arm7, uint32_t address) {
     address &= ~(sizeof(T) - 1);
     uint8_t *data = nullptr;
 
+    // Make the sound due before reading a running capture buffer
+    if (soundWatched(address)) {
+        core->spu.syncCapture(arm7);
+        return readLsb<T>(&ram[address & ramMask()]);
+    }
+
     // Handle special memory reads such as I/O registers, overlapping VRAM, or areas smaller than 4KB
     if (!arm7) { // ARM9
         switch (address & 0xFF000000) {
@@ -1147,6 +1155,15 @@ template <typename T> void Memory::writeFallback(bool arm7, uint32_t address, T 
     // Send 32-bit GXFIFO writes straight to the 3D engine, since games stream lots of them
     if (sizeof(T) == 4 && !arm7 && (address & ~0x3F) == 0x4000400)
         return core->gpu3D.writeGxFifoWord(value);
+
+    // Make the sound due before writing to a running capture buffer, then let the JITs drop any code written over, since
+    // these pages are left unmapped without being kept for them
+    if (soundWatched(address)) {
+        core->spu.syncCapture(arm7);
+        uint8_t *data = &ram[address & ramMask()];
+        if (core->jitHasCode()) core->jitWriteCode(data, sizeof(T));
+        return writeLsb<T>(data, value);
+    }
 
     // Handle writes to pages that were unmapped because they have compiled code
     if (core->jitHasCode() && writeJit<T>(arm7, address, value, tcm))
@@ -2956,6 +2973,44 @@ void Memory::applyPendingRam() {
     if (!ramPending) return;
     ramPending = false;
     updateRamSize();
+}
+
+bool Memory::soundWatched(uint32_t address) {
+    // Check if an address is in main RAM, in a page holding a running sound capture buffer
+    if (!(soundEnd[0] | soundEnd[1])) return false;
+    uint32_t area = address & 0xFF000000;
+    if (area != 0x2000000 && !(area == 0xC000000 && core->dsiMode)) return false;
+    uint32_t offset = address & ramMask();
+    return (offset - soundStart[0] < soundEnd[0] - soundStart[0]) || (offset - soundStart[1] < soundEnd[1] - soundStart[1]);
+}
+
+void Memory::watchSound(int unit, uint32_t address, uint32_t size) {
+    // Keep a capture buffer's main RAM pages out of the maps while it runs, or put them back; captures elsewhere, and in
+    // GBA mode, where main RAM is laid out differently, aren't watched
+    uint32_t start = 0, end = 0;
+    if (size && !core->gbaMode && (address & 0xFF000000) == 0x2000000) {
+        start = (address & ramMask()) & ~0xFFF;
+        end = std::min<uint32_t>(ramMask() + 1, ((address & ramMask()) + size + 0xFFF) & ~0xFFF);
+    }
+    if (start == soundStart[unit] && end == soundEnd[unit]) return;
+
+    // Remap the old and new pages in every mirror of main RAM for both CPUs
+    uint32_t ranges[2][2] = { { soundStart[unit], soundEnd[unit] }, { start, end } };
+    soundStart[unit] = start;
+    soundEnd[unit] = end;
+    for (auto &range : ranges) {
+        if (range[0] == range[1]) continue;
+        for (uint32_t base = 0x2000000; base < 0x3000000; base += ramMask() + 1) {
+            updateMap9(base + range[0], base + range[1]);
+            updateMap7(base + range[0], base + range[1]);
+        }
+        if (core->dsiMode) {
+            for (uint32_t base = 0xC000000; base < 0xD000000; base += ramMask() + 1) {
+                updateMap9(base + range[0], base + range[1]);
+                updateMap7(base + range[0], base + range[1]);
+            }
+        }
+    }
 }
 
 uint32_t Memory::ramMask() {

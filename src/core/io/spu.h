@@ -50,6 +50,7 @@ public:
     void runGbaSample();
     void runSamples();
     void resetCycles();
+    void syncCapture(bool arm7);
     void gbaFifoTimer(int timer);
 
     uint8_t readGbaSoundCntL(int channel);
@@ -127,7 +128,9 @@ private:
     // task runs, and anything that can see or change the sound registers makes the samples due before it first
     uint32_t batchEnd = SPU_BATCH * 512 * 2;
     uint32_t batchDone = 0;
-    void syncSamples();
+    bool mixing = false;
+    void syncSamples(bool arm7 = true);
+    void watchCapture();
     void mixSamples(uint32_t due);
     void mixChannels(uint32_t count);
     template <int format> void mixChannel(int i, uint32_t count, int32_t **outs);
