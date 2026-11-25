@@ -27,7 +27,16 @@ public:
     NdsIcon(std::string path, int fd = -1);
     NdsIcon(const char *path): NdsIcon(path, -1) {}
     uint32_t *getIcon() { return icon; }
+    const std::u16string &getTitle() { return title; } // The English banner title, with lines split by newlines
+    const std::string &getGameCode() { return gameCode; } // Four letters, the last for the region
+    uint8_t getUnitCode() { return unitCode; } // 0 for DS, 2 for DSi enhanced, 3 for DSi only
+    uint8_t getRevision() { return revision; }
+    uint32_t getTitleKind() { return titleKind; } // High half of the DSi title ID, like 0x00030004 for DSiWare, or 0
 
 private:
     uint32_t icon[32 * 32];
+    std::u16string title;
+    std::string gameCode;
+    uint8_t unitCode = 0, revision = 0;
+    uint32_t titleKind = 0;
 };

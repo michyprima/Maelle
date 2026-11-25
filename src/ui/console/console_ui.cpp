@@ -32,6 +32,7 @@
 #include "screen_frame.h"
 #include "version.h"
 #include <coreinit/core.h>
+#include <coreinit/memory.h>
 #include <coreinit/thread.h>
 #include <coreinit/time.h>
 #include <coreinit/userconfig.h>
@@ -40,6 +41,7 @@
 // The emulator runs on its own thread, bound to the core that can run generated code
 static OSThread *emuThread = nullptr;
 #include "../nds_icon.h"
+#include "rom_tags.h"
 #include "../../core/settings.h"
 #include "../../core/file_lock.h"
 #include "../../core/heartbeat.h"
@@ -78,6 +80,9 @@ void *ConsoleUI::fileTextures[2];
 void *ConsoleUI::folderTextures[2];
 void *ConsoleUI::pointerTexture;
 void *ConsoleUI::fontTexture;
+void *ConsoleUI::fontAtlas;
+void *ConsoleUI::circleTexture;
+MenuFont ConsoleUI::menuFont;
 
 const uint32_t *ConsoleUI::palette;
 uint32_t ConsoleUI::uiWidth, ConsoleUI::uiHeight;
@@ -213,17 +218,43 @@ void ConsoleUI::drawRectangle(float x, float y, float w, float h, uint32_t color
 }
 
 void ConsoleUI::drawString(std::string string, float x, float y, float size, uint32_t color, bool alignRight) {
-    // Set the initial offset based on alignment
+    // Set the initial offset based on alignment, in units of a 48-pixel cell
     float offset = alignRight ? -stringWidth(string) : 0;
+    int pixels = int(size + 0.5f);
+    float baseline = std::round(y + size * 36 / 48) + menuTop;
 
-    // Move along a string and draw each character
-    for (uint32_t i = 0; i < string.size(); i++) {
-        float x1 = x + offset * size / 48;
-        float tx = 48.0f * (((uint8_t)string[i] - 32) % 10);
-        float ty = 48.0f * (((uint8_t)string[i] - 32) / 10);
-        drawTexture(fontTexture, tx, ty, 47, 47, x1, y + menuTop, size, size, true, 0, color);
-        offset += charWidths[(uint8_t)string[i] - 32];
+    // Move along a string and draw each character, with the button symbols from the bitmap font and everything else
+    // from the system font, or ASCII from the bitmap font if the system font couldn't be loaded
+    uint32_t last = 0;
+    for (size_t i = 0; i < string.size();) {
+        uint32_t c = MenuFont::next(string, i);
+        if ((c >= 0x7F && c <= 0x85) || (!menuFont.loaded() && c >= 0x20 && c < 0x7F)) {
+            float tx = 48.0f * ((c - 32) % 10);
+            float ty = 48.0f * ((c - 32) / 10);
+            drawTexture(fontTexture, tx, ty, 47, 47, x + offset * size / 48, y + menuTop, size, size, true, 0, color);
+            offset += charWidths[c - 32];
+            last = 0;
+            continue;
+        }
+        if (c < 0x20 || !menuFont.loaded()) continue;
+
+        // Draw a letter on whole pixels at the size it was drawn at, so it's as sharp as it can be
+        if (last) offset += menuFont.kerning(last, c);
+        const MenuFont::Glyph &glyph = menuFont.glyph(c, pixels);
+        if (glyph.w)
+            drawTexture(fontAtlas, glyph.x, glyph.y, glyph.w, glyph.h, std::round(x + offset * size / 48) + glyph.left,
+                baseline + glyph.top, glyph.w, glyph.h, true, 0, color);
+        offset += menuFont.advance(c);
+        last = c;
     }
+}
+
+void ConsoleUI::drawPill(float x, float y, float w, float h, uint32_t color) {
+    // Draw a rectangle with round ends, from the halves of a circle and a rectangle between them
+    float r = h / 2;
+    drawTexture(circleTexture, 0, 0, 32, 64, x, y + menuTop, r, h, true, 0, color);
+    drawTexture(circleTexture, 32, 0, 32, 64, x + w - r, y + menuTop, r, h, true, 0, color);
+    drawRectangle(x + r, y, w - 2 * r, h, color);
 }
 
 void ConsoleUI::fillAudioBuffer(uint32_t *buffer, int count, int rate) {
@@ -280,12 +311,36 @@ void *ConsoleUI::bmpToTexture(uint8_t *bmp) {
     return texture;
 }
 
-int ConsoleUI::stringWidth(std::string &string) {
-    // Add the widths of each character in a string
-    int width = 0;
-    for (uint32_t i = 0; i < string.size(); i++)
-        width += charWidths[(uint8_t)string[i] - 32];
-    return width;
+std::string ConsoleUI::fitString(std::string string, int width) {
+    // Cut a string short with an ellipsis if it's wider than the given width in font units
+    if (stringWidth(string) <= width) return string;
+    width -= stringWidth("...");
+    while (!string.empty() && stringWidth(string) > width) {
+        // Take off a whole UTF-8 character at a time
+        while (string.size() > 1 && (string.back() & 0xC0) == 0x80) string.pop_back();
+        string.pop_back();
+    }
+    while (!string.empty() && string.back() == ' ') string.pop_back();
+    return string + "...";
+}
+
+int ConsoleUI::stringWidth(const std::string &string) {
+    // Add the widths of each character in a string, in units of a 48-pixel cell, the same way they're drawn
+    float width = 0;
+    uint32_t last = 0;
+    for (size_t i = 0; i < string.size();) {
+        uint32_t c = MenuFont::next(string, i);
+        if ((c >= 0x7F && c <= 0x85) || (!menuFont.loaded() && c >= 0x20 && c < 0x7F)) {
+            width += charWidths[c - 32];
+            last = 0;
+            continue;
+        }
+        if (c < 0x20 || !menuFont.loaded()) continue;
+        if (last) width += menuFont.kerning(last, c);
+        width += menuFont.advance(c);
+        last = c;
+    }
+    return int(width + 0.5f);
 }
 
 void ConsoleUI::initialize(int width, int height, std::string root, std::string prefix) {
@@ -295,6 +350,35 @@ void ConsoleUI::initialize(int width, int height, std::string root, std::string 
     folderTextures[0] = bmpToTexture(&_binary_src_ui_console_images_folder_dark_bmp_start);
     folderTextures[1] = bmpToTexture(&_binary_src_ui_console_images_folder_light_bmp_start);
     fontTexture = bmpToTexture(&_binary_src_ui_console_images_font_bmp_start);
+
+    // Make a smooth white circle for the ends of pills
+    {
+        uint32_t circle[64 * 64];
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+                float dx = x + 0.5f - 32, dy = y + 0.5f - 32;
+                float a = std::max(0.0f, std::min(1.0f, 32 - std::sqrt(dx * dx + dy * dy) + 0.5f));
+                circle[y * 64 + x] = (uint32_t(a * 255) << 24) | 0xFFFFFF;
+            }
+        }
+        circleTexture = createTexture(circle, 64, 64);
+    }
+
+    // Load the system font for menu text, with an empty atlas for its letters
+    void *fontData = nullptr;
+    uint32_t fontSize = 0;
+    if (OSGetSharedData(OS_SHAREDDATATYPE_FONT_STANDARD, 0, &fontData, &fontSize) && fontData) {
+        uint32_t *empty = new uint32_t[MenuFont::ATLAS_WIDTH * MenuFont::ATLAS_HEIGHT]();
+        fontAtlas = createTexture(empty, MenuFont::ATLAS_WIDTH, MenuFont::ATLAS_HEIGHT);
+        delete[] empty;
+        if (fontAtlas) {
+            auto upload = [](void*, const uint32_t *data, int x, int y, int w, int h) {
+                writeTexture(fontAtlas, data, x, y, w, h);
+            };
+            if (!menuFont.load((const uint8_t*)fontData, fontSize, upload, nullptr))
+                LOG_WARN("Failed to read the system font, using the bitmap font\n");
+        }
+    }
     pointerTexture = bmpToTexture(&_binary_src_ui_console_images_pointer_bmp_start);
 
     // Set the default input bindings
@@ -1299,7 +1383,7 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
     std::string actionA = actionOk ? "\x80 OK" : "";
 
     // Calculate touch bounds for the action buttons, with Back reaching the edge if it's the last one
-    int boundsAB = 1218 - (stringWidth(actionA) + 2.5f * charWidths[0]) * 34 / 48;
+    int boundsAB = 1218 - (stringWidth(actionA) + 2.5f * stringWidth(" ")) * 34 / 48;
     int boundsBX = boundsAB - stringWidth(actionB) * 34 / 48;
     if (!actionOk) boundsAB = 1280;
     int boundsX = boundsBX - stringWidth(actionX) * 34 / 48;
@@ -1337,7 +1421,13 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
     // A list starting with a header starts right under the title, since a header has room above its text, which makes
     // room for another row if they're slightly shorter, ending as far above the bottom bar as other lists do
     bool fill = !items.empty() && items[0].header;
-    const int top = fill ? 88 : 124, rows = fill ? 8 : 7, rowHeight = fill ? 66 : 70;
+    int top = fill ? 88 : 124, rows = fill ? 8 : 7, rowHeight = fill ? 66 : 70;
+
+    // A list with second lines, like games with their publishers, has 6 taller rows ending about where 7 rows do
+    if (!fill && std::any_of(items.begin(), items.end(), [](const MenuItem &item) { return !item.tags.empty(); })) {
+        rows = 6;
+        rowHeight = 82;
+    }
 
     while (true) {
         // Draw the borders
@@ -1545,9 +1635,29 @@ uint32_t ConsoleUI::menu(std::string title, std::vector<MenuItem> &items,
                 continue;
             }
 
-            // Draw the current item's name
+            // Draw the current item's name, with its tags under it as pills if it has any
             int x = (items[offset].iconSize > 0) ? 184 : 105;
-            drawString(items[offset].name, SCALE(x), SCALE(top + (rowHeight - 38) / 2 + i * rowHeight), SCALE(38), palette[1]);
+            if (items[offset].tags.empty()) {
+                drawString(items[offset].name, SCALE(x), SCALE(top + (rowHeight - 38) / 2 + i * rowHeight), SCALE(38), palette[1]);
+            }
+            else {
+                drawString(fitString(items[offset].name, (1175 - x) * 48 / 38), SCALE(x), SCALE(top + 6 + i * rowHeight),
+                    SCALE(38), palette[1]);
+
+                // Pills are the separator color with text halfway between the item text and grey, centred 59 down
+                const float size = 20, height = 23, pad = 9, gap = 6;
+                float center = top + 59 + i * rowHeight, px = x;
+                uint32_t textColor = 0xFF000000;
+                for (int k = 0; k < 24; k += 8)
+                    textColor |= ((((palette[1] >> k) & 0xFF) + ((palette[6] >> k) & 0xFF)) / 2) << k;
+                for (const std::string &tag : items[offset].tags) {
+                    float w = stringWidth(tag) * size / 48 + 2 * pad;
+                    if (px + w > 1175) break;
+                    drawPill(SCALE(px), SCALE(center - height / 2), SCALE(w), SCALE(height), palette[2]);
+                    drawString(tag, SCALE(px + pad), SCALE(center + size * 12.5f / 48 - size * 36 / 48), SCALE(size), textColor);
+                    px += w + gap;
+                }
+            }
 
             // Draw the current item's icon if it has one
             if (items[offset].iconSize > 0)
@@ -1570,8 +1680,8 @@ uint32_t ConsoleUI::message(std::string title, std::string text, int type) {
     std::string actionA = "\x80 OK";
 
     // Calculate touch bounds for the action buttons
-    int boundsA = 1218 + (2.5f * charWidths[0]) * 34 / 48;
-    int boundsAB = 1218 - (stringWidth(actionA) + 2.5f * charWidths[0]) * 34 / 48;
+    int boundsA = 1218 + (2.5f * stringWidth(" ")) * 34 / 48;
+    int boundsAB = 1218 - (stringWidth(actionA) + 2.5f * stringWidth(" ")) * 34 / 48;
     int boundsB = boundsAB - stringWidth(actionB) * 34 / 48;
 
     // Define variables for touch input
@@ -1645,6 +1755,34 @@ uint32_t ConsoleUI::message(std::string title, std::string text, int type) {
     }
 }
 
+static std::string utf16To8(const std::u16string &text);
+
+void ConsoleUI::bannerTitle(const std::u16string &banner, std::string &name, std::vector<std::string> &tags) {
+    // Split a DS banner title into lines, which are the game's name, any subtitle, and the publisher last
+    std::vector<std::string> lines;
+    std::string text;
+    for (char16_t c : banner) {
+        // Keep printable characters and line breaks, with the DS's other spaces as plain spaces
+        if (c == 0xA0 || c == 0x3000) c = ' ';
+        if (c == '\n' || c >= 0x20) text += utf16To8(std::u16string(1, c));
+    }
+    text += "\n";
+    for (size_t start = 0, end; (end = text.find('\n', start)) != std::string::npos; start = end + 1) {
+        std::string line = text.substr(start, end - start);
+        size_t first = line.find_first_not_of(' ');
+        if (first == std::string::npos) continue;
+        lines.push_back(line.substr(first, line.find_last_not_of(' ') - first + 1));
+    }
+
+    // Show the name with any subtitle joined to it on the first line and the publisher on the second, keeping the name
+    // given if there's no title
+    if (lines.empty()) return;
+    name = lines[0];
+    for (size_t i = 1; i + 1 < lines.size(); i++)
+        name += " " + lines[i];
+    if (lines.size() > 1) tags.push_back(lines.back());
+}
+
 bool ConsoleUI::fileBrowser() {
     // Return whether the browser was closed for good, or false if going back to a paused game's menu
     // The last ROM started is selected if it's in the folder the browser opens in, only at startup or every time
@@ -1669,28 +1807,69 @@ bool ConsoleUI::fileBrowser() {
             stat(subpath.c_str(), &substat);
 
             // Add a list entry if appropriate
+            std::string stem = name.substr(0, name.rfind('.'));
             if (S_ISDIR(substat.st_mode)) {
                 // Add a directory with a generic icon to the list
                 files.push_back(MenuItem(name, "", folderTextures[menuTheme], 64));
             }
             else if (name.find(".nds", name.length() - 4) != std::string::npos) {
-                // Add an NDS ROM with its decoded icon to the list
-                void *texture = createTexture(NdsIcon(subpath).getIcon(), 32, 32);
-                files.push_back(MenuItem(name, "", texture, 32));
+                // Add an NDS ROM with its decoded icon and its banner's title to the list, or its file name without one
+                NdsIcon icon(subpath);
+                void *texture = createTexture(icon.getIcon(), 32, 32);
+                files.push_back(MenuItem(stem, "", texture, 32));
+                // Tag it with its publisher, region, whether it's for the DSi, and its revision if it isn't the first
+                std::vector<std::string> &tags = files.back().tags;
+                bannerTitle(icon.getTitle(), files.back().name, tags);
+                const std::string &code = icon.getGameCode();
+                std::string region = (code.size() == 4 && code != "####") ? RomTags::region(code[3]) : "";
+                if (!region.empty()) tags.push_back(region);
+                // DSi titles are told apart by the kind in their title ID (GBATEK, DSiBrew)
+                uint32_t kind = icon.getTitleKind();
+                if (kind == 0x00030004) tags.push_back("DSiWare");
+                else if (kind == 0x00030005 || kind == 0x0003000F || kind == 0x00030015 || kind == 0x00030017)
+                    tags.push_back("DSi System");
+                else if (icon.getUnitCode() == 3) tags.push_back("DSi");
+                else if (icon.getUnitCode() == 2) tags.push_back("DSi Enhanced");
+                if (code[0] == 'I') tags.push_back("Infrared"); // A game code starting with I has it (GBATEK)
+                if (icon.getRevision()) tags.push_back("Rev " + std::to_string(icon.getRevision()));
+                if (code != "####" && std::all_of(code.begin(), code.end(), [](char c) { return c >= 0x20 && c < 0x7F; }))
+                    tags.push_back(code);
+                tags.push_back(RomTags::size(substat.st_size));
             }
             else if (name.find(".gba", name.length() - 4) != std::string::npos || isGbRom(name)) {
-                // Add a GBA or GB ROM with a generic icon to the list
-                files.push_back(MenuItem(name, "", fileTextures[menuTheme], 64));
+                // Add a GBA or GB ROM with a generic icon to the list, named by its file, tagged from its header
+                files.push_back(MenuItem(stem, "", fileTextures[menuTheme], 64));
+                uint8_t header[0x150] = {};
+                size_t length = 0;
+                if (FILE *rom = fopen(subpath.c_str(), "rb")) {
+                    length = fread(header, 1, sizeof(header), rom);
+                    fclose(rom);
+                }
+                files.back().tags = isGbRom(name) ? RomTags::gb(header, length) : RomTags::gba(header, length);
+                files.back().tags.push_back(RomTags::size(substat.st_size));
             }
+            else {
+                continue;
+            }
+            files.back().file = name;
         }
 
-        // Sort the files alphabetically
-        sort(files.begin(), files.end());
+        // Sort folders first and then games by the names shown, ignoring case
+        auto lower = [](std::string text) {
+            std::transform(text.begin(), text.end(), text.begin(), ::tolower);
+            return text;
+        };
+        std::sort(files.begin(), files.end(), [&](const MenuItem &a, const MenuItem &b) {
+            bool folderA = (a.iconTex == folderTextures[menuTheme]), folderB = (b.iconTex == folderTextures[menuTheme]);
+            if (folderA != folderB) return folderA;
+            std::string nameA = lower(a.name), nameB = lower(b.name);
+            return (nameA != nameB) ? (nameA < nameB) : (a.file < b.file);
+        });
         if (dir) closedir(dir);
         listLock.unlock();
         if (selectLast) {
             for (int i = 0; i < (int)files.size(); i++)
-                if (curPath + "/" + files[i].name == lastRom) index = i;
+                if (curPath + "/" + files[i].file == lastRom) index = i;
             selectLast = false;
         }
 
@@ -1701,7 +1880,7 @@ bool ConsoleUI::fileBrowser() {
         // Open the launch options of a selected ROM, and launch it if one was chosen
         bool launch = (pressed & defaultKeys[INPUT_A]);
         if ((pressed & defaultKeys[INPUT_SELECT]) && !files.empty()) {
-            const std::string &name = files[index].name;
+            const std::string &name = files[index].file;
             bool gba = (name.find(".gba", name.length() - 4) != std::string::npos);
             if (gba || name.find(".nds", name.length() - 4) != std::string::npos) {
                 int saveSize = launchOptions(gba);
@@ -1716,7 +1895,7 @@ bool ConsoleUI::fileBrowser() {
         if (launch) {
             // Navigate to the selected file if any exist
             if (files.empty()) continue;
-            curPath += "/" + files[index].name;
+            curPath += "/" + files[index].file;
             index = 0;
 
             // Try to set a ROM path, with any launch option only applying to this attempt
@@ -1803,11 +1982,11 @@ static std::string utf16To8(const std::u16string &text) {
 }
 
 static std::string menuText(const std::u16string &text) {
-    // Show text in the menu font, which only has ASCII
-    std::string result;
+    // Show text in the menu font, which has the system font's letters, leaving out control characters
+    std::u16string shown;
     for (char16_t c : text)
-        result += (c >= 32 && c < 127) ? char(c) : '?';
-    return result;
+        if (c >= 32) shown += c;
+    return utf16To8(shown);
 }
 
 static uint32_t cafeLanguage() {

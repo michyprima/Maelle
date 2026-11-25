@@ -33,21 +33,31 @@ NdsIcon::NdsIcon(std::string path, int fd) {
         return;
     }
 
-    // Get the icon offset
-    uint8_t offset[4];
-    fseek(rom, 0x68, SEEK_SET);
-    fread(offset, sizeof(uint8_t), 4, rom);
+    // Get the header up to the DSi title ID, with the game code and the icon offset, all in the SD's first block
+    uint8_t header[0x238] = {};
+    fread(header, sizeof(uint8_t), sizeof(header), rom);
+    gameCode = std::string((char*)&header[0x0C], 4);
+    unitCode = header[0x12];
+    revision = header[0x1E];
+    if (unitCode & 2) titleKind = U8TO32(header, 0x234);
+    uint8_t *offset = &header[0x68];
 
-    // Get the icon data
-    uint8_t data[512];
-    fseek(rom, U8TO32(offset, 0) + 0x20, SEEK_SET);
-    fread(data, sizeof(uint8_t), 512, rom);
-
-    // Get the icon palette
-    uint8_t palette[32];
-    fseek(rom, U8TO32(offset, 0) + 0x220, SEEK_SET);
-    fread(palette, sizeof(uint8_t), 32, rom);
+    // Get the banner's icon, palette and the titles up to English in one read, since SD reads are slow
+    uint8_t banner[0x440] = {};
+    fseek(rom, U8TO32(offset, 0), SEEK_SET);
+    fread(banner, sizeof(uint8_t), sizeof(banner), rom);
     fclose(rom);
+    uint8_t *data = &banner[0x20];
+    uint8_t *palette = &banner[0x220];
+
+    // Get the English title, 128 UTF-16 characters at most, if the ROM has a banner
+    if (U8TO32(offset, 0)) {
+        for (int i = 0; i < 128; i++) {
+            char16_t c = U8TO16(banner, 0x340 + i * 2);
+            if (!c) break;
+            title += c;
+        }
+    }
 
     // Get each pixel's 5-bit palette color and convert it to 8-bit
     uint32_t tiles[32 * 32];

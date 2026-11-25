@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "screen_frame.h"
+#include "menu_font.h"
 #include "../screen_layout.h"
 #include "../../core/core.h"
 #include "../../core/defines.h"
@@ -76,6 +77,8 @@ struct MenuItem {
     uint8_t iconSize;
     bool header;
     bool separator = true; // Whether a line is drawn under it
+    std::vector<std::string> tags; // Pills on a second line under the name, if any
+    std::string file; // The file name behind a file browser item, which the name may not be
 
     MenuItem(std::string name, std::string setting = "", void *iconTex = nullptr, uint8_t iconSize = 0):
         name(name), setting(setting), iconTex(iconTex), iconSize(iconSize), header(false) {}
@@ -194,6 +197,9 @@ private:
     static void *fileTextures[2];
     static void *folderTextures[2];
     static void *fontTexture;
+    static void *fontAtlas; // The system font's letters, drawn as they're needed
+    static void *circleTexture; // A white circle, whose halves are the ends of pills
+    static MenuFont menuFont;
     static void *pointerTexture;
 
     static const uint32_t *palette;
@@ -227,7 +233,10 @@ private:
 
     ConsoleUI() {} // Private to prevent instantiation
     static void *bmpToTexture(uint8_t *bmp);
-    static int stringWidth(std::string &string);
+    static int stringWidth(const std::string &string);
+    static std::string fitString(std::string string, int width);
+    static void bannerTitle(const std::u16string &banner, std::string &name, std::vector<std::string> &tags);
+    static void drawPill(float x, float y, float w, float h, uint32_t color);
 
     static uint32_t menu(std::string title, std::vector<MenuItem> &items,
         int &index, std::string actionX = "", std::string actionPlus = "", bool actionOk = true,
