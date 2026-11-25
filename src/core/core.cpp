@@ -134,7 +134,7 @@ Core::Core(std::string ndsRom, std::string gbaRom, int id, int ndsRomFd, int gba
         gpu3DRenderer(this), hleBios { HleBios(this, 0, HleBios::swiTable9), HleBios(this, 1, HleBios::
         swiTable7), HleBios(this, 1, HleBios::swiTableGba) }, i2c(this), input(this), interpreter { Interpreter(
         this, 0), Interpreter(this, 1) }, ipc(this), jit(this, 0), jit7(this, 1), memory(this), ndma { Ndma(this, 0), Ndma(this, 1) }, rtc(this),
-        saveStates(this), sdMmc(this, false), sdio(this, true), slot2(this), dsiWifi(this), dsiMic(this), dsiGpio(this), dsiCamera(this), dsiWareSd(this), dsiDsp(this), spi(this), spu(this), timers { Timers(this, 0), Timers(this, 1) }, wifi(this) {
+        saveStates(this), sdMmc(this, false), sdio(this, true), slot2(this), dsiWifi(this), dsiMic(this), dsiGpio(this), dsiCamera(this), dsiWareNand(this), dsiDsp(this), spi(this), spu(this), timers { Timers(this, 0), Timers(this, 1) }, wifi(this) {
     // Set DSi mode and direct boot now and ignore changes to them later; DSi-only titles (unit code 3) run in DSi mode
     // whatever the setting, and DSiWare (title ID bit 2 at 234h) starts directly, since the DSi menu can't launch it
     dsiMode = Settings::dsiMode;
@@ -430,7 +430,9 @@ Core::Core(std::string ndsRom, std::string gbaRom, int id, int ndsRomFd, int gba
             memory.write<uint32_t>(0, 0x2FFFC00, cartridgeNds.getChipId()); // Copy of chip ID 1
             memory.write<uint32_t>(0, 0x2FFFC04, cartridgeNds.getChipId()); // Copy of chip ID 2
             memory.write<uint16_t>(0, 0x2FFFC10, 0x5835); // Copy of ARM7 BIOS CRC
-            memory.write<uint16_t>(0, 0x2FFFC40, 0x0001); // Boot indicator
+            // Boot indicator: 1 for a card, 3 for DSiWare as the DSi menu leaves it for titles launched from the NAND; the
+            // SDK checks for 3 before opening the title's banner.sav, and titles that have one need it
+            memory.write<uint16_t>(0, 0x2FFFC40, dsiWareNand.active() ? 0x0003 : 0x0001);
 
             interpreter[0].directBoot();
             interpreter[1].directBoot();

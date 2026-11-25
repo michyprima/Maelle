@@ -1036,7 +1036,7 @@ void CartridgeNds::directBoot() {
     loadDsiCode(false);
     loadDsiCode(true);
 
-    // DSiWare (title IDs 00030004 and up, not cards) gets its files and saves from the SD card, as if launched from there
+    // DSiWare (title IDs 00030004 and up, not cards) is installed on the NAND in memory, as if launched from there
     if (romFile) loadRomSection(0, 0x1000);
     if (rom[0x234] & BIT(2)) bootDsiWare();
 }
@@ -1056,16 +1056,15 @@ void CartridgeNds::readRom(uint32_t offset, uint8_t *data, uint32_t size) {
 }
 
 void CartridgeNds::bootDsiWare() {
-    // Put the title and its saves on an SD card of their own; the header still has to be read after, since making the
-    // card can load other parts of the ROM over it
+    // Install the title and its saves on the NAND, in memory only; the header still has to be read after, since reading
+    // the ROM can load other parts of it over the header
     if (romFile) loadRomSection(0, 0x1000);
     uint8_t header[0x1000];
     memcpy(header, rom, sizeof(header));
-    core->dsiWareSd.create(header, getSavePath());
-    core->sdMmc.insertDsiWareSd();
+    core->dsiWareNand.create(header, getSavePath());
 
-    // Give the title the devices the DSi menu would, as seen when it launches one from the NAND, but with its files and
-    // saves on the SD card; the SD card has to come before the saves, since entries can only refer back
+    // Give the title the devices the DSi menu would, as seen when it launches one from the NAND; the saves come last,
+    // since entries can only refer back
     // Entries are a drive letter, flags, access rights, then a name and a path; the physical NAND partitions are always
     // there, with no access for titles that aren't system ones
     struct Device { char letter; uint8_t flags, access; std::string name, path; };
@@ -1076,10 +1075,9 @@ void CartridgeNds::bootDsiWare() {
         { 'F', 0x31, 0x00, "photo", "nand2:/photo" },
         { 'I', 0x00, 0x06, "sdmc", "/" },
     };
-    for (int i = 1; i < core->dsiWareSd.fileCount(); i++) {
-        std::string file = core->dsiWareSd.fileName(i);
-        bool pub = (file.substr(file.size() - 3) == "PUB");
-        devices.push_back({ pub ? 'H' : 'G', 0x09, 0x06, pub ? "dataPub" : "dataPrv", "sdmc:/" + file });
+    for (int i = 0; i < 2; i++) {
+        std::string path = core->dsiWareNand.savePath(i);
+        if (!path.empty()) devices.push_back({ i ? 'G' : 'H', 0x09, 0x06, i ? "dataPrv" : "dataPub", path });
     }
     uint32_t list = U8TO32(header, 0x1D4);
     for (uint32_t i = 0; i < 0x400; i += 4)
@@ -1095,8 +1093,8 @@ void CartridgeNds::bootDsiWare() {
             core->memory.write<uint8_t>(1, entry + 0x14 + j, devices[i].path[j]);
     }
 
-    // The title finds its own file by the path at the end of the list
-    std::string path = "sdmc:/" + core->dsiWareSd.fileName(0);
+    // The title finds its own file by the path at the end of the list, and the SDK finds banner.sav from its folders
+    std::string path = core->dsiWareNand.appPath();
     for (size_t j = 0; j < path.size(); j++)
         core->memory.write<uint8_t>(1, list + 0x3C0 + j, path[j]);
 }

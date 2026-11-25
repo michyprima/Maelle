@@ -184,16 +184,15 @@ void SdMmc::flush() {
     flushPending = false;
     if (nand) nandCache.flush(nand);
     if (sd) sdCache.flush(sd);
-    if (virtualSd) core->dsiWareSd.flush();
+    core->dsiWareNand.flush();
     NAND_LOG_LINE("flush, write errors NAND %u SD %u\n", nandCache.writeErrors, sdCache.writeErrors);
 }
 
-void SdMmc::insertDsiWareSd() {
-    // Swap the SD card for the one made for a DSiWare title, which is always standard capacity
-    virtualSd = true;
-    sdSize = core->dsiWareSd.size();
-    sdhc = false;
-    sdIrqStatus |= BIT(4) | 0xA0;
+bool SdMmc::readNand(uint64_t offset, uint8_t *data, uint32_t size) {
+    // Read the NAND as stored, for a DSiWare title installed in memory to find its way around
+    if (!nand) return false;
+    nandCache.read(nand, offset, data, size);
+    return true;
 }
 
 void SdMmc::detectCard() {
@@ -330,8 +329,8 @@ void SdMmc::readBlock() {
         core->dsiWifi.readData(data, size);
         len = (size + 3) >> 2;
     }
-    else if (virtualSd && !(sdPortSelect & BIT(0))) {
-        core->dsiWareSd.read(curAddress, data, len << 2);
+    else if ((sdPortSelect & BIT(0)) && nand && core->dsiWareNand.active() && core->dsiWareNand.owns(curAddress)) {
+        core->dsiWareNand.read(curAddress, data, len << 2);
     }
     else if (FILE *src = (sdPortSelect & BIT(0)) ? nand : sd) {
         FileCache &cache = (sdPortSelect & BIT(0)) ? nandCache : sdCache;
@@ -372,8 +371,8 @@ void SdMmc::writeBlock() {
     if (sdio) {
         core->dsiWifi.writeData(data, sdData16Blklen ? sdData16Blklen : 0x200);
     }
-    else if (virtualSd && !(sdPortSelect & BIT(0))) {
-        core->dsiWareSd.write(curAddress, data, len << 2);
+    else if ((sdPortSelect & BIT(0)) && nand && core->dsiWareNand.active() && core->dsiWareNand.owns(curAddress)) {
+        core->dsiWareNand.write(curAddress, data, len << 2);
         if (!flushPending) {
             flushPending = true;
             core->schedule(SDMMC_FLUSH, 1 << 24);
@@ -845,7 +844,7 @@ void SdMmc::writeSoftReset(uint16_t mask, uint16_t value) {
     }
 
     // Detect the SD card again when coming out of reset, after its detect time
-    if (!sdio && (sd || virtualSd)) {
+    if (!sdio && sd) {
         if (release) {
             detecting = true;
             startDetect();

@@ -127,6 +127,8 @@ System files go in `sd:/wiiu/apps/maelle/bios/`, and their paths can be changed 
   and 3DS dumps don't contain any boot code.
 - DSi mode needs DSi BIOS, firmware and NAND files (`bios9i.bin`, `bios7i.bin`, `firmwarei.bin`, `nand.bin`), dumped
   from a DSi. An SD card image can be put at `sd:/wiiu/apps/maelle/sd.img`.
+- DSiWare is installed on the NAND only in memory while it runs, so `nand.bin` is never changed. A clean NAND dump is
+  best, but it needs at least enough free space to hold the DSiWare game you want to play.
 - A GBA BIOS file (`gba_bios.bin`) can be optionally provided, and can be dumped from many systems with
   [this dumper](https://github.com/mgba-emu/bios-dump).
 

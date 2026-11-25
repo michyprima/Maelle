@@ -39,7 +39,7 @@ public:
     void writeBlock();
     void detectCard();
     void flush();
-    void insertDsiWareSd();
+    bool readNand(uint64_t offset, uint8_t *data, uint32_t size);
 
     uint16_t readCmd() { return sdCmd; }
     uint16_t readPortSelect() { return sdPortSelect; }
@@ -57,6 +57,7 @@ public:
     uint16_t readData32Blklen() { return sdData32Blklen; }
     uint32_t readData32Fifo();
     uint32_t readConsoleId(int i) { return consoleId[i]; }
+    uint32_t readCid(int i) { return mmcCid[i]; }
     uint16_t readCardIrqCtl() { return sdCardIrqCtl; }
     uint16_t readCardIrqStatus() { return sdCardIrqStatus; }
     uint16_t readCardIrqMask() { return sdCardIrqMask; }
@@ -90,7 +91,6 @@ private:
     FileCache nandCache;
     FileCache sdCache;
     bool sdhc = false;
-    bool virtualSd = false; // The SD slot holds a directly booted DSiWare title's card, see DsiWareSd
     int64_t sdSize = 0;
     int64_t nandSize = 0;
 
@@ -145,7 +145,7 @@ private:
     void runCommand();
     void runAppCommand();
     void runSdioCommand();
-    bool noCard() { return !sdio && !(sdPortSelect & 0x1) && !sd && !virtualSd; }
+    bool noCard() { return !sdio && !(sdPortSelect & 0x1) && !sd; }
     void pushBytes(const uint8_t *data, int size);
     void ioExtended();
 

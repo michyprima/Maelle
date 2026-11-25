@@ -61,7 +61,7 @@
 #include "memory/dma.h"
 #include "memory/memory.h"
 #include "memory/ndma.h"
-#include "memory/dsiware_sd.h"
+#include "memory/dsiware_nand.h"
 #include "memory/sd_mmc.h"
 #include "memory/slot2.h"
 
@@ -224,7 +224,7 @@ public:
     DsiMic dsiMic;
     DsiGpio dsiGpio;
     DsiCamera dsiCamera;
-    DsiWareSd dsiWareSd;
+    DsiWareNand dsiWareNand;
     DsiDsp dsiDsp;
     Spi spi;
     Spu spu;
